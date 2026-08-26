@@ -1,5 +1,6 @@
 export type Actor = "human" | "agent" | "system";
 export type ViewMode = "2d" | "3d";
+export type NavigationMode = "orbit" | "walk";
 export type CameraPreset =
   | "front"
   | "rear"
@@ -107,9 +108,11 @@ export type Project = {
   stairs: Stair[];
   view: {
     mode: ViewMode;
+    navigationMode: NavigationMode;
     activeFloorId: string;
     cameraPreset: CameraPreset;
     focusElementId?: string;
+    walkStartRoomId?: string;
   };
   activity: ActivityEntry[];
   version: number;
@@ -149,6 +152,7 @@ export type PointRef =
 
 export type ArchitectureOperation =
   | { type: "set_plot"; width?: number; length?: number; setbacks?: Partial<Plot["setbacks"]> }
+  | { type: "set_plot_orientation"; orientation: Plot["orientation"] }
   | {
       type: "create_room";
       floorId: string;
@@ -190,6 +194,14 @@ export type ArchitectureOperation =
       width?: number;
     }
   | {
+      type: "update_opening";
+      openingId: string;
+      offset?: number;
+      width?: number;
+      height?: number;
+      sillHeight?: number;
+    }
+  | {
       type: "add_stairs";
       floorId: string;
       x: number;
@@ -202,6 +214,7 @@ export type ArchitectureOperation =
   | { type: "set_active_floor"; floorId: string }
   | { type: "delete_element"; elementId: string }
   | { type: "switch_view"; mode: ViewMode }
+  | { type: "set_navigation_mode"; mode: NavigationMode; roomId?: string }
   | { type: "set_camera"; preset: CameraPreset }
   | { type: "focus_element"; elementId?: string };
 
@@ -258,6 +271,7 @@ export function createInitialProject(): Project {
     stairs: [],
     view: {
       mode: "2d",
+      navigationMode: "orbit",
       activeFloorId: groundFloor.id,
       cameraPreset: "front-right",
     },
@@ -511,6 +525,12 @@ export function applyOperation(
       result = { plot: project.plot, metrics: projectMetrics(project) };
       break;
     }
+    case "set_plot_orientation": {
+      project.plot.orientation = operation.orientation;
+      description = `${who} set the plot orientation to ${operation.orientation}`;
+      result = { plot: project.plot, orientation: project.plot.orientation };
+      break;
+    }
     case "create_room": {
       if (!project.floors.some((floor) => floor.id === operation.floorId)) {
         throw new Error(`Floor ${operation.floorId} does not exist.`);
@@ -658,6 +678,35 @@ export function applyOperation(
       result = { opening, wallLength: round(length, 2) };
       break;
     }
+    case "update_opening": {
+      const index = project.openings.findIndex((item) => item.id === operation.openingId);
+      if (index < 0) throw new Error(`Opening ${operation.openingId} does not exist.`);
+      const previous = project.openings[index];
+      const wall = project.walls.find((item) => item.id === previous.wallId);
+      if (!wall) throw new Error(`Wall ${previous.wallId} does not exist.`);
+      const opening: Opening = {
+        ...previous,
+        offset: round(operation.offset ?? previous.offset),
+        width: round(operation.width ?? previous.width),
+        height: round(operation.height ?? previous.height),
+        sillHeight: round(operation.sillHeight ?? previous.sillHeight ?? 0),
+      };
+      const length = wallLength(wall);
+      if (
+        opening.width <= 0 || opening.height <= 0 || opening.offset < opening.width / 2 ||
+        opening.offset > length - opening.width / 2
+      ) {
+        throw new Error(`The ${opening.kind} does not fit on this ${round(length, 1)} ft wall.`);
+      }
+      if ((opening.sillHeight ?? 0) < 0 || (opening.sillHeight ?? 0) + opening.height > wall.height) {
+        throw new Error(`The ${opening.kind} must fit within the ${wall.height} ft wall height.`);
+      }
+      project.openings[index] = opening;
+      project.view.focusElementId = opening.id;
+      description = `${who} updated a ${opening.width} ft ${opening.kind}`;
+      result = { opening, wallLength: round(length, 2) };
+      break;
+    }
     case "add_stairs": {
       const stair: Stair = {
         id: createId("stair"),
@@ -725,8 +774,25 @@ export function applyOperation(
       result = { view: project.view };
       break;
     }
+    case "set_navigation_mode": {
+      if (operation.roomId) {
+        const room = project.rooms.find((item) => item.id === operation.roomId);
+        if (!room) throw new Error(`Room ${operation.roomId} does not exist.`);
+        project.view.activeFloorId = room.floorId;
+        project.view.focusElementId = room.id;
+        project.view.walkStartRoomId = room.id;
+      }
+      project.view.mode = "3d";
+      project.view.navigationMode = operation.mode;
+      description = operation.mode === "walk"
+        ? `${who} entered the interior walkthrough`
+        : `${who} switched to the exterior orbit view`;
+      result = { view: project.view, startRoomId: operation.roomId ?? null };
+      break;
+    }
     case "set_camera": {
       project.view.mode = "3d";
+      project.view.navigationMode = "orbit";
       project.view.cameraPreset = operation.preset;
       description = `${who} set the camera to ${operation.preset}`;
       result = { view: project.view };

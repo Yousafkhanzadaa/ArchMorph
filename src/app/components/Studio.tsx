@@ -12,6 +12,7 @@ import {
   DoorOpen,
   Download,
   Eye,
+  Footprints,
   Grid2X2,
   History,
   Layers3,
@@ -263,6 +264,8 @@ export default function Studio() {
   const [debugOpen, setDebugOpen] = useState(false);
   const [toolStatus, setToolStatus] = useState<ToolStatus>("registering");
   const [toolCalls, setToolCalls] = useState<ToolCall[]>([]);
+  const [debugToolName, setDebugToolName] = useState("inspect_project");
+  const [debugInput, setDebugInput] = useState("{}");
   const [toast, setToast] = useState<string>();
   const [savedVersion, setSavedVersion] = useState(0);
   const [pastCount, setPastCount] = useState(0);
@@ -333,9 +336,10 @@ export default function Studio() {
       if (!svgRef.current) throw new Error("The floor plan is not ready.");
       dataUrl = await svgToPng(svgRef.current);
     }
-    const filename = `archmorph-${current.view.mode}-v${current.version}.png`;
+    const viewLabel = current.view.mode === "2d" ? "2d" : `3d-${current.view.navigationMode ?? "orbit"}`;
+    const filename = `archmorph-${viewLabel}-v${current.version}.png`;
     if (options?.download) downloadUrl(dataUrl, filename);
-    notify(`Captured ${current.view.mode === "2d" ? "floor plan" : current.view.cameraPreset} view`);
+    notify(`Captured ${current.view.mode === "2d" ? "floor plan" : current.view.navigationMode === "walk" ? "walkthrough" : current.view.cameraPreset} view`);
     return {
       projectId: current.id,
       projectVersion: current.version,
@@ -486,6 +490,8 @@ export default function Studio() {
       const target = event.target as HTMLElement;
       if (target.matches("input, textarea, select, [contenteditable='true']")) return;
       const key = event.key.toLowerCase();
+      const walking = projectRef.current.view.mode === "3d" && (projectRef.current.view.navigationMode ?? "orbit") === "walk";
+      if (walking && ["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", "shift"].includes(key)) return;
       if ((event.metaKey || event.ctrlKey) && key === "z") {
         event.preventDefault();
         if (event.shiftKey) redo();
@@ -516,6 +522,7 @@ export default function Studio() {
   const activeFloor = project.floors.find((item) => item.id === project.view.activeFloorId)!;
   const metrics = projectMetrics(project);
   const nativeStatus = toolStatus === "native";
+  const navigationMode = project.view.navigationMode ?? "orbit";
 
   const safeCommit = (operation: ArchitectureOperation) => {
     try {
@@ -560,6 +567,18 @@ export default function Studio() {
     notify(report.issueCount ? `Found ${report.issueCount} layout ${report.issueCount === 1 ? "issue" : "issues"}` : "Layout checks passed");
   };
 
+  const runDebugTool = async () => {
+    try {
+      const parsed = JSON.parse(debugInput) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error("Tool input must be a JSON object.");
+      }
+      await invokeTool(debugToolName, parsed as Record<string, unknown>);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Invalid WebMCP tool input.");
+    }
+  };
+
   return (
     <main className="studio-shell">
       <header className="topbar">
@@ -580,8 +599,11 @@ export default function Studio() {
           <button className={project.view.mode === "2d" ? "is-active" : ""} onClick={() => safeCommit({ type: "switch_view", mode: "2d" })}>
             <Grid2X2 size={14} /> Floor plan
           </button>
-          <button className={project.view.mode === "3d" ? "is-active" : ""} onClick={() => safeCommit({ type: "switch_view", mode: "3d" })}>
-            <Box size={15} /> 3D model
+          <button className={project.view.mode === "3d" && navigationMode === "orbit" ? "is-active" : ""} onClick={() => safeCommit({ type: "set_navigation_mode", mode: "orbit" })}>
+            <Box size={15} /> 3D Orbit
+          </button>
+          <button className={project.view.mode === "3d" && navigationMode === "walk" ? "is-active" : ""} onClick={() => safeCommit({ type: "set_navigation_mode", mode: "walk", roomId: selectedRoom?.id })}>
+            <Footprints size={15} /> Walk
           </button>
         </div>
         <div className="top-actions">
@@ -629,7 +651,7 @@ export default function Studio() {
           <div className="panel-scroll">
             <Section title="Site">
               <div className="site-line"><span>Rectangular plot</span><b>{project.plot.width}&apos; × {project.plot.length}&apos;</b></div>
-              <div className="site-line"><span>Orientation</span><b>{project.plot.orientation}</b></div>
+              <div className="site-line"><span>Front faces</span><b>{project.plot.orientation}</b></div>
             </Section>
 
             <Section title="Rooms" action={<span className="section-hint">CLICK TO PLACE</span>}>
@@ -682,7 +704,7 @@ export default function Studio() {
               <span><small>COVERAGE</small><b>{metrics.coveragePercent}<i>%</i></b></span>
             </div>
             <div className="canvas-controls">
-              {project.view.mode === "3d" && (
+              {project.view.mode === "3d" && navigationMode === "orbit" && (
                 <select
                   aria-label="Camera view"
                   value={project.view.cameraPreset}
@@ -698,7 +720,7 @@ export default function Studio() {
             </div>
           </div>
 
-          <div className={`design-viewport mode-${project.view.mode}`}>
+          <div className={`design-viewport mode-${project.view.mode} navigation-${navigationMode}`}>
             {project.view.mode === "2d" ? (
               <FloorPlan
                 project={project}
@@ -715,14 +737,14 @@ export default function Studio() {
                 onAddOpening={(kind, wallId, offset) => safeCommit({ type: "add_opening", kind, wallId, offset })}
               />
             ) : (
-              <ModelView project={project} selectedId={selectedId} canvasRef={canvasRef} onSelect={setSelectedId} />
+              <ModelView project={project} navigationMode={navigationMode} selectedId={selectedId} canvasRef={canvasRef} onSelect={setSelectedId} />
             )}
           </div>
 
           <div className="statusbar">
             <span><span className="status-dot" /> {activeFloor.name}</span>
             <span>{toolItems.find((item) => item.id === tool)?.label}</span>
-            <span className="status-message">{tool === "room" ? `Click the plot to place a ${roomType.toLowerCase()}` : tool === "door" || tool === "window" ? `Click a valid wall to place a ${tool}` : project.view.mode === "3d" ? "Drag to orbit · Shift-drag to pan · Scroll to zoom" : "Drag rooms to move · Drag orange handle to resize"}</span>
+            <span className="status-message">{project.view.mode === "3d" && navigationMode === "walk" ? "WASD / arrows to move · Click canvas to look · Walls collide, doorways pass" : tool === "room" ? `Click the plot to place a ${roomType.toLowerCase()}` : tool === "door" || tool === "window" ? `Click a valid wall to place a ${tool}` : project.view.mode === "3d" ? "Drag to orbit · Shift-drag to pan · Scroll to zoom" : "Drag rooms to move · Drag orange handle to resize"}</span>
             <span>Project v{project.version}</span>
           </div>
         </section>
@@ -766,6 +788,7 @@ export default function Studio() {
                     </Section>
                     <Section title="Element">
                       <div className="detail-list"><span>ID <code>{selectedRoom.id}</code></span><span>Floor <b>{activeFloor.name}</b></span><span>Walls <b>{project.walls.filter((wall) => wall.roomId === selectedRoom.id).length}</b></span></div>
+                      <button type="button" className="walk-inside-button" onClick={() => safeCommit({ type: "set_navigation_mode", mode: "walk", roomId: selectedRoom.id })}><Footprints size={15} /> Walk inside {selectedRoom.name}</button>
                     </Section>
                   </>
                 ) : selectedWall ? (
@@ -774,7 +797,17 @@ export default function Studio() {
                     <Section title="Openings"><div className="detail-list"><span>Doors <b>{project.openings.filter((item) => item.wallId === selectedWall.id && item.kind === "door").length}</b></span><span>Windows <b>{project.openings.filter((item) => item.wallId === selectedWall.id && item.kind === "window").length}</b></span></div></Section>
                   </>
                 ) : selectedOpening ? (
-                  <Section title="Opening"><div className="detail-list"><span>Width <b>{selectedOpening.width} ft</b></span><span>Height <b>{selectedOpening.height} ft</b></span><span>Offset <b>{selectedOpening.offset} ft</b></span><span>Wall <code>{selectedOpening.wallId}</code></span></div></Section>
+                  <>
+                    <Section title="Opening geometry">
+                      <div className="field-grid">
+                        <NumberField label="Offset" value={selectedOpening.offset} min={0} onCommit={(offset) => safeCommit({ type: "update_opening", openingId: selectedOpening.id, offset })} />
+                        <NumberField label="Width" value={selectedOpening.width} min={0.5} onCommit={(width) => safeCommit({ type: "update_opening", openingId: selectedOpening.id, width })} />
+                        <NumberField label="Height" value={selectedOpening.height} min={0.5} onCommit={(height) => safeCommit({ type: "update_opening", openingId: selectedOpening.id, height })} />
+                        {selectedOpening.kind === "window" && <NumberField label="Sill height" value={selectedOpening.sillHeight ?? 0} min={0} onCommit={(sillHeight) => safeCommit({ type: "update_opening", openingId: selectedOpening.id, sillHeight })} />}
+                      </div>
+                    </Section>
+                    <Section title="Shared state"><div className="detail-list"><span>Element ID <code>{selectedOpening.id}</code></span><span>Wall <code>{selectedOpening.wallId}</code></span><span>3D behavior <b>Real wall cutout</b></span></div></Section>
+                  </>
                 ) : selectedStair ? (
                   <Section title="Stair geometry"><div className="detail-list"><span>Width <b>{selectedStair.width} ft</b></span><span>Length <b>{selectedStair.length} ft</b></span><span>Direction <b>{selectedStair.direction}</b></span></div></Section>
                 ) : (
@@ -785,6 +818,9 @@ export default function Studio() {
                         <NumberField label="Length" value={project.plot.length} min={15} onCommit={(length) => safeCommit({ type: "set_plot", length })} />
                       </div>
                       <div className="area-result"><span>Plot area</span><b>{metrics.plotArea.toLocaleString()} sq ft</b></div>
+                    </Section>
+                    <Section title="Site orientation">
+                      <label className="field field-full"><span>Front / access edge faces</span><select value={project.plot.orientation} onChange={(event) => safeCommit({ type: "set_plot_orientation", orientation: event.target.value as Project["plot"]["orientation"] })}>{(["North", "East", "South", "West"] as const).map((orientation) => <option key={orientation}>{orientation}</option>)}</select></label>
                     </Section>
                     <Section title="Setbacks">
                       <div className="field-grid">
@@ -845,12 +881,17 @@ export default function Studio() {
               <div className="debug-section-title"><h3>Registered tools</h3><span>document.modelContext.registerTool()</span></div>
               <div className="tool-registry">
                 {(["inspect", "edit", "calculate", "present"] as const).map((category) => (
-                  <div key={category}><h4>{category}</h4>{webTools.filter((item) => item.category === category).map((item) => <button key={item.name} type="button" onClick={() => { if (item.name === "inspect_project" || item.name === "calculate_total_area" || item.name === "calculate_open_area") void invokeTool(item.name, {}); }}><code>{item.name}</code><span>{item.annotations?.readOnlyHint ? "READ" : "WRITE"}</span></button>)}</div>
+                  <div key={category}><h4>{category}</h4>{webTools.filter((item) => item.category === category).map((item) => <button key={item.name} type="button" className={debugToolName === item.name ? "is-active" : ""} onClick={() => { setDebugToolName(item.name); setDebugInput("{}"); }}><code>{item.name}</code><span>{item.annotations?.readOnlyHint ? "READ" : "WRITE"}</span></button>)}</div>
                 ))}
               </div>
             </section>
             <section className="debug-calls">
               <div className="debug-section-title"><h3>Recent calls</h3><div><button type="button" onClick={() => void invokeTool("inspect_project", {})}><Eye size={13} /> Test inspect</button><button type="button" onClick={() => void invokeTool("validate_layout", {})}><Check size={13} /> Test validate</button></div></div>
+              <div className="debug-runner">
+                <label><span>Tool</span><select aria-label="WebMCP tool" value={debugToolName} onChange={(event) => { setDebugToolName(event.target.value); setDebugInput("{}"); }}>{webTools.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}</select></label>
+                <label><span>Input JSON</span><textarea aria-label="WebMCP input JSON" spellCheck={false} value={debugInput} onChange={(event) => setDebugInput(event.target.value)} /></label>
+                <button type="button" className="run-tool-button" onClick={() => void runDebugTool()}><Sparkles size={13} /> Execute tool</button>
+              </div>
               {toolCalls.length ? <div className="call-list">{toolCalls.map((call) => <details key={call.id}><summary><span className={`call-dot ${call.status}`} /><code>{call.name}</code><b>{call.status}</b>{call.modified && <em>shared state changed</em>}<small>{call.duration !== undefined ? `${call.duration} ms` : "running"}</small></summary><pre>{compactJson(call.error ? { input: call.input, error: call.error } : { input: call.input, output: call.output })}</pre></details>)}</div> : <div className="empty-calls"><Code2 size={24} /><p>No tool calls yet</p><span>Connect a compatible agent, or test an inspection above.</span></div>}
             </section>
           </div>

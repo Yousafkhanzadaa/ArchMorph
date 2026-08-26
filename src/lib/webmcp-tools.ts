@@ -48,6 +48,11 @@ const wallId = {
   description: "Stable wall identifier returned by inspect_floor, inspect_room, or add_wall.",
 };
 
+const openingId = {
+  type: "string",
+  description: "Stable door or window identifier returned by inspect_floor.",
+};
+
 function requiredString(input: Record<string, unknown>, key: string) {
   const value = input[key];
   if (typeof value !== "string" || !value.trim()) throw new Error(`${key} is required.`);
@@ -118,6 +123,28 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
       },
       annotations: readOnly,
       execute: (input) => inspectFloor(runtime.getProject(), requiredString(input, "floorId")),
+    },
+    {
+      name: "set_plot_orientation",
+      category: "edit",
+      description:
+        "Set the cardinal direction faced by the plot's front/access edge. The site plan and north arrow update immediately without changing plot dimensions or setbacks.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          orientation: {
+            type: "string",
+            enum: ["North", "East", "South", "West"],
+            description: "Cardinal direction faced by the front/access edge of the plot.",
+          },
+        },
+        required: ["orientation"],
+        additionalProperties: false,
+      },
+      execute: (input) => runtime.perform({
+        type: "set_plot_orientation",
+        orientation: requiredString(input, "orientation") as Project["plot"]["orientation"],
+      }).result,
     },
     {
       name: "inspect_room",
@@ -312,6 +339,51 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
       }).result,
     },
     {
+      name: "update_opening",
+      category: "edit",
+      description:
+        "Move or resize a door or window using the same opening state consumed by both the 2D plan and exact 3D wall geometry. Omitted properties remain unchanged.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          openingId,
+          offset: { type: "number", description: "Opening center distance from the wall start, in feet." },
+          width: { type: "number", minimum: 0.5, maximum: 16 },
+          height: { type: "number", minimum: 0.5, maximum: 12 },
+          sillHeight: { type: "number", minimum: 0, maximum: 10 },
+        },
+        required: ["openingId"],
+        additionalProperties: false,
+      },
+      execute: (input) => runtime.perform({
+        type: "update_opening",
+        openingId: requiredString(input, "openingId"),
+        offset: optionalNumber(input, "offset"),
+        width: optionalNumber(input, "width"),
+        height: optionalNumber(input, "height"),
+        sillHeight: optionalNumber(input, "sillHeight"),
+      }).result,
+    },
+    {
+      name: "delete_opening",
+      category: "edit",
+      description:
+        "Delete a door or window from the shared plan. Its 2D symbol, real 3D wall cutout, frame or panel, and navigable opening update together.",
+      inputSchema: {
+        type: "object",
+        properties: { openingId },
+        required: ["openingId"],
+        additionalProperties: false,
+      },
+      annotations: { destructiveHint: true },
+      execute: (input) => {
+        const id = requiredString(input, "openingId");
+        const opening = runtime.getProject().openings.find((item) => item.id === id);
+        if (!opening) throw new Error(`Opening ${id} does not exist.`);
+        return runtime.perform({ type: "delete_element", elementId: id }).result;
+      },
+    },
+    {
       name: "add_stairs",
       category: "edit",
       description: "Add a simple rectangular staircase to a floor using position and dimensions in feet.",
@@ -454,6 +526,26 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
         additionalProperties: false,
       },
       execute: (input) => runtime.perform({ type: "set_camera", preset: requiredString(input, "preset") as CameraPreset }).result,
+    },
+    {
+      name: "set_navigation_mode",
+      category: "present",
+      description:
+        "Switch the live 3D canvas between exterior orbit controls and first-person walkthrough controls. Optionally enter a specific room by stable ID.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          mode: { type: "string", enum: ["orbit", "walk"] },
+          roomId: { type: "string", description: "Optional room to start inside when entering walk mode." },
+        },
+        required: ["mode"],
+        additionalProperties: false,
+      },
+      execute: (input) => runtime.perform({
+        type: "set_navigation_mode",
+        mode: requiredString(input, "mode") as "orbit" | "walk",
+        roomId: typeof input.roomId === "string" ? input.roomId : undefined,
+      }).result,
     },
     {
       name: "focus_element",

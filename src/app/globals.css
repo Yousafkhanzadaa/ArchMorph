@@ -137,12 +137,19 @@ code, kbd, pre { font-family: var(--font-geist-mono), monospace; }
 .model-view { position: relative; width: 100%; height: 100%; overflow: hidden; }
 .model-view canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; }
 .model-view canvas:active { cursor: grabbing; }
+.model-view.is-walk canvas, .model-view.is-walk canvas:active { cursor: crosshair; }
 .model-view__horizon { position: absolute; pointer-events: none; left: 0; right: 0; top: 58%; border-top: 1px solid rgb(105 113 107 / 12%); }
 .model-view__empty { position: absolute; pointer-events: none; left: 50%; top: 47%; transform: translate(-50%, -50%); text-align: center; display: grid; gap: 7px; color: #647069; }
 .model-view__empty span { font-size: 8px; letter-spacing: .25em; font-weight: 700; }
 .model-view__empty strong { color: #344139; font-size: 16px; font-weight: 600; }
 .model-view__empty p { margin: 0; font-size: 10px; }
 .model-view__help { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); pointer-events: none; font-size: 7px; letter-spacing: .12em; color: #64716a; background: rgb(249 249 246 / 78%); padding: 6px 9px; border-radius: 3px; }
+.model-view__walk-help { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); pointer-events: none; display: flex; align-items: center; gap: 9px; padding: 8px 11px; border: 1px solid rgb(255 255 255 / 38%); border-radius: 5px; background: rgb(28 39 34 / 82%); color: #f4f5f1; box-shadow: 0 6px 18px rgb(20 28 24 / 16%); backdrop-filter: blur(8px); white-space: nowrap; }
+.model-view__walk-help b { font-size: 7px; letter-spacing: .16em; color: #b7d5c2; }
+.model-view__walk-help span { font-size: 8px; color: #d9dfdb; }
+.model-view[data-pointer-locked="true"] .model-view__walk-help { opacity: .42; }
+.model-view__sync { position: absolute; top: 12px; left: 12px; pointer-events: none; display: flex; align-items: center; padding: 6px 8px; border-radius: 3px; background: rgb(249 250 247 / 80%); color: #516159; font-size: 7px; font-weight: 700; letter-spacing: .09em; backdrop-filter: blur(6px); }
+.model-view__sync span { width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: #668d74; box-shadow: 0 0 0 3px rgb(102 141 116 / 13%); }
 .statusbar { background: #f8f8f5; border-top: 1px solid var(--line-dark); display: flex; align-items: center; gap: 18px; padding: 0 12px; color: #757d78; font-size: 8px; letter-spacing: .02em; }
 .statusbar > span { white-space: nowrap; }
 .status-message { flex: 1; text-align: center; overflow: hidden; text-overflow: ellipsis; }
@@ -175,6 +182,8 @@ code, kbd, pre { font-family: var(--font-geist-mono), monospace; }
 .detail-list span { display: flex; justify-content: space-between; gap: 8px; align-items: center; font-size: 9px; color: #757d78; }
 .detail-list b { color: var(--ink); text-align: right; }
 .detail-list code { max-width: 150px; overflow: hidden; text-overflow: ellipsis; color: #55615a; font-size: 8px; }
+.walk-inside-button { width: 100%; height: 34px; margin-top: 13px; border: 1px solid #cad5cd; border-radius: 4px; background: #edf3ef; color: #405b4b; display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 9px; font-weight: 700; cursor: pointer; }
+.walk-inside-button:hover { border-color: #9fb3a5; background: #e5eee8; }
 .panel-intro { padding: 17px 15px; border-bottom: 1px solid var(--line); display: flex; gap: 9px; }
 .panel-intro h2 { font-size: 13px; margin: 0 0 4px; }
 .panel-intro p { margin: 0; font-size: 9px; color: #7d8580; line-height: 1.45; }
@@ -227,9 +236,15 @@ code, kbd, pre { font-family: var(--font-geist-mono), monospace; }
 .tool-registry h4 { margin: 0 0 4px; font-size: 7px; color: #718078; text-transform: uppercase; letter-spacing: .16em; }
 .tool-registry button { width: 100%; height: 24px; display: flex; align-items: center; justify-content: space-between; border: 0; border-bottom: 1px solid #29342e; background: transparent; color: #d5dbd7; cursor: pointer; }
 .tool-registry button:hover { background: #202a25; }
+.tool-registry button.is-active { background: #27342d; box-shadow: inset 2px 0 #7aa189; }
 .tool-registry code { font-size: 7px; overflow: hidden; text-overflow: ellipsis; }
 .tool-registry button span { font-size: 6px; color: #738178; }
 .call-list { display: grid; gap: 5px; }
+.debug-runner { display: grid; grid-template-columns: 1fr 1.35fr auto; gap: 6px; align-items: end; margin-bottom: 10px; padding: 8px; background: #121915; border: 1px solid #303b35; }
+.debug-runner label { min-width: 0; display: grid; gap: 4px; }
+.debug-runner label > span { color: #748179; font-size: 6px; letter-spacing: .12em; text-transform: uppercase; }
+.debug-runner select, .debug-runner textarea { width: 100%; height: 30px; min-width: 0; resize: none; border: 1px solid #39463f; border-radius: 2px; background: #1d2721; color: #d4ddd7; padding: 6px; font-family: var(--font-geist-mono); font-size: 7px; }
+.run-tool-button { height: 30px; border: 1px solid #678570; background: #496653; color: #f3f7f4; border-radius: 2px; display: flex; align-items: center; gap: 5px; padding: 0 9px; white-space: nowrap; font-size: 7px; cursor: pointer; }
 .call-list details { background: #202924; border: 1px solid #303c35; }
 .call-list summary { min-height: 31px; list-style: none; display: grid; grid-template-columns: 7px minmax(0, 1fr) auto auto auto; align-items: center; gap: 7px; padding: 0 8px; cursor: pointer; }
 .call-list summary::-webkit-details-marker { display: none; }

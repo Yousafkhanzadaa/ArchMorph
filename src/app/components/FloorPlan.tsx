@@ -76,6 +76,7 @@ export default function FloorPlan({
   const walls = project.walls.filter((wall) => wall.floorId === floorId);
   const openings = project.openings.filter((opening) => opening.floorId === floorId);
   const stairs = project.stairs.filter((stair) => stair.floorId === floorId);
+  const northRotation = { North: 0, East: -90, South: 180, West: 90 }[project.plot.orientation];
   const viewBox = useMemo(
     () => `${-8} ${-7} ${project.plot.width + 16} ${project.plot.length + 19}`,
     [project.plot.length, project.plot.width],
@@ -258,7 +259,7 @@ export default function FloorPlan({
         <text x={project.plot.width + 4} y={project.plot.length / 2} textAnchor="middle" transform={`rotate(90 ${project.plot.width + 4} ${project.plot.length / 2})`}>{project.plot.length}&apos;–0&quot;</text>
       </g>
 
-      <g className="north-arrow" transform={`translate(${project.plot.width + 5.3} 5)`} pointerEvents="none">
+      <g className="north-arrow" transform={`translate(${project.plot.width + 5.3} 5) rotate(${northRotation})`} pointerEvents="none">
         <text x="0" y="-2.1" textAnchor="middle">N</text>
         <path d="M0,-1.5 L-0.75,1.5 L0,0.95 L0.75,1.5 Z" fill="#25322b" />
       </g>
