@@ -1,0 +1,1001 @@
+export type Actor = "human" | "agent" | "system";
+export type ViewMode = "2d" | "3d";
+export type CameraPreset =
+  | "front"
+  | "rear"
+  | "left"
+  | "right"
+  | "top"
+  | "front-left"
+  | "front-right";
+
+export const roomTypes = [
+  "Living Room",
+  "Kitchen",
+  "Bedroom",
+  "Bathroom",
+  "Garage",
+  "Office",
+  "Dining Room",
+  "Storage",
+  "Courtyard",
+  "Custom",
+] as const;
+
+export type RoomType = (typeof roomTypes)[number];
+export type WallSide = "north" | "east" | "south" | "west";
+
+export type Plot = {
+  width: number;
+  length: number;
+  orientation: "North" | "East" | "South" | "West";
+  setbacks: { front: number; rear: number; left: number; right: number };
+};
+
+export type Floor = {
+  id: string;
+  name: string;
+  level: number;
+  elevation: number;
+  height: number;
+};
+
+export type Room = {
+  id: string;
+  floorId: string;
+  name: string;
+  type: RoomType;
+  x: number;
+  y: number;
+  width: number;
+  length: number;
+  color: string;
+};
+
+export type Wall = {
+  id: string;
+  floorId: string;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  thickness: number;
+  height: number;
+  roomId?: string;
+  side?: WallSide;
+};
+
+export type Opening = {
+  id: string;
+  floorId: string;
+  kind: "door" | "window";
+  wallId: string;
+  offset: number;
+  width: number;
+  sillHeight?: number;
+  height: number;
+};
+
+export type Stair = {
+  id: string;
+  floorId: string;
+  x: number;
+  y: number;
+  width: number;
+  length: number;
+  direction: "up" | "down";
+};
+
+export type ActivityEntry = {
+  id: string;
+  actor: Actor;
+  description: string;
+  operation: string;
+  timestamp: string;
+  version: number;
+};
+
+export type Project = {
+  id: string;
+  name: string;
+  unit: "ft";
+  plot: Plot;
+  floors: Floor[];
+  rooms: Room[];
+  walls: Wall[];
+  openings: Opening[];
+  stairs: Stair[];
+  view: {
+    mode: ViewMode;
+    activeFloorId: string;
+    cameraPreset: CameraPreset;
+    focusElementId?: string;
+  };
+  activity: ActivityEntry[];
+  version: number;
+  updatedAt: string;
+};
+
+export type ValidationIssue = {
+  id: string;
+  code:
+    | "ROOM_OVERLAP"
+    | "OUTSIDE_PLOT"
+    | "SETBACK_VIOLATION"
+    | "INVALID_OPENING"
+    | "NO_ROOM_ACCESS"
+    | "WALL_OUTSIDE_PLOT";
+  severity: "error" | "warning";
+  message: string;
+  elementIds: string[];
+  evidence: Record<string, string | number | boolean>;
+  suggestion: string;
+};
+
+export type ValidationReport = {
+  status: "pass" | "issues-found";
+  checkedAt: string;
+  projectVersion: number;
+  floorId?: string;
+  issueCount: number;
+  errors: number;
+  warnings: number;
+  issues: ValidationIssue[];
+};
+
+export type PointRef =
+  | { x: number; y: number }
+  | { elementId: string; anchor?: "center" | "start" | "end" };
+
+export type ArchitectureOperation =
+  | { type: "set_plot"; width?: number; length?: number; setbacks?: Partial<Plot["setbacks"]> }
+  | {
+      type: "create_room";
+      floorId: string;
+      name: string;
+      roomType: RoomType;
+      x: number;
+      y: number;
+      width: number;
+      length: number;
+    }
+  | { type: "move_room"; roomId: string; x: number; y: number }
+  | { type: "resize_room"; roomId: string; width: number; length: number }
+  | { type: "update_room"; roomId: string; name?: string; roomType?: RoomType }
+  | { type: "delete_room"; roomId: string }
+  | {
+      type: "add_wall";
+      floorId: string;
+      x1: number;
+      y1: number;
+      x2: number;
+      y2: number;
+      thickness?: number;
+    }
+  | {
+      type: "move_wall";
+      wallId: string;
+      dx?: number;
+      dy?: number;
+      x1?: number;
+      y1?: number;
+      x2?: number;
+      y2?: number;
+    }
+  | {
+      type: "add_opening";
+      kind: "door" | "window";
+      wallId: string;
+      offset: number;
+      width?: number;
+    }
+  | {
+      type: "add_stairs";
+      floorId: string;
+      x: number;
+      y: number;
+      width: number;
+      length: number;
+      direction?: "up" | "down";
+    }
+  | { type: "create_floor"; name?: string; height?: number }
+  | { type: "set_active_floor"; floorId: string }
+  | { type: "delete_element"; elementId: string }
+  | { type: "switch_view"; mode: ViewMode }
+  | { type: "set_camera"; preset: CameraPreset }
+  | { type: "focus_element"; elementId?: string };
+
+export type OperationOutcome = {
+  project: Project;
+  result: Record<string, unknown>;
+  description: string;
+};
+
+const roomPalette: Record<RoomType, string> = {
+  "Living Room": "#e8b39c",
+  Kitchen: "#d8d2a7",
+  Bedroom: "#a9c7c2",
+  Bathroom: "#a9bfd2",
+  Garage: "#c6c3bc",
+  Office: "#b8b0cf",
+  "Dining Room": "#d9b8a3",
+  Storage: "#c9b99e",
+  Courtyard: "#b9cba7",
+  Custom: "#c7b7ae",
+};
+
+export function createId(prefix: string) {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
+  }
+  return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function createInitialProject(): Project {
+  const now = new Date().toISOString();
+  const groundFloor: Floor = {
+    id: "floor-ground",
+    name: "Ground Floor",
+    level: 0,
+    elevation: 0,
+    height: 9,
+  };
+
+  return {
+    id: "project-archmorph-home",
+    name: "Untitled Residence",
+    unit: "ft",
+    plot: {
+      width: 30,
+      length: 60,
+      orientation: "North",
+      setbacks: { front: 10, rear: 8, left: 3, right: 3 },
+    },
+    floors: [groundFloor],
+    rooms: [],
+    walls: [],
+    openings: [],
+    stairs: [],
+    view: {
+      mode: "2d",
+      activeFloorId: groundFloor.id,
+      cameraPreset: "front-right",
+    },
+    activity: [
+      {
+        id: "activity-created",
+        actor: "system",
+        description: "30 × 60 ft residential plot created",
+        operation: "create_project",
+        timestamp: now,
+        version: 1,
+      },
+    ],
+    version: 1,
+    updatedAt: now,
+  };
+}
+
+export function round(value: number, places = 2) {
+  const factor = 10 ** places;
+  return Math.round(value * factor) / factor;
+}
+
+export function roomArea(room: Room) {
+  return round(room.width * room.length);
+}
+
+export function wallLength(wall: Wall) {
+  return Math.hypot(wall.x2 - wall.x1, wall.y2 - wall.y1);
+}
+
+function floorCoveredArea(project: Project, floorId: string) {
+  const rooms = project.rooms.filter(
+    (room) => room.floorId === floorId && room.type !== "Courtyard",
+  );
+  if (!rooms.length) return 0;
+
+  const xs = Array.from(
+    new Set(rooms.flatMap((room) => [room.x, room.x + room.width])),
+  ).sort((a, b) => a - b);
+  let area = 0;
+
+  for (let i = 0; i < xs.length - 1; i += 1) {
+    const left = xs[i];
+    const right = xs[i + 1];
+    const width = right - left;
+    if (width <= 0) continue;
+
+    const intervals = rooms
+      .filter((room) => room.x < right && room.x + room.width > left)
+      .map((room) => [room.y, room.y + room.length] as const)
+      .sort((a, b) => a[0] - b[0]);
+
+    let coveredY = 0;
+    let start = intervals[0]?.[0] ?? 0;
+    let end = intervals[0]?.[1] ?? 0;
+    for (let j = 1; j < intervals.length; j += 1) {
+      const [nextStart, nextEnd] = intervals[j];
+      if (nextStart <= end) end = Math.max(end, nextEnd);
+      else {
+        coveredY += end - start;
+        start = nextStart;
+        end = nextEnd;
+      }
+    }
+    if (intervals.length) coveredY += end - start;
+    area += width * coveredY;
+  }
+  return round(area);
+}
+
+export function projectMetrics(project: Project, floorId = project.view.activeFloorId) {
+  const plotArea = round(project.plot.width * project.plot.length);
+  const floorArea = floorCoveredArea(project, floorId);
+  const totalConstructedArea = round(
+    project.floors.reduce((sum, floor) => sum + floorCoveredArea(project, floor.id), 0),
+  );
+  const roomAreaSum = round(
+    project.rooms
+      .filter((room) => room.floorId === floorId && room.type !== "Courtyard")
+      .reduce((sum, room) => sum + roomArea(room), 0),
+  );
+  const buildableWidth = Math.max(
+    0,
+    project.plot.width - project.plot.setbacks.left - project.plot.setbacks.right,
+  );
+  const buildableLength = Math.max(
+    0,
+    project.plot.length - project.plot.setbacks.front - project.plot.setbacks.rear,
+  );
+
+  return {
+    unit: "sq ft",
+    plotArea,
+    floorCoveredArea: floorArea,
+    totalConstructedArea,
+    roomAreaSum,
+    openArea: round(Math.max(0, plotArea - floorCoveredArea(project, project.floors[0].id))),
+    coveragePercent: plotArea ? round((floorArea / plotArea) * 100, 1) : 0,
+    buildableEnvelope: {
+      x: project.plot.setbacks.left,
+      y: project.plot.setbacks.front,
+      width: buildableWidth,
+      length: buildableLength,
+      area: round(buildableWidth * buildableLength),
+    },
+  };
+}
+
+function roomWalls(room: Room, height = 9): Wall[] {
+  const base = {
+    floorId: room.floorId,
+    thickness: 0.5,
+    height,
+    roomId: room.id,
+  };
+  return [
+    {
+      ...base,
+      id: `${room.id}-wall-north`,
+      side: "north" as const,
+      x1: room.x,
+      y1: room.y,
+      x2: room.x + room.width,
+      y2: room.y,
+    },
+    {
+      ...base,
+      id: `${room.id}-wall-east`,
+      side: "east" as const,
+      x1: room.x + room.width,
+      y1: room.y,
+      x2: room.x + room.width,
+      y2: room.y + room.length,
+    },
+    {
+      ...base,
+      id: `${room.id}-wall-south`,
+      side: "south" as const,
+      x1: room.x + room.width,
+      y1: room.y + room.length,
+      x2: room.x,
+      y2: room.y + room.length,
+    },
+    {
+      ...base,
+      id: `${room.id}-wall-west`,
+      side: "west" as const,
+      x1: room.x,
+      y1: room.y + room.length,
+      x2: room.x,
+      y2: room.y,
+    },
+  ];
+}
+
+function replaceRoomWalls(project: Project, room: Room) {
+  const floor = project.floors.find((item) => item.id === room.floorId);
+  const retained = project.walls.filter((wall) => wall.roomId !== room.id);
+  return [...retained, ...roomWalls(room, floor?.height ?? 9)];
+}
+
+function assertRoomInsidePlot(project: Project, room: Pick<Room, "x" | "y" | "width" | "length">) {
+  if (room.width < 3 || room.length < 3) {
+    throw new Error("Rooms must be at least 3 × 3 ft.");
+  }
+  if (
+    room.x < 0 ||
+    room.y < 0 ||
+    room.x + room.width > project.plot.width ||
+    room.y + room.length > project.plot.length
+  ) {
+    throw new Error("The room must remain inside the plot boundary.");
+  }
+}
+
+function actorLabel(actor: Actor) {
+  if (actor === "agent") return "Agent";
+  if (actor === "human") return "You";
+  return "System";
+}
+
+function withActivity(
+  project: Project,
+  actor: Actor,
+  operation: string,
+  description: string,
+) {
+  const version = project.version + 1;
+  const updatedAt = new Date().toISOString();
+  return {
+    ...project,
+    version,
+    updatedAt,
+    activity: [
+      {
+        id: createId("activity"),
+        actor,
+        description,
+        operation,
+        timestamp: updatedAt,
+        version,
+      },
+      ...project.activity,
+    ].slice(0, 100),
+  };
+}
+
+function displayName(project: Project, id: string) {
+  return (
+    project.rooms.find((item) => item.id === id)?.name ??
+    project.walls.find((item) => item.id === id)?.side?.concat(" wall") ??
+    project.openings.find((item) => item.id === id)?.kind ??
+    project.stairs.find((item) => item.id === id)?.id ??
+    id
+  );
+}
+
+export function applyOperation(
+  current: Project,
+  operation: ArchitectureOperation,
+  actor: Actor,
+): OperationOutcome {
+  const who = actorLabel(actor);
+  let project: Project = {
+    ...current,
+    plot: { ...current.plot, setbacks: { ...current.plot.setbacks } },
+    floors: current.floors.map((item) => ({ ...item })),
+    rooms: current.rooms.map((item) => ({ ...item })),
+    walls: current.walls.map((item) => ({ ...item })),
+    openings: current.openings.map((item) => ({ ...item })),
+    stairs: current.stairs.map((item) => ({ ...item })),
+    view: { ...current.view },
+    activity: [...current.activity],
+  };
+  let result: Record<string, unknown> = {};
+  let description = "Project updated";
+
+  switch (operation.type) {
+    case "set_plot": {
+      const width = operation.width ?? project.plot.width;
+      const length = operation.length ?? project.plot.length;
+      if (width < 15 || length < 15) throw new Error("Plot dimensions must be at least 15 ft.");
+      project.plot = {
+        ...project.plot,
+        width,
+        length,
+        setbacks: { ...project.plot.setbacks, ...operation.setbacks },
+      };
+      description = `${who} updated the plot to ${width} × ${length} ft`;
+      result = { plot: project.plot, metrics: projectMetrics(project) };
+      break;
+    }
+    case "create_room": {
+      if (!project.floors.some((floor) => floor.id === operation.floorId)) {
+        throw new Error(`Floor ${operation.floorId} does not exist.`);
+      }
+      const room: Room = {
+        id: createId("room"),
+        floorId: operation.floorId,
+        name: operation.name.trim() || operation.roomType,
+        type: operation.roomType,
+        x: round(operation.x),
+        y: round(operation.y),
+        width: round(operation.width),
+        length: round(operation.length),
+        color: roomPalette[operation.roomType],
+      };
+      assertRoomInsidePlot(project, room);
+      project.rooms.push(room);
+      project.walls.push(
+        ...roomWalls(room, project.floors.find((floor) => floor.id === room.floorId)?.height),
+      );
+      project.view.focusElementId = room.id;
+      description = `${who} added ${room.name} · ${room.width} × ${room.length} ft`;
+      result = { room, area: roomArea(room), wallIds: roomWalls(room).map((wall) => wall.id) };
+      break;
+    }
+    case "move_room": {
+      const index = project.rooms.findIndex((room) => room.id === operation.roomId);
+      if (index < 0) throw new Error(`Room ${operation.roomId} does not exist.`);
+      const room = { ...project.rooms[index], x: round(operation.x), y: round(operation.y) };
+      assertRoomInsidePlot(project, room);
+      project.rooms[index] = room;
+      project.walls = replaceRoomWalls(project, room);
+      project.view.focusElementId = room.id;
+      description = `${who} moved ${room.name}`;
+      result = { room, area: roomArea(room) };
+      break;
+    }
+    case "resize_room": {
+      const index = project.rooms.findIndex((room) => room.id === operation.roomId);
+      if (index < 0) throw new Error(`Room ${operation.roomId} does not exist.`);
+      const room = {
+        ...project.rooms[index],
+        width: round(operation.width),
+        length: round(operation.length),
+      };
+      assertRoomInsidePlot(project, room);
+      project.rooms[index] = room;
+      project.walls = replaceRoomWalls(project, room);
+      project.view.focusElementId = room.id;
+      description = `${who} resized ${room.name} to ${room.width} × ${room.length} ft`;
+      result = { room, area: roomArea(room), metrics: projectMetrics(project, room.floorId) };
+      break;
+    }
+    case "update_room": {
+      const index = project.rooms.findIndex((room) => room.id === operation.roomId);
+      if (index < 0) throw new Error(`Room ${operation.roomId} does not exist.`);
+      const previous = project.rooms[index];
+      const room = {
+        ...previous,
+        name: operation.name?.trim() || previous.name,
+        type: operation.roomType ?? previous.type,
+        color: operation.roomType ? roomPalette[operation.roomType] : previous.color,
+      };
+      project.rooms[index] = room;
+      description = `${who} updated ${room.name}`;
+      result = { room };
+      break;
+    }
+    case "delete_room": {
+      const room = project.rooms.find((item) => item.id === operation.roomId);
+      if (!room) throw new Error(`Room ${operation.roomId} does not exist.`);
+      const roomWallIds = new Set(project.walls.filter((wall) => wall.roomId === room.id).map((wall) => wall.id));
+      project.rooms = project.rooms.filter((item) => item.id !== room.id);
+      project.walls = project.walls.filter((wall) => wall.roomId !== room.id);
+      project.openings = project.openings.filter((opening) => !roomWallIds.has(opening.wallId));
+      if (project.view.focusElementId === room.id) project.view.focusElementId = undefined;
+      description = `${who} deleted ${room.name}`;
+      result = { deletedRoomId: room.id, name: room.name };
+      break;
+    }
+    case "add_wall": {
+      if (!project.floors.some((floor) => floor.id === operation.floorId)) {
+        throw new Error(`Floor ${operation.floorId} does not exist.`);
+      }
+      const wall: Wall = {
+        id: createId("wall"),
+        floorId: operation.floorId,
+        x1: round(operation.x1),
+        y1: round(operation.y1),
+        x2: round(operation.x2),
+        y2: round(operation.y2),
+        thickness: operation.thickness ?? 0.5,
+        height: project.floors.find((floor) => floor.id === operation.floorId)?.height ?? 9,
+      };
+      if (wallLength(wall) < 1) throw new Error("A wall must be at least 1 ft long.");
+      project.walls.push(wall);
+      project.view.focusElementId = wall.id;
+      description = `${who} added a ${round(wallLength(wall), 1)} ft wall`;
+      result = { wall, length: round(wallLength(wall), 2) };
+      break;
+    }
+    case "move_wall": {
+      const index = project.walls.findIndex((wall) => wall.id === operation.wallId);
+      if (index < 0) throw new Error(`Wall ${operation.wallId} does not exist.`);
+      const previous = project.walls[index];
+      if (previous.roomId) {
+        throw new Error("This wall is controlled by its room. Move or resize the room instead.");
+      }
+      const dx = operation.dx ?? 0;
+      const dy = operation.dy ?? 0;
+      const wall = {
+        ...previous,
+        x1: round(operation.x1 ?? previous.x1 + dx),
+        y1: round(operation.y1 ?? previous.y1 + dy),
+        x2: round(operation.x2 ?? previous.x2 + dx),
+        y2: round(operation.y2 ?? previous.y2 + dy),
+      };
+      project.walls[index] = wall;
+      project.view.focusElementId = wall.id;
+      description = `${who} moved a wall`;
+      result = { wall, length: round(wallLength(wall), 2) };
+      break;
+    }
+    case "add_opening": {
+      const wall = project.walls.find((item) => item.id === operation.wallId);
+      if (!wall) throw new Error(`Wall ${operation.wallId} does not exist.`);
+      const width = operation.width ?? (operation.kind === "door" ? 3 : 4);
+      const length = wallLength(wall);
+      if (width <= 0 || operation.offset < width / 2 || operation.offset > length - width / 2) {
+        throw new Error(`The ${operation.kind} does not fit on this ${round(length, 1)} ft wall.`);
+      }
+      const opening: Opening = {
+        id: createId(operation.kind),
+        floorId: wall.floorId,
+        kind: operation.kind,
+        wallId: wall.id,
+        offset: round(operation.offset),
+        width: round(width),
+        height: operation.kind === "door" ? 7 : 4,
+        sillHeight: operation.kind === "window" ? 3 : 0,
+      };
+      project.openings.push(opening);
+      project.view.focusElementId = opening.id;
+      description = `${who} added a ${opening.width} ft ${opening.kind}`;
+      result = { opening, wallLength: round(length, 2) };
+      break;
+    }
+    case "add_stairs": {
+      const stair: Stair = {
+        id: createId("stair"),
+        floorId: operation.floorId,
+        x: round(operation.x),
+        y: round(operation.y),
+        width: round(operation.width),
+        length: round(operation.length),
+        direction: operation.direction ?? "up",
+      };
+      if (stair.width < 3 || stair.length < 6) throw new Error("Stairs must be at least 3 × 6 ft.");
+      if (
+        stair.x < 0 || stair.y < 0 ||
+        stair.x + stair.width > project.plot.width ||
+        stair.y + stair.length > project.plot.length
+      ) throw new Error("The staircase must remain inside the plot.");
+      project.stairs.push(stair);
+      project.view.focusElementId = stair.id;
+      description = `${who} added a staircase`;
+      result = { stair };
+      break;
+    }
+    case "create_floor": {
+      const previous = [...project.floors].sort((a, b) => b.level - a.level)[0];
+      const level = (previous?.level ?? -1) + 1;
+      const floor: Floor = {
+        id: createId("floor"),
+        name: operation.name?.trim() || (level === 1 ? "First Floor" : `Floor ${level + 1}`),
+        level,
+        elevation: round((previous?.elevation ?? 0) + (previous?.height ?? 9)),
+        height: operation.height ?? 9,
+      };
+      project.floors.push(floor);
+      project.view.activeFloorId = floor.id;
+      description = `${who} created ${floor.name}`;
+      result = { floor };
+      break;
+    }
+    case "set_active_floor": {
+      const floor = project.floors.find((item) => item.id === operation.floorId);
+      if (!floor) throw new Error(`Floor ${operation.floorId} does not exist.`);
+      project.view.activeFloorId = floor.id;
+      description = `${who} opened ${floor.name}`;
+      result = { floor, view: project.view };
+      break;
+    }
+    case "delete_element": {
+      const wall = project.walls.find((item) => item.id === operation.elementId);
+      const opening = project.openings.find((item) => item.id === operation.elementId);
+      const stair = project.stairs.find((item) => item.id === operation.elementId);
+      if (wall?.roomId) throw new Error("Room boundary walls are deleted with their room.");
+      if (!wall && !opening && !stair) throw new Error("This element cannot be deleted.");
+      project.walls = project.walls.filter((item) => item.id !== operation.elementId);
+      project.openings = project.openings.filter(
+        (item) => item.id !== operation.elementId && item.wallId !== operation.elementId,
+      );
+      project.stairs = project.stairs.filter((item) => item.id !== operation.elementId);
+      description = `${who} deleted ${displayName(current, operation.elementId)}`;
+      result = { deletedElementId: operation.elementId };
+      break;
+    }
+    case "switch_view": {
+      project.view.mode = operation.mode;
+      description = `${who} switched to ${operation.mode === "2d" ? "floor plan" : "3D"} view`;
+      result = { view: project.view };
+      break;
+    }
+    case "set_camera": {
+      project.view.mode = "3d";
+      project.view.cameraPreset = operation.preset;
+      description = `${who} set the camera to ${operation.preset}`;
+      result = { view: project.view };
+      break;
+    }
+    case "focus_element": {
+      if (operation.elementId) {
+        const exists = [project.rooms, project.walls, project.openings, project.stairs]
+          .some((items) => items.some((item) => item.id === operation.elementId));
+        if (!exists) throw new Error(`Element ${operation.elementId} does not exist.`);
+      }
+      project.view.focusElementId = operation.elementId;
+      description = operation.elementId
+        ? `${who} focused ${displayName(project, operation.elementId)}`
+        : `${who} focused the whole project`;
+      result = { focusElementId: operation.elementId ?? null, view: project.view };
+      break;
+    }
+  }
+
+  project = withActivity(project, actor, operation.type, description);
+  return { project, result: { ...result, projectVersion: project.version }, description };
+}
+
+function rectanglesOverlap(a: Room, b: Room) {
+  const overlapWidth = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+  const overlapLength = Math.min(a.y + a.length, b.y + b.length) - Math.max(a.y, b.y);
+  return {
+    overlaps: overlapWidth > 0.01 && overlapLength > 0.01,
+    area: round(Math.max(0, overlapWidth) * Math.max(0, overlapLength)),
+  };
+}
+
+export function validateLayout(project: Project, floorId?: string): ValidationReport {
+  const targetFloors = floorId ? [floorId] : project.floors.map((floor) => floor.id);
+  const rooms = project.rooms.filter((room) => targetFloors.includes(room.floorId));
+  const walls = project.walls.filter((wall) => targetFloors.includes(wall.floorId));
+  const issues: ValidationIssue[] = [];
+  const { plot } = project;
+  const bounds = {
+    left: plot.setbacks.left,
+    right: plot.width - plot.setbacks.right,
+    front: plot.setbacks.front,
+    rear: plot.length - plot.setbacks.rear,
+  };
+
+  for (const room of rooms) {
+    const outside =
+      room.x < 0 || room.y < 0 ||
+      room.x + room.width > plot.width || room.y + room.length > plot.length;
+    if (outside) {
+      issues.push({
+        id: createId("issue"),
+        code: "OUTSIDE_PLOT",
+        severity: "error",
+        message: `${room.name} extends beyond the plot boundary.`,
+        elementIds: [room.id],
+        evidence: { x: room.x, y: room.y, width: room.width, length: room.length },
+        suggestion: "Move or resize the room so its full footprint is inside the plot.",
+      });
+    }
+    const setbackViolation =
+      room.x < bounds.left || room.y < bounds.front ||
+      room.x + room.width > bounds.right || room.y + room.length > bounds.rear;
+    if (setbackViolation && room.type !== "Courtyard") {
+      issues.push({
+        id: createId("issue"),
+        code: "SETBACK_VIOLATION",
+        severity: "warning",
+        message: `${room.name} crosses the current buildable envelope.`,
+        elementIds: [room.id],
+        evidence: { ...bounds },
+        suggestion: "Move the room within the dashed setback boundary or revise the project setbacks.",
+      });
+    }
+
+    const wallIds = new Set(walls.filter((wall) => wall.roomId === room.id).map((wall) => wall.id));
+    const roomDoors = project.openings.filter(
+      (opening) => opening.kind === "door" && wallIds.has(opening.wallId),
+    );
+    if (!roomDoors.length && !["Courtyard", "Storage"].includes(room.type)) {
+      issues.push({
+        id: createId("issue"),
+        code: "NO_ROOM_ACCESS",
+        severity: "warning",
+        message: `${room.name} has no placed door.`,
+        elementIds: [room.id],
+        evidence: { doorCount: 0 },
+        suggestion: "Place a door on one of the room walls and confirm its circulation connection.",
+      });
+    }
+  }
+
+  for (let i = 0; i < rooms.length; i += 1) {
+    for (let j = i + 1; j < rooms.length; j += 1) {
+      if (rooms[i].floorId !== rooms[j].floorId) continue;
+      const overlap = rectanglesOverlap(rooms[i], rooms[j]);
+      if (overlap.overlaps) {
+        issues.push({
+          id: createId("issue"),
+          code: "ROOM_OVERLAP",
+          severity: "error",
+          message: `${rooms[i].name} overlaps ${rooms[j].name} by ${overlap.area} sq ft.`,
+          elementIds: [rooms[i].id, rooms[j].id],
+          evidence: { overlapArea: overlap.area },
+          suggestion: "Move or resize one of the rooms until their footprints no longer overlap.",
+        });
+      }
+    }
+  }
+
+  for (const wall of walls) {
+    const outside = [wall.x1, wall.x2].some((x) => x < 0 || x > plot.width) ||
+      [wall.y1, wall.y2].some((y) => y < 0 || y > plot.length);
+    if (outside) {
+      issues.push({
+        id: createId("issue"),
+        code: "WALL_OUTSIDE_PLOT",
+        severity: "error",
+        message: "A wall extends outside the plot.",
+        elementIds: [wall.id],
+        evidence: { x1: wall.x1, y1: wall.y1, x2: wall.x2, y2: wall.y2 },
+        suggestion: "Move the wall endpoints inside the plot boundary.",
+      });
+    }
+  }
+
+  for (const opening of project.openings.filter((item) => targetFloors.includes(item.floorId))) {
+    const wall = project.walls.find((item) => item.id === opening.wallId);
+    const length = wall ? wallLength(wall) : 0;
+    if (!wall || opening.offset < opening.width / 2 || opening.offset > length - opening.width / 2) {
+      issues.push({
+        id: createId("issue"),
+        code: "INVALID_OPENING",
+        severity: "error",
+        message: `A ${opening.kind} is not positioned on a valid wall segment.`,
+        elementIds: [opening.id, opening.wallId],
+        evidence: { offset: opening.offset, width: opening.width, wallLength: round(length) },
+        suggestion: `Reposition the ${opening.kind} within the wall or select another wall.`,
+      });
+    }
+  }
+
+  const errors = issues.filter((issue) => issue.severity === "error").length;
+  const warnings = issues.length - errors;
+  return {
+    status: issues.length ? "issues-found" : "pass",
+    checkedAt: new Date().toISOString(),
+    projectVersion: project.version,
+    floorId,
+    issueCount: issues.length,
+    errors,
+    warnings,
+    issues,
+  };
+}
+
+export function inspectRoom(project: Project, roomId: string) {
+  const room = project.rooms.find((item) => item.id === roomId);
+  if (!room) throw new Error(`Room ${roomId} does not exist.`);
+  const walls = project.walls.filter((wall) => wall.roomId === room.id);
+  const wallIds = new Set(walls.map((wall) => wall.id));
+  const openings = project.openings.filter((opening) => wallIds.has(opening.wallId));
+  const adjacentRooms = project.rooms
+    .filter((other) => other.id !== room.id && other.floorId === room.floorId)
+    .filter((other) => {
+      const touchesX = Math.abs(room.x + room.width - other.x) < 0.05 ||
+        Math.abs(other.x + other.width - room.x) < 0.05;
+      const overlapsY = Math.min(room.y + room.length, other.y + other.length) - Math.max(room.y, other.y) > 0;
+      const touchesY = Math.abs(room.y + room.length - other.y) < 0.05 ||
+        Math.abs(other.y + other.length - room.y) < 0.05;
+      const overlapsX = Math.min(room.x + room.width, other.x + other.width) - Math.max(room.x, other.x) > 0;
+      return (touchesX && overlapsY) || (touchesY && overlapsX);
+    })
+    .map((other) => ({ id: other.id, name: other.name }));
+
+  return { room, area: roomArea(room), perimeter: round(2 * (room.width + room.length)), walls, openings, adjacentRooms };
+}
+
+export function inspectFloor(project: Project, floorId: string) {
+  const floor = project.floors.find((item) => item.id === floorId);
+  if (!floor) throw new Error(`Floor ${floorId} does not exist.`);
+  return {
+    floor,
+    rooms: project.rooms.filter((room) => room.floorId === floorId),
+    walls: project.walls.filter((wall) => wall.floorId === floorId),
+    openings: project.openings.filter((opening) => opening.floorId === floorId),
+    stairs: project.stairs.filter((stair) => stair.floorId === floorId),
+    metrics: projectMetrics(project, floorId),
+    validation: validateLayout(project, floorId),
+  };
+}
+
+function elementPoint(project: Project, ref: PointRef) {
+  if ("x" in ref) return { x: ref.x, y: ref.y };
+  if (ref.elementId === "plot") return { x: project.plot.width / 2, y: project.plot.length / 2 };
+  const room = project.rooms.find((item) => item.id === ref.elementId);
+  if (room) return { x: room.x + room.width / 2, y: room.y + room.length / 2 };
+  const wall = project.walls.find((item) => item.id === ref.elementId);
+  if (wall) {
+    if (ref.anchor === "start") return { x: wall.x1, y: wall.y1 };
+    if (ref.anchor === "end") return { x: wall.x2, y: wall.y2 };
+    return { x: (wall.x1 + wall.x2) / 2, y: (wall.y1 + wall.y2) / 2 };
+  }
+  const stair = project.stairs.find((item) => item.id === ref.elementId);
+  if (stair) return { x: stair.x + stair.width / 2, y: stair.y + stair.length / 2 };
+  const opening = project.openings.find((item) => item.id === ref.elementId);
+  if (opening) {
+    const openingWall = project.walls.find((item) => item.id === opening.wallId);
+    if (openingWall) {
+      const length = wallLength(openingWall);
+      const ratio = length ? opening.offset / length : 0;
+      return {
+        x: openingWall.x1 + (openingWall.x2 - openingWall.x1) * ratio,
+        y: openingWall.y1 + (openingWall.y2 - openingWall.y1) * ratio,
+      };
+    }
+  }
+  throw new Error(`Element ${ref.elementId} does not exist.`);
+}
+
+export function measureDistance(project: Project, from: PointRef, to: PointRef) {
+  const start = elementPoint(project, from);
+  const end = elementPoint(project, to);
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  return {
+    from: start,
+    to: end,
+    distance: round(Math.hypot(dx, dy)),
+    horizontal: round(Math.abs(dx)),
+    vertical: round(Math.abs(dy)),
+    unit: "ft",
+  };
+}
+
+export function projectInspection(project: Project) {
+  return {
+    project: {
+      id: project.id,
+      name: project.name,
+      version: project.version,
+      unit: project.unit,
+      updatedAt: project.updatedAt,
+    },
+    plot: project.plot,
+    floors: project.floors,
+    counts: {
+      floors: project.floors.length,
+      rooms: project.rooms.length,
+      walls: project.walls.length,
+      doors: project.openings.filter((opening) => opening.kind === "door").length,
+      windows: project.openings.filter((opening) => opening.kind === "window").length,
+      stairs: project.stairs.length,
+    },
+    metrics: projectMetrics(project),
+    currentView: project.view,
+    validationSummary: (() => {
+      const report = validateLayout(project);
+      return { status: report.status, issues: report.issueCount, errors: report.errors, warnings: report.warnings };
+    })(),
+    floorsDetail: project.floors.map((floor) => ({
+      id: floor.id,
+      name: floor.name,
+      roomIds: project.rooms.filter((room) => room.floorId === floor.id).map((room) => room.id),
+    })),
+  };
+}
+
+export function cloneProject(project: Project): Project {
+  return JSON.parse(JSON.stringify(project)) as Project;
+}
