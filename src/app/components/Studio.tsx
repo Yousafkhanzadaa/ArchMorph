@@ -291,6 +291,9 @@ export default function Studio() {
         futureRef.current = [];
         projectRef.current = outcome.project;
         setProject(outcome.project);
+        if (outcome.project.view.focusElementId !== previous.view.focusElementId) {
+          setSelectedId(outcome.project.view.focusElementId);
+        }
         setPastCount(pastRef.current.length);
         setFutureCount(0);
         setValidation(validateLayout(outcome.project));

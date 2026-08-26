@@ -127,6 +127,7 @@ export type ValidationIssue = {
     | "SETBACK_VIOLATION"
     | "INVALID_OPENING"
     | "NO_ROOM_ACCESS"
+    | "OPENING_OVERLAP"
     | "WALL_OUTSIDE_PLOT";
   severity: "error" | "warning";
   message: string;
@@ -301,6 +302,72 @@ export function roomArea(room: Room) {
 
 export function wallLength(wall: Wall) {
   return Math.hypot(wall.x2 - wall.x1, wall.y2 - wall.y1);
+}
+
+type Segment = { x1: number; y1: number; x2: number; y2: number };
+
+function openingSegment(wall: Wall, opening: Opening): Segment {
+  const length = wallLength(wall);
+  const ux = length ? (wall.x2 - wall.x1) / length : 0;
+  const uy = length ? (wall.y2 - wall.y1) / length : 0;
+  const centerX = wall.x1 + ux * opening.offset;
+  const centerY = wall.y1 + uy * opening.offset;
+  return {
+    x1: centerX - ux * opening.width / 2,
+    y1: centerY - uy * opening.width / 2,
+    x2: centerX + ux * opening.width / 2,
+    y2: centerY + uy * opening.width / 2,
+  };
+}
+
+function collinearOverlapLength(first: Segment, second: Segment) {
+  const length = Math.hypot(first.x2 - first.x1, first.y2 - first.y1);
+  const secondLength = Math.hypot(second.x2 - second.x1, second.y2 - second.y1);
+  if (!length || !secondLength) return 0;
+  const ux = (first.x2 - first.x1) / length;
+  const uy = (first.y2 - first.y1) / length;
+  const vx = (second.x2 - second.x1) / secondLength;
+  const vy = (second.y2 - second.y1) / secondLength;
+  if (Math.abs(ux * vy - uy * vx) > 0.01) return 0;
+  const lineDistance = Math.abs((second.x1 - first.x1) * -uy + (second.y1 - first.y1) * ux);
+  if (lineDistance > 0.05) return 0;
+  const t1 = (second.x1 - first.x1) * ux + (second.y1 - first.y1) * uy;
+  const t2 = (second.x2 - first.x1) * ux + (second.y2 - first.y1) * uy;
+  return Math.max(0, Math.min(length, Math.max(t1, t2)) - Math.max(0, Math.min(t1, t2)));
+}
+
+function openingTouchesWall(project: Project, opening: Opening, wall: Wall) {
+  const sourceWall = project.walls.find((item) => item.id === opening.wallId);
+  return Boolean(sourceWall && sourceWall.floorId === wall.floorId && collinearOverlapLength(wall, openingSegment(sourceWall, opening)) > 0.05);
+}
+
+function overlappingOpening(project: Project, candidate: Opening, ignoredId?: string) {
+  const wall = project.walls.find((item) => item.id === candidate.wallId);
+  if (!wall) return undefined;
+  const segment = openingSegment(wall, candidate);
+  return project.openings.find((opening) => {
+    if (opening.id === ignoredId || opening.floorId !== candidate.floorId) return false;
+    const otherWall = project.walls.find((item) => item.id === opening.wallId);
+    return Boolean(otherWall && collinearOverlapLength(segment, openingSegment(otherWall, opening)) > 0.05);
+  });
+}
+
+function assertOpeningPlacement(project: Project, opening: Opening, ignoredId?: string) {
+  const wall = project.walls.find((item) => item.id === opening.wallId);
+  if (!wall) throw new Error(`Wall ${opening.wallId} does not exist.`);
+  const length = wallLength(wall);
+  if (opening.width <= 0 || opening.offset < opening.width / 2 || opening.offset > length - opening.width / 2) {
+    throw new Error(`The ${opening.kind} does not fit on this ${round(length, 1)} ft wall.`);
+  }
+  if ((opening.sillHeight ?? 0) < 0 || opening.height <= 0 || (opening.sillHeight ?? 0) + opening.height > wall.height) {
+    throw new Error(`The ${opening.kind} must fit within the ${wall.height} ft wall height.`);
+  }
+  const conflict = overlappingOpening(project, opening, ignoredId);
+  if (conflict) throw new Error(`The ${opening.kind} overlaps an existing ${conflict.kind}. Reposition or resize it first.`);
+}
+
+function assertAllOpeningsValid(project: Project) {
+  project.openings.forEach((opening) => assertOpeningPlacement(project, opening, opening.id));
 }
 
 function floorCoveredArea(project: Project, floorId: string) {
@@ -563,6 +630,7 @@ export function applyOperation(
       assertRoomInsidePlot(project, room);
       project.rooms[index] = room;
       project.walls = replaceRoomWalls(project, room);
+      assertAllOpeningsValid(project);
       project.view.focusElementId = room.id;
       description = `${who} moved ${room.name}`;
       result = { room, area: roomArea(room) };
@@ -579,6 +647,7 @@ export function applyOperation(
       assertRoomInsidePlot(project, room);
       project.rooms[index] = room;
       project.walls = replaceRoomWalls(project, room);
+      assertAllOpeningsValid(project);
       project.view.focusElementId = room.id;
       description = `${who} resized ${room.name} to ${room.width} × ${room.length} ft`;
       result = { room, area: roomArea(room), metrics: projectMetrics(project, room.floorId) };
@@ -649,6 +718,7 @@ export function applyOperation(
         y2: round(operation.y2 ?? previous.y2 + dy),
       };
       project.walls[index] = wall;
+      assertAllOpeningsValid(project);
       project.view.focusElementId = wall.id;
       description = `${who} moved a wall`;
       result = { wall, length: round(wallLength(wall), 2) };
@@ -672,6 +742,7 @@ export function applyOperation(
         height: operation.kind === "door" ? 7 : 4,
         sillHeight: operation.kind === "window" ? 3 : 0,
       };
+      assertOpeningPlacement(project, opening);
       project.openings.push(opening);
       project.view.focusElementId = opening.id;
       description = `${who} added a ${opening.width} ft ${opening.kind}`;
@@ -692,15 +763,7 @@ export function applyOperation(
         sillHeight: round(operation.sillHeight ?? previous.sillHeight ?? 0),
       };
       const length = wallLength(wall);
-      if (
-        opening.width <= 0 || opening.height <= 0 || opening.offset < opening.width / 2 ||
-        opening.offset > length - opening.width / 2
-      ) {
-        throw new Error(`The ${opening.kind} does not fit on this ${round(length, 1)} ft wall.`);
-      }
-      if ((opening.sillHeight ?? 0) < 0 || (opening.sillHeight ?? 0) + opening.height > wall.height) {
-        throw new Error(`The ${opening.kind} must fit within the ${wall.height} ft wall height.`);
-      }
+      assertOpeningPlacement(project, opening, opening.id);
       project.openings[index] = opening;
       project.view.focusElementId = opening.id;
       description = `${who} updated a ${opening.width} ft ${opening.kind}`;
@@ -869,9 +932,9 @@ export function validateLayout(project: Project, floorId?: string): ValidationRe
       });
     }
 
-    const wallIds = new Set(walls.filter((wall) => wall.roomId === room.id).map((wall) => wall.id));
+    const roomWalls = walls.filter((wall) => wall.roomId === room.id);
     const roomDoors = project.openings.filter(
-      (opening) => opening.kind === "door" && wallIds.has(opening.wallId),
+      (opening) => opening.kind === "door" && roomWalls.some((wall) => openingTouchesWall(project, opening, wall)),
     );
     if (!roomDoors.length && !["Courtyard", "Storage"].includes(room.type)) {
       issues.push({
@@ -923,15 +986,39 @@ export function validateLayout(project: Project, floorId?: string): ValidationRe
   for (const opening of project.openings.filter((item) => targetFloors.includes(item.floorId))) {
     const wall = project.walls.find((item) => item.id === opening.wallId);
     const length = wall ? wallLength(wall) : 0;
-    if (!wall || opening.offset < opening.width / 2 || opening.offset > length - opening.width / 2) {
+    const verticalInvalid = Boolean(wall && ((opening.sillHeight ?? 0) < 0 || opening.height <= 0 || (opening.sillHeight ?? 0) + opening.height > wall.height));
+    if (!wall || opening.offset < opening.width / 2 || opening.offset > length - opening.width / 2 || verticalInvalid) {
       issues.push({
         id: createId("issue"),
         code: "INVALID_OPENING",
         severity: "error",
         message: `A ${opening.kind} is not positioned on a valid wall segment.`,
         elementIds: [opening.id, opening.wallId],
-        evidence: { offset: opening.offset, width: opening.width, wallLength: round(length) },
+        evidence: { offset: opening.offset, width: opening.width, wallLength: round(length), height: opening.height, sillHeight: opening.sillHeight ?? 0, wallHeight: wall?.height ?? 0 },
         suggestion: `Reposition the ${opening.kind} within the wall or select another wall.`,
+      });
+    }
+  }
+
+  const targetOpenings = project.openings.filter((item) => targetFloors.includes(item.floorId));
+  for (let firstIndex = 0; firstIndex < targetOpenings.length; firstIndex += 1) {
+    const first = targetOpenings[firstIndex];
+    const firstWall = project.walls.find((item) => item.id === first.wallId);
+    if (!firstWall) continue;
+    for (let secondIndex = firstIndex + 1; secondIndex < targetOpenings.length; secondIndex += 1) {
+      const second = targetOpenings[secondIndex];
+      const secondWall = project.walls.find((item) => item.id === second.wallId);
+      if (!secondWall || first.floorId !== second.floorId) continue;
+      const overlap = collinearOverlapLength(openingSegment(firstWall, first), openingSegment(secondWall, second));
+      if (overlap <= 0.05) continue;
+      issues.push({
+        id: createId("issue"),
+        code: "OPENING_OVERLAP",
+        severity: "error",
+        message: `A ${first.kind} overlaps a ${second.kind} by ${round(overlap, 2)} ft.`,
+        elementIds: [first.id, second.id],
+        evidence: { overlapLength: round(overlap, 2), firstWallId: first.wallId, secondWallId: second.wallId },
+        suggestion: "Move or resize one opening so each wall cutout has its own clear span.",
       });
     }
   }
@@ -954,8 +1041,7 @@ export function inspectRoom(project: Project, roomId: string) {
   const room = project.rooms.find((item) => item.id === roomId);
   if (!room) throw new Error(`Room ${roomId} does not exist.`);
   const walls = project.walls.filter((wall) => wall.roomId === room.id);
-  const wallIds = new Set(walls.map((wall) => wall.id));
-  const openings = project.openings.filter((opening) => wallIds.has(opening.wallId));
+  const openings = project.openings.filter((opening) => walls.some((wall) => openingTouchesWall(project, opening, wall)));
   const adjacentRooms = project.rooms
     .filter((other) => other.id !== room.id && other.floorId === room.floorId)
     .filter((other) => {

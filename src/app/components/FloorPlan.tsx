@@ -182,12 +182,16 @@ export default function FloorPlan({
 
   const finishPointerAction = () => {
     if (!drag) return;
-    if (drag.kind === "move-room") onMoveRoom(drag.id, { x: drag.room.x, y: drag.room.y });
-    if (drag.kind === "resize-room") onResizeRoom(drag.id, drag.room.width, drag.room.length);
+    if (drag.kind === "move-room" && (drag.room.x !== drag.origin.x || drag.room.y !== drag.origin.y)) {
+      onMoveRoom(drag.id, { x: drag.room.x, y: drag.room.y });
+    }
+    if (drag.kind === "resize-room" && (drag.room.width !== project.rooms.find((room) => room.id === drag.id)?.width || drag.room.length !== project.rooms.find((room) => room.id === drag.id)?.length)) {
+      onResizeRoom(drag.id, drag.room.width, drag.room.length);
+    }
     if (drag.kind === "draw-wall" && Math.hypot(drag.current.x - drag.start.x, drag.current.y - drag.start.y) >= 1) {
       onAddWall(drag.start, drag.current);
     }
-    if (drag.kind === "move-wall") {
+    if (drag.kind === "move-wall" && (drag.wall.x1 !== drag.origin.x1 || drag.wall.y1 !== drag.origin.y1 || drag.wall.x2 !== drag.origin.x2 || drag.wall.y2 !== drag.origin.y2)) {
       onMoveWall(drag.id, drag.wall.x1 - drag.origin.x1, drag.wall.y1 - drag.origin.y1);
     }
     if (drag.kind === "measure") setMeasurement({ start: drag.start, end: drag.current });
