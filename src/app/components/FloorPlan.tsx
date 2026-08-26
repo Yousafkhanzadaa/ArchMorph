@@ -69,6 +69,7 @@ export default function FloorPlan({
   onAddOpening,
 }: FloorPlanProps) {
   const [drag, setDrag] = useState<DragState>();
+  const [alignmentGuides, setAlignmentGuides] = useState<{ vertical?: number; horizontal?: number }>({});
   const [measurement, setMeasurement] = useState<{ start: Point; end: Point }>();
   const localSvgRef = useRef<SVGSVGElement | null>(null);
   const floorId = project.view.activeFloorId;
@@ -102,6 +103,43 @@ export default function FloorPlan({
     if (drag?.kind === "move-room" && drag.id === room.id) return drag.room;
     if (drag?.kind === "resize-room" && drag.id === room.id) return drag.room;
     return room;
+  };
+
+  const alignRoom = (room: Room) => {
+    const otherRooms = rooms.filter((item) => item.id !== room.id);
+    const verticalEdges = otherRooms.flatMap((item) => [item.x, item.x + item.width]);
+    const horizontalEdges = otherRooms.flatMap((item) => [item.y, item.y + item.length]);
+    let x = room.x;
+    let y = room.y;
+    let vertical: number | undefined;
+    let horizontal: number | undefined;
+    const xMatches = verticalEdges.flatMap((edge) => [
+      { delta: edge - room.x, edge },
+      { delta: edge - (room.x + room.width), edge },
+    ]).filter((item) => Math.abs(item.delta) <= 0.4).sort((a, b) => Math.abs(a.delta) - Math.abs(b.delta));
+    const yMatches = horizontalEdges.flatMap((edge) => [
+      { delta: edge - room.y, edge },
+      { delta: edge - (room.y + room.length), edge },
+    ]).filter((item) => Math.abs(item.delta) <= 0.4).sort((a, b) => Math.abs(a.delta) - Math.abs(b.delta));
+    if (xMatches[0]) { x += xMatches[0].delta; vertical = xMatches[0].edge; }
+    if (yMatches[0]) { y += yMatches[0].delta; horizontal = yMatches[0].edge; }
+    setAlignmentGuides({ vertical, horizontal });
+    return { ...room, x: snap(x), y: snap(y) };
+  };
+
+  const alignWallPoint = (point: Point, start: Point) => {
+    const endpoints = walls.flatMap((wall) => [{ x: wall.x1, y: wall.y1 }, { x: wall.x2, y: wall.y2 }]);
+    const nearest = endpoints
+      .map((endpoint) => ({ endpoint, distance: Math.hypot(endpoint.x - point.x, endpoint.y - point.y) }))
+      .filter((item) => item.distance <= 0.55)
+      .sort((a, b) => a.distance - b.distance)[0];
+    let current = nearest?.endpoint ?? point;
+    const dx = current.x - start.x;
+    const dy = current.y - start.y;
+    if (Math.abs(dx) > Math.abs(dy) * 2.5) current = { x: current.x, y: start.y };
+    else if (Math.abs(dy) > Math.abs(dx) * 2.5) current = { x: start.x, y: current.y };
+    setAlignmentGuides({ vertical: current.x === start.x ? start.x : undefined, horizontal: current.y === start.y ? start.y : undefined });
+    return { x: snap(current.x), y: snap(current.y) };
   };
 
   const handleBackgroundPointerDown = (event: ReactPointerEvent<SVGRectElement>) => {
@@ -142,12 +180,13 @@ export default function FloorPlan({
       const dx = wall.x2 - wall.x1;
       const dy = wall.y2 - wall.y1;
       const offset = length ? ((point.x - wall.x1) * dx + (point.y - wall.y1) * dy) / length : 0;
-      onAddOpening(tool, wall.id, Math.max(tool === "door" ? 1.5 : 2, snap(offset)));
+      const centeredOffset = Math.abs(offset - length / 2) <= 0.5 ? length / 2 : snap(offset);
+      onAddOpening(tool, wall.id, Math.max(tool === "door" ? 1.5 : 2, centeredOffset));
       return;
     }
     if (tool === "select") {
       onSelect(wall.id);
-      if (!wall.roomId) {
+      if (!wall.roomIds.length) {
         event.currentTarget.setPointerCapture(event.pointerId);
         setDrag({ kind: "move-wall", id: wall.id, start: point, origin: wall, wall });
       }
@@ -162,13 +201,19 @@ export default function FloorPlan({
       const dy = point.y - drag.start.y;
       const x = Math.max(0, Math.min(project.plot.width - drag.room.width, snap(drag.origin.x + dx)));
       const y = Math.max(0, Math.min(project.plot.length - drag.room.length, snap(drag.origin.y + dy)));
-      setDrag({ ...drag, room: { ...drag.room, x, y } });
+      setDrag({ ...drag, room: alignRoom({ ...drag.room, x, y }) });
     } else if (drag.kind === "resize-room") {
-      const width = Math.max(3, Math.min(project.plot.width - drag.room.x, snap(point.x - drag.room.x)));
-      const length = Math.max(3, Math.min(project.plot.length - drag.room.y, snap(point.y - drag.room.y)));
+      let width = Math.max(3, Math.min(project.plot.width - drag.room.x, snap(point.x - drag.room.x)));
+      let length = Math.max(3, Math.min(project.plot.length - drag.room.y, snap(point.y - drag.room.y)));
+      const otherRooms = rooms.filter((item) => item.id !== drag.id);
+      const vertical = otherRooms.flatMap((item) => [item.x, item.x + item.width]).map((edge) => ({ edge, delta: edge - (drag.room.x + width) })).filter((item) => Math.abs(item.delta) <= 0.4).sort((a, b) => Math.abs(a.delta) - Math.abs(b.delta))[0];
+      const horizontal = otherRooms.flatMap((item) => [item.y, item.y + item.length]).map((edge) => ({ edge, delta: edge - (drag.room.y + length) })).filter((item) => Math.abs(item.delta) <= 0.4).sort((a, b) => Math.abs(a.delta) - Math.abs(b.delta))[0];
+      if (vertical) width = snap(width + vertical.delta);
+      if (horizontal) length = snap(length + horizontal.delta);
+      setAlignmentGuides({ vertical: vertical?.edge, horizontal: horizontal?.edge });
       setDrag({ ...drag, room: { ...drag.room, width, length } });
     } else if (drag.kind === "draw-wall" || drag.kind === "measure") {
-      setDrag({ ...drag, current: point });
+      setDrag({ ...drag, current: drag.kind === "draw-wall" ? alignWallPoint(point, drag.start) : point });
     } else if (drag.kind === "move-wall") {
       const dx = point.x - drag.start.x;
       const dy = point.y - drag.start.y;
@@ -196,6 +241,7 @@ export default function FloorPlan({
     }
     if (drag.kind === "measure") setMeasurement({ start: drag.start, end: drag.current });
     setDrag(undefined);
+    setAlignmentGuides({});
   };
 
   const activeMeasurement = drag?.kind === "measure" ? { start: drag.start, end: drag.current } : measurement;
@@ -211,7 +257,7 @@ export default function FloorPlan({
       aria-label={`Architectural floor plan for ${project.name}`}
       onPointerMove={handlePointerMove}
       onPointerUp={finishPointerAction}
-      onPointerCancel={() => setDrag(undefined)}
+      onPointerCancel={() => { setDrag(undefined); setAlignmentGuides({}); }}
     >
       <defs>
         <pattern id="minor-grid" width="1" height="1" patternUnits="userSpaceOnUse">
@@ -252,6 +298,11 @@ export default function FloorPlan({
         <text x={project.plot.setbacks.left + 0.6} y={project.plot.setbacks.front + 1.1} className="setback-label">BUILDABLE ENVELOPE</text>
       </g>
 
+      <g className="alignment-guides" pointerEvents="none">
+        {alignmentGuides.vertical !== undefined && <line x1={alignmentGuides.vertical} y1="0" x2={alignmentGuides.vertical} y2={project.plot.length} />}
+        {alignmentGuides.horizontal !== undefined && <line x1="0" y1={alignmentGuides.horizontal} x2={project.plot.width} y2={alignmentGuides.horizontal} />}
+      </g>
+
       <g className="plot-dimensions" pointerEvents="none">
         <line x1="0" y1={project.plot.length + 2.5} x2={project.plot.width} y2={project.plot.length + 2.5} />
         <line x1="0" y1={project.plot.length + 1.7} x2="0" y2={project.plot.length + 3.2} />
@@ -272,8 +323,13 @@ export default function FloorPlan({
         const room = roomForRender(rawRoom);
         const selected = room.id === selectedId;
         const focused = room.id === project.view.focusElementId;
+        const area = roomArea(room);
+        const compactLabel = !selected && (room.width < 7 || room.length < 6 || area < 55);
+        const mediumLabel = !selected && !compactLabel && (room.width < 10 || room.length < 8 || area < 90);
+        const visibleName = roomLabel(room).length > 18 && !selected ? `${roomLabel(room).slice(0, 16)}…` : roomLabel(room);
         return (
           <g key={room.id} className={`room-group ${selected ? "is-selected" : ""}`}>
+            <title>{room.name} · {area} sq ft · {room.width} × {room.length} ft</title>
             <rect
               x={room.x} y={room.y} width={room.width} height={room.length}
               fill={room.color} fillOpacity={room.type === "Courtyard" ? 0.34 : 0.72}
@@ -284,9 +340,9 @@ export default function FloorPlan({
               onPointerDown={(event) => handleRoomPointerDown(event, room)}
             />
             <g pointerEvents="none" className="room-label">
-              <text x={room.x + room.width / 2} y={room.y + room.length / 2 - 0.35} textAnchor="middle" className="room-name">{roomLabel(room)}</text>
-              <text x={room.x + room.width / 2} y={room.y + room.length / 2 + 1.05} textAnchor="middle" className="room-area">{roomArea(room)} sq ft</text>
-              <text x={room.x + room.width / 2} y={room.y + room.length - 0.65} textAnchor="middle" className="room-size">{room.width}&apos; × {room.length}&apos;</text>
+              <text x={room.x + room.width / 2} y={room.y + room.length / 2 + (compactLabel ? 0.3 : -0.35)} textAnchor="middle" className={`room-name ${compactLabel ? "is-compact" : ""}`}>{visibleName}</text>
+              {!compactLabel && <text x={room.x + room.width / 2} y={room.y + room.length / 2 + 1.05} textAnchor="middle" className="room-area">{area} sq ft</text>}
+              {!compactLabel && !mediumLabel && <text x={room.x + room.width / 2} y={room.y + room.length - 0.65} textAnchor="middle" className="room-size">{room.width}&apos; × {room.length}&apos;</text>}
             </g>
             {selected && (
               <>
@@ -341,12 +397,20 @@ export default function FloorPlan({
                 <>
                   <line x1={-opening.width / 2} y1="-0.13" x2={opening.width / 2} y2="-0.13" stroke="#4e8390" strokeWidth="0.12" />
                   <line x1={-opening.width / 2} y1="0.13" x2={opening.width / 2} y2="0.13" stroke="#4e8390" strokeWidth="0.12" />
+                  {opening.windowType === "sliding" && <line x1="0" y1="-0.3" x2="0" y2="0.3" stroke="#4e8390" strokeWidth="0.09" />}
                 </>
               ) : (
-                <>
-                  <line x1={-opening.width / 2} y1="0" x2={opening.width / 2} y2={-opening.width} stroke="#6d5549" strokeWidth="0.12" />
-                  <path d={`M ${-opening.width / 2} 0 A ${opening.width} ${opening.width} 0 0 1 ${opening.width / 2} ${-opening.width}`} fill="none" stroke="#9b7a68" strokeWidth="0.08" strokeDasharray="0.28 0.18" />
-                </>
+                (() => {
+                  const hingeX = opening.hingeSide === "end" ? opening.width / 2 : -opening.width / 2;
+                  const closedEndX = -hingeX;
+                  const swingSign = (opening.swingDirection === "outward" ? 1 : -1) * (opening.handing === "right" ? -1 : 1);
+                  const openEndY = swingSign * opening.width;
+                  const isClosed = opening.state === "closed";
+                  return <>
+                    <line x1={hingeX} y1="0" x2={isClosed ? closedEndX : hingeX} y2={isClosed ? 0 : openEndY} stroke="#6d5549" strokeWidth="0.12" />
+                    {!isClosed && <path d={`M ${closedEndX} 0 A ${opening.width} ${opening.width} 0 0 ${swingSign > 0 ? 1 : 0} ${hingeX} ${openEndY}`} fill="none" stroke="#9b7a68" strokeWidth="0.08" strokeDasharray="0.28 0.18" />}
+                  </>;
+                })()
               )}
             </g>
           );

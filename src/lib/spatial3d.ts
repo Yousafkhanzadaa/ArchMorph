@@ -199,8 +199,8 @@ export function buildSpatialModel(project: Project): SpatialModel {
       }
       addSolid(cursor, height);
 
-      const isDoorOpening = activeOpenings.some(({ opening }) => opening.kind === "door");
-      if (!isDoorOpening) {
+      const hasTraversableDoor = activeOpenings.some(({ opening }) => opening.kind === "door" && opening.state !== "closed");
+      if (!hasTraversableDoor) {
         collisionSegments.push({
           floorId: group.floorId,
           x1: group.dirX * start + group.normalX * group.lineOffset,

@@ -49,7 +49,7 @@ export default function ModelView({
   onSelect,
 }: ModelViewProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const walkPoseRef = useRef<WalkPose>();
+  const walkPoseRef = useRef<WalkPose | undefined>(undefined);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -252,16 +252,21 @@ export default function ModelView({
         selectable.push(header);
         scene.add(header);
 
-        const hingeX = frame.x - frame.dirX * opening.width / 2;
-        const hingeZ = frame.z - frame.dirZ * opening.width / 2;
+        const hingeDirection = opening.hingeSide === "end" ? 1 : -1;
+        const hingeX = frame.x + frame.dirX * hingeDirection * opening.width / 2;
+        const hingeZ = frame.z + frame.dirZ * hingeDirection * opening.width / 2;
+        const swingSign = (opening.swingDirection === "outward" ? 1 : -1) * (opening.handing === "right" ? -1 : 1);
+        const isClosed = opening.state === "closed";
         const panel = meshBox(
           [Math.max(0.2, opening.width - 0.12), Math.max(0.2, opening.height - 0.12), 0.12],
-          [hingeX + frame.normalX * opening.width / 2, elevation + opening.height / 2, hingeZ + frame.normalZ * opening.width / 2],
-          -(frame.angle + Math.PI / 2),
+          isClosed
+            ? [frame.x, elevation + opening.height / 2, frame.z]
+            : [hingeX + frame.normalX * swingSign * opening.width / 2, elevation + opening.height / 2, hingeZ + frame.normalZ * swingSign * opening.width / 2],
+          isClosed ? -frame.angle : -(frame.angle + swingSign * Math.PI / 2),
           new THREE.MeshStandardMaterial({ color: colorWithSelection("#9b765c", selected), roughness: 0.72 }),
         );
         panel.userData.elementId = opening.id;
-        panel.userData.openAngle = 90;
+        panel.userData.openAngle = isClosed ? 0 : 90 * swingSign;
         selectable.push(panel);
         scene.add(panel);
       } else {
@@ -299,11 +304,11 @@ export default function ModelView({
           [frame.x, centerY, frame.z],
           -frame.angle,
           new THREE.MeshPhysicalMaterial({
-            color: colorWithSelection("#9bc8d4", selected),
+            color: colorWithSelection(opening.glazing === "privacy" ? "#c4d2d0" : "#9bc8d4", selected),
             transparent: true,
-            opacity: 0.38,
-            transmission: selected ? 0 : 0.36,
-            roughness: 0.12,
+            opacity: opening.glazing === "privacy" ? 0.72 : Math.max(0.24, 0.52 - (opening.solarTransmittance ?? 0.7) * 0.2),
+            transmission: selected || opening.glazing === "privacy" ? 0 : Math.max(0.08, (opening.solarTransmittance ?? 0.7) * 0.52),
+            roughness: opening.glazing === "privacy" ? 0.48 : 0.12,
             metalness: 0.06,
             side: THREE.DoubleSide,
           }),
@@ -311,6 +316,17 @@ export default function ModelView({
         glass.userData.elementId = opening.id;
         selectable.push(glass);
         scene.add(glass);
+        if (opening.windowType === "sliding" || opening.windowType === "casement") {
+          const mullion = meshBox(
+            [rail, Math.max(0.2, opening.height - 0.2), depth + 0.02],
+            [frame.x, centerY, frame.z],
+            -frame.angle,
+            frameMaterial,
+          );
+          mullion.userData.elementId = opening.id;
+          selectable.push(mullion);
+          scene.add(mullion);
+        }
         if (daylightCount < 8) {
           const daylight = new THREE.PointLight("#d9f2ff", 0.8, 14, 2);
           daylight.position.set(frame.x + frame.normalX * 0.7, centerY, frame.z + frame.normalZ * 0.7);

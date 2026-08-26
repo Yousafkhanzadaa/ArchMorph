@@ -51,7 +51,10 @@ export type Room = {
   width: number;
   length: number;
   color: string;
+  wallIds: string[];
 };
+
+export type WallRoomSide = { roomId: string; side: WallSide };
 
 export type Wall = {
   id: string;
@@ -62,9 +65,22 @@ export type Wall = {
   y2: number;
   thickness: number;
   height: number;
+  roomIds: string[];
+  roomSides: WallRoomSide[];
+  exterior: boolean;
+  connectedWallIds: string[];
+  /** @deprecated Compatibility fields for pre-topology projects. */
   roomId?: string;
+  /** @deprecated Compatibility fields for pre-topology projects. */
   side?: WallSide;
 };
+
+export type DoorHingeSide = "start" | "end";
+export type DoorHanding = "left" | "right";
+export type DoorSwingDirection = "inward" | "outward";
+export type DoorState = "open" | "closed";
+export type WindowType = "fixed" | "casement" | "sliding" | "awning";
+export type GlazingType = "clear" | "privacy";
 
 export type Opening = {
   id: string;
@@ -75,6 +91,16 @@ export type Opening = {
   width: number;
   sillHeight?: number;
   height: number;
+  hingeSide?: DoorHingeSide;
+  handing?: DoorHanding;
+  swingDirection?: DoorSwingDirection;
+  state?: DoorState;
+  windowType?: WindowType;
+  operable?: boolean;
+  glazing?: GlazingType;
+  solarTransmittance?: number;
+  /** Import-only world position used to migrate geometry-only legacy projects. */
+  legacyPosition?: { x: number; y: number };
 };
 
 export type Stair = {
@@ -97,6 +123,7 @@ export type ActivityEntry = {
 };
 
 export type Project = {
+  schemaVersion: number;
   id: string;
   name: string;
   unit: "ft";
@@ -127,6 +154,10 @@ export type ValidationIssue = {
     | "SETBACK_VIOLATION"
     | "INVALID_OPENING"
     | "NO_ROOM_ACCESS"
+    | "NO_EXTERIOR_ACCESS"
+    | "DISCONNECTED_CIRCULATION"
+    | "INVALID_STAIR_CONNECTION"
+    | "OPENING_WITHOUT_ADJACENCY"
     | "OPENING_OVERLAP"
     | "WALL_OUTSIDE_PLOT";
   severity: "error" | "warning";
@@ -134,6 +165,37 @@ export type ValidationIssue = {
   elementIds: string[];
   evidence: Record<string, string | number | boolean>;
   suggestion: string;
+  affectedRoomIds?: string[];
+  affectedOpeningId?: string;
+  possibleCorrection?: string;
+};
+
+export type CirculationNode = {
+  id: string;
+  type: "room" | "exterior";
+  label: string;
+  floorId?: string;
+};
+
+export type CirculationEdge = {
+  id: string;
+  type: "door" | "stair";
+  from: string;
+  to: string;
+  openingId?: string;
+  stairId?: string;
+};
+
+export type CirculationGraph = {
+  nodes: CirculationNode[];
+  edges: CirculationEdge[];
+  mainEntranceOpeningId?: string;
+  primaryEntryRoomId?: string;
+  hasExteriorAccess: boolean;
+  reachableRoomIds: string[];
+  disconnectedRoomIds: string[];
+  invalidDoorIds: string[];
+  invalidStairIds: string[];
 };
 
 export type ValidationReport = {
@@ -152,6 +214,7 @@ export type PointRef =
   | { elementId: string; anchor?: "center" | "start" | "end" };
 
 export type ArchitectureOperation =
+  | { type: "rename_project"; name: string }
   | { type: "set_plot"; width?: number; length?: number; setbacks?: Partial<Plot["setbacks"]> }
   | { type: "set_plot_orientation"; orientation: Plot["orientation"] }
   | {
@@ -193,6 +256,16 @@ export type ArchitectureOperation =
       wallId: string;
       offset: number;
       width?: number;
+      height?: number;
+      sillHeight?: number;
+      hingeSide?: DoorHingeSide;
+      handing?: DoorHanding;
+      swingDirection?: DoorSwingDirection;
+      state?: DoorState;
+      windowType?: WindowType;
+      operable?: boolean;
+      glazing?: GlazingType;
+      solarTransmittance?: number;
     }
   | {
       type: "update_opening";
@@ -201,7 +274,16 @@ export type ArchitectureOperation =
       width?: number;
       height?: number;
       sillHeight?: number;
+      hingeSide?: DoorHingeSide;
+      handing?: DoorHanding;
+      swingDirection?: DoorSwingDirection;
+      state?: DoorState;
+      windowType?: WindowType;
+      operable?: boolean;
+      glazing?: GlazingType;
+      solarTransmittance?: number;
     }
+  | { type: "rehost_opening"; openingId: string; wallId: string; offset: number }
   | {
       type: "add_stairs";
       floorId: string;
@@ -256,6 +338,7 @@ export function createInitialProject(): Project {
   };
 
   return {
+    schemaVersion: 2,
     id: "project-archmorph-home",
     name: "Untitled Residence",
     unit: "ft",
@@ -355,6 +438,9 @@ function overlappingOpening(project: Project, candidate: Opening, ignoredId?: st
 function assertOpeningPlacement(project: Project, opening: Opening, ignoredId?: string) {
   const wall = project.walls.find((item) => item.id === opening.wallId);
   if (!wall) throw new Error(`Wall ${opening.wallId} does not exist.`);
+  if (wall.roomIds.length < 1 || wall.roomIds.length > 2) {
+    throw new Error(`The ${opening.kind} must be hosted by an exterior wall or one canonical wall shared by two rooms.`);
+  }
   const length = wallLength(wall);
   if (opening.width <= 0 || opening.offset < opening.width / 2 || opening.offset > length - opening.width / 2) {
     throw new Error(`The ${opening.kind} does not fit on this ${round(length, 1)} ft wall.`);
@@ -410,6 +496,61 @@ function floorCoveredArea(project: Project, floorId: string) {
   return round(area);
 }
 
+type AreaRectangle = { left: number; top: number; right: number; bottom: number };
+
+function rectangleUnionArea(rectangles: AreaRectangle[]) {
+  const valid = rectangles.filter((item) => item.right > item.left && item.bottom > item.top);
+  if (!valid.length) return 0;
+  const xs = Array.from(new Set(valid.flatMap((item) => [item.left, item.right]))).sort((a, b) => a - b);
+  let area = 0;
+  for (let index = 0; index < xs.length - 1; index += 1) {
+    const left = xs[index];
+    const right = xs[index + 1];
+    const intervals = valid
+      .filter((item) => item.left < right && item.right > left)
+      .map((item) => [item.top, item.bottom] as const)
+      .sort((a, b) => a[0] - b[0]);
+    if (!intervals.length) continue;
+    let start = intervals[0][0];
+    let end = intervals[0][1];
+    let covered = 0;
+    for (let cursor = 1; cursor < intervals.length; cursor += 1) {
+      const [nextStart, nextEnd] = intervals[cursor];
+      if (nextStart <= end) end = Math.max(end, nextEnd);
+      else {
+        covered += end - start;
+        start = nextStart;
+        end = nextEnd;
+      }
+    }
+    covered += end - start;
+    area += (right - left) * covered;
+  }
+  return round(area);
+}
+
+function wallFootprint(wall: Wall): AreaRectangle | undefined {
+  const half = wall.thickness / 2;
+  if (Math.abs(wall.y2 - wall.y1) < 0.01) {
+    return { left: Math.min(wall.x1, wall.x2) - half, right: Math.max(wall.x1, wall.x2) + half, top: wall.y1 - half, bottom: wall.y1 + half };
+  }
+  if (Math.abs(wall.x2 - wall.x1) < 0.01) {
+    return { left: wall.x1 - half, right: wall.x1 + half, top: Math.min(wall.y1, wall.y2) - half, bottom: Math.max(wall.y1, wall.y2) + half };
+  }
+  return undefined;
+}
+
+function floorGrossCoveredArea(project: Project, floorId: string) {
+  const roomRectangles = project.rooms
+    .filter((room) => room.floorId === floorId && room.type !== "Courtyard")
+    .map((room) => ({ left: room.x, top: room.y, right: room.x + room.width, bottom: room.y + room.length }));
+  const wallRectangles = project.walls
+    .filter((wall) => wall.floorId === floorId && wall.roomIds.length > 0)
+    .map(wallFootprint)
+    .filter((item): item is AreaRectangle => Boolean(item));
+  return rectangleUnionArea([...roomRectangles, ...wallRectangles]);
+}
+
 export function projectMetrics(project: Project, floorId = project.view.activeFloorId) {
   const plotArea = round(project.plot.width * project.plot.length);
   const floorArea = floorCoveredArea(project, floorId);
@@ -421,6 +562,15 @@ export function projectMetrics(project: Project, floorId = project.view.activeFl
       .filter((room) => room.floorId === floorId && room.type !== "Courtyard")
       .reduce((sum, room) => sum + roomArea(room), 0),
   );
+  const grossCoveredArea = floorGrossCoveredArea(project, floorId);
+  const totalNetBuildingArea = round(
+    project.rooms.filter((room) => room.type !== "Courtyard").reduce((sum, room) => sum + roomArea(room), 0),
+  );
+  const totalGrossCoveredArea = round(
+    project.floors.reduce((sum, floor) => sum + floorGrossCoveredArea(project, floor.id), 0),
+  );
+  const groundFloorId = [...project.floors].sort((a, b) => a.level - b.level)[0]?.id;
+  const groundGrossArea = groundFloorId ? floorGrossCoveredArea(project, groundFloorId) : 0;
   const buildableWidth = Math.max(
     0,
     project.plot.width - project.plot.setbacks.left - project.plot.setbacks.right,
@@ -433,11 +583,24 @@ export function projectMetrics(project: Project, floorId = project.view.activeFl
   return {
     unit: "sq ft",
     plotArea,
+    netRoomAreaTotal: roomAreaSum,
+    totalNetFloorArea: roomAreaSum,
+    totalNetBuildingArea,
+    grossCoveredArea,
+    totalGrossCoveredArea,
+    openSiteArea: round(Math.max(0, plotArea - groundGrossArea)),
+    measurementDefinitions: {
+      netRoomArea: "Usable internal rectangular room area, excluding wall thickness.",
+      totalNetFloorArea: "Sum of usable internal room areas on the selected floor, excluding courtyards.",
+      grossCoveredArea: "Union of room footprints and canonical wall footprints on the selected floor.",
+      openSiteArea: "Plot area remaining outside the gross ground-floor building footprint.",
+    },
+    // Compatibility aliases retained so existing clients are not silently broken.
     floorCoveredArea: floorArea,
     totalConstructedArea,
     roomAreaSum,
-    openArea: round(Math.max(0, plotArea - floorCoveredArea(project, project.floors[0].id))),
-    coveragePercent: plotArea ? round((floorArea / plotArea) * 100, 1) : 0,
+    openArea: round(Math.max(0, plotArea - floorCoveredArea(project, project.floors[0]?.id))),
+    coveragePercent: plotArea ? round((grossCoveredArea / plotArea) * 100, 1) : 0,
     buildableEnvelope: {
       x: project.plot.setbacks.left,
       y: project.plot.setbacks.front,
@@ -448,57 +611,199 @@ export function projectMetrics(project: Project, floorId = project.view.activeFl
   };
 }
 
-function roomWalls(room: Room, height = 9): Wall[] {
-  const base = {
-    floorId: room.floorId,
-    thickness: 0.5,
-    height,
-    roomId: room.id,
-  };
+type TopologyEdge = {
+  floorId: string;
+  orientation: "horizontal" | "vertical";
+  coordinate: number;
+  start: number;
+  end: number;
+  roomId: string;
+  side: WallSide;
+};
+
+function roomEdges(room: Room): TopologyEdge[] {
   return [
-    {
-      ...base,
-      id: `${room.id}-wall-north`,
-      side: "north" as const,
-      x1: room.x,
-      y1: room.y,
-      x2: room.x + room.width,
-      y2: room.y,
-    },
-    {
-      ...base,
-      id: `${room.id}-wall-east`,
-      side: "east" as const,
-      x1: room.x + room.width,
-      y1: room.y,
-      x2: room.x + room.width,
-      y2: room.y + room.length,
-    },
-    {
-      ...base,
-      id: `${room.id}-wall-south`,
-      side: "south" as const,
-      x1: room.x + room.width,
-      y1: room.y + room.length,
-      x2: room.x,
-      y2: room.y + room.length,
-    },
-    {
-      ...base,
-      id: `${room.id}-wall-west`,
-      side: "west" as const,
-      x1: room.x,
-      y1: room.y + room.length,
-      x2: room.x,
-      y2: room.y,
-    },
+    { floorId: room.floorId, orientation: "horizontal", coordinate: room.y, start: room.x, end: room.x + room.width, roomId: room.id, side: "north" },
+    { floorId: room.floorId, orientation: "vertical", coordinate: room.x + room.width, start: room.y, end: room.y + room.length, roomId: room.id, side: "east" },
+    { floorId: room.floorId, orientation: "horizontal", coordinate: room.y + room.length, start: room.x, end: room.x + room.width, roomId: room.id, side: "south" },
+    { floorId: room.floorId, orientation: "vertical", coordinate: room.x, start: room.y, end: room.y + room.length, roomId: room.id, side: "west" },
   ];
 }
 
-function replaceRoomWalls(project: Project, room: Room) {
-  const floor = project.floors.find((item) => item.id === room.floorId);
-  const retained = project.walls.filter((wall) => wall.roomId !== room.id);
-  return [...retained, ...roomWalls(room, floor?.height ?? 9)];
+function coordinateToken(value: number) {
+  return String(Math.round(value * 100)).replace("-", "m");
+}
+
+function canonicalWallId(edge: Pick<TopologyEdge, "floorId" | "orientation" | "coordinate" | "start" | "end">) {
+  return `wall-${edge.floorId}-${edge.orientation[0]}-${coordinateToken(edge.coordinate)}-${coordinateToken(edge.start)}-${coordinateToken(edge.end)}`;
+}
+
+function pointOnWall(wall: Wall, point: { x: number; y: number }) {
+  const length = wallLength(wall);
+  if (!length) return undefined;
+  const ux = (wall.x2 - wall.x1) / length;
+  const uy = (wall.y2 - wall.y1) / length;
+  const offset = (point.x - wall.x1) * ux + (point.y - wall.y1) * uy;
+  const distance = Math.abs((point.x - wall.x1) * -uy + (point.y - wall.y1) * ux);
+  return { offset, distance };
+}
+
+function openingCenter(wall: Wall, opening: Opening) {
+  const length = wallLength(wall);
+  const ratio = length ? opening.offset / length : 0;
+  return {
+    x: wall.x1 + (wall.x2 - wall.x1) * ratio,
+    y: wall.y1 + (wall.y2 - wall.y1) * ratio,
+  };
+}
+
+function connectWalls(walls: Wall[]) {
+  const samePoint = (a: number, b: number) => Math.abs(a - b) < 0.01;
+  return walls.map((wall) => ({
+    ...wall,
+    connectedWallIds: walls
+      .filter((other) => other.id !== wall.id && other.floorId === wall.floorId)
+      .filter((other) => [
+        [wall.x1, wall.y1, other.x1, other.y1],
+        [wall.x1, wall.y1, other.x2, other.y2],
+        [wall.x2, wall.y2, other.x1, other.y1],
+        [wall.x2, wall.y2, other.x2, other.y2],
+      ].some(([ax, ay, bx, by]) => samePoint(ax, bx) && samePoint(ay, by)))
+      .map((other) => other.id),
+  }));
+}
+
+export function rebuildCanonicalTopology(
+  project: Project,
+  openingTargets: Map<string, { x: number; y: number }> = new Map(),
+  strict = true,
+) {
+  const oldWalls = project.walls.map((wall) => ({ ...wall }));
+  const oldWallById = new Map(oldWalls.map((wall) => [wall.id, wall]));
+  const independentWalls = oldWalls
+    .filter((wall) => !(wall.roomIds?.length || wall.roomId))
+    .map((wall) => ({ ...wall, roomIds: [], roomSides: [], exterior: false, connectedWallIds: [], roomId: undefined, side: undefined }));
+  const edges = project.rooms.flatMap(roomEdges);
+  const groups = new Map<string, TopologyEdge[]>();
+  edges.forEach((edge) => {
+    const key = `${edge.floorId}:${edge.orientation}:${coordinateToken(edge.coordinate)}`;
+    groups.set(key, [...(groups.get(key) ?? []), edge]);
+  });
+  const topologyWalls: Wall[] = [];
+  groups.forEach((group) => {
+    const cuts = Array.from(new Set(group.flatMap((edge) => [edge.start, edge.end]))).sort((a, b) => a - b);
+    for (let index = 0; index < cuts.length - 1; index += 1) {
+      const start = cuts[index];
+      const end = cuts[index + 1];
+      if (end - start < 0.01) continue;
+      const covering = group.filter((edge) => edge.start <= start + 0.01 && edge.end >= end - 0.01);
+      if (!covering.length) continue;
+      const reference = covering[0];
+      const floor = project.floors.find((item) => item.id === reference.floorId);
+      const roomSides = covering.map((edge) => ({ roomId: edge.roomId, side: edge.side }));
+      const roomIds = Array.from(new Set(roomSides.map((item) => item.roomId)));
+      topologyWalls.push({
+        id: canonicalWallId({ ...reference, start, end }),
+        floorId: reference.floorId,
+        x1: reference.orientation === "horizontal" ? start : reference.coordinate,
+        y1: reference.orientation === "horizontal" ? reference.coordinate : start,
+        x2: reference.orientation === "horizontal" ? end : reference.coordinate,
+        y2: reference.orientation === "horizontal" ? reference.coordinate : end,
+        thickness: 0.5,
+        height: floor?.height ?? 9,
+        roomIds,
+        roomSides,
+        exterior: roomIds.length === 1,
+        connectedWallIds: [],
+        roomId: roomIds.length === 1 ? roomIds[0] : undefined,
+        side: roomIds.length === 1 ? roomSides[0]?.side : undefined,
+      });
+    }
+  });
+  project.walls = connectWalls([...topologyWalls, ...independentWalls]);
+  project.rooms = project.rooms.map((room) => ({
+    ...room,
+    wallIds: project.walls.filter((wall) => wall.roomIds.includes(room.id)).map((wall) => wall.id),
+  }));
+
+  const migratedOpenings: Opening[] = [];
+  for (const opening of project.openings) {
+    const oldWall = oldWallById.get(opening.wallId);
+    if (!oldWall) {
+      if (strict) throw new Error(`Opening ${opening.id} has no host wall.`);
+      continue;
+    }
+    const target = openingTargets.get(opening.id) ?? openingCenter(oldWall, opening);
+    const candidates = project.walls
+      .filter((wall) => wall.floorId === opening.floorId)
+      .map((wall) => ({ wall, placement: pointOnWall(wall, target) }))
+      .filter((item): item is { wall: Wall; placement: { offset: number; distance: number } } => Boolean(item.placement))
+      .filter(({ wall, placement }) => placement.distance < 0.05 && placement.offset >= opening.width / 2 - 0.01 && placement.offset <= wallLength(wall) - opening.width / 2 + 0.01)
+      .sort((a, b) => a.placement.distance - b.placement.distance || b.wall.roomIds.length - a.wall.roomIds.length);
+    const candidate = candidates[0];
+    if (!candidate) {
+      if (strict) throw new Error(`The ${opening.kind} ${opening.id} no longer fits a valid canonical wall.`);
+      continue;
+    }
+    migratedOpenings.push({ ...opening, wallId: candidate.wall.id, offset: round(candidate.placement.offset) });
+  }
+  project.openings = migratedOpenings;
+  return project;
+}
+
+function roomOpeningTargets(project: Project, room: Room, nextRoom: Room) {
+  const targets = new Map<string, { x: number; y: number }>();
+  project.openings.forEach((opening) => {
+    const wall = project.walls.find((item) => item.id === opening.wallId);
+    if (!wall || wall.roomIds.length !== 1 || wall.roomIds[0] !== room.id) return;
+    const side = wall.roomSides.find((item) => item.roomId === room.id)?.side;
+    if (!side) return;
+    const center = openingCenter(wall, opening);
+    const fraction = side === "north" || side === "south" ? (center.x - room.x) / room.width : (center.y - room.y) / room.length;
+    if (side === "north") targets.set(opening.id, { x: nextRoom.x + nextRoom.width * fraction, y: nextRoom.y });
+    if (side === "south") targets.set(opening.id, { x: nextRoom.x + nextRoom.width * fraction, y: nextRoom.y + nextRoom.length });
+    if (side === "west") targets.set(opening.id, { x: nextRoom.x, y: nextRoom.y + nextRoom.length * fraction });
+    if (side === "east") targets.set(opening.id, { x: nextRoom.x + nextRoom.width, y: nextRoom.y + nextRoom.length * fraction });
+  });
+  return targets;
+}
+
+export function migrateProject(input: Project): Project {
+  const project = cloneProject(input);
+  project.schemaVersion = 2;
+  project.rooms = (project.rooms ?? []).map((room) => ({ ...room, wallIds: room.wallIds ?? [] }));
+  project.walls = (project.walls ?? []).map((wall) => ({
+    ...wall,
+    roomIds: wall.roomIds ?? (wall.roomId ? [wall.roomId] : []),
+    roomSides: wall.roomSides ?? (wall.roomId && wall.side ? [{ roomId: wall.roomId, side: wall.side }] : []),
+    exterior: wall.exterior ?? Boolean(wall.roomId),
+    connectedWallIds: wall.connectedWallIds ?? [],
+  }));
+  const normalizedOpenings = (project.openings ?? []).map((opening) => opening.kind === "door"
+    ? { ...opening, sillHeight: 0, hingeSide: opening.hingeSide ?? "start", handing: opening.handing ?? "left", swingDirection: opening.swingDirection ?? "inward", state: opening.state ?? "open" }
+    : { ...opening, windowType: opening.windowType ?? "fixed", operable: opening.operable ?? false, glazing: opening.glazing ?? "clear", solarTransmittance: opening.solarTransmittance ?? 0.7 });
+  project.floors = (project.floors ?? []).map((floor, index) => ({ ...floor, level: floor.level ?? index, elevation: floor.elevation ?? index * (floor.height ?? 9), height: floor.height ?? 9 }));
+  if (!project.view || !project.floors.some((floor) => floor.id === project.view.activeFloorId)) {
+    project.view = { mode: "2d", navigationMode: "orbit", activeFloorId: project.floors[0]?.id ?? "floor-ground", cameraPreset: "front-right" };
+  }
+  const knownWallIds = new Set(project.walls.map((wall) => wall.id));
+  const positionOnlyOpenings = normalizedOpenings.filter((opening) => !knownWallIds.has(opening.wallId) && opening.legacyPosition);
+  project.openings = normalizedOpenings.filter((opening) => knownWallIds.has(opening.wallId));
+  rebuildCanonicalTopology(project, new Map(), false);
+  positionOnlyOpenings.forEach((opening) => {
+    const position = opening.legacyPosition!;
+    const candidate = project.walls
+      .filter((wall) => wall.floorId === opening.floorId && wall.roomIds.length > 0)
+      .map((wall) => ({ wall, placement: pointOnWall(wall, position) }))
+      .filter((item): item is { wall: Wall; placement: { offset: number; distance: number } } => Boolean(item.placement))
+      .filter(({ wall, placement }) => placement.distance < 0.08 && placement.offset >= opening.width / 2 - 0.01 && placement.offset <= wallLength(wall) - opening.width / 2 + 0.01)
+      .sort((a, b) => a.placement.distance - b.placement.distance || b.wall.roomIds.length - a.wall.roomIds.length)[0];
+    if (!candidate) return;
+    const { legacyPosition: _legacyPosition, ...architecturalOpening } = opening;
+    void _legacyPosition;
+    project.openings.push({ ...architecturalOpening, wallId: candidate.wall.id, offset: round(candidate.placement.offset) });
+  });
+  return project;
 }
 
 function assertRoomInsidePlot(project: Project, room: Pick<Room, "x" | "y" | "width" | "length">) {
@@ -567,8 +872,8 @@ export function applyOperation(
     ...current,
     plot: { ...current.plot, setbacks: { ...current.plot.setbacks } },
     floors: current.floors.map((item) => ({ ...item })),
-    rooms: current.rooms.map((item) => ({ ...item })),
-    walls: current.walls.map((item) => ({ ...item })),
+    rooms: current.rooms.map((item) => ({ ...item, wallIds: [...(item.wallIds ?? [])] })),
+    walls: current.walls.map((item) => ({ ...item, roomIds: [...(item.roomIds ?? [])], roomSides: (item.roomSides ?? []).map((side) => ({ ...side })), connectedWallIds: [...(item.connectedWallIds ?? [])] })),
     openings: current.openings.map((item) => ({ ...item })),
     stairs: current.stairs.map((item) => ({ ...item })),
     view: { ...current.view },
@@ -578,6 +883,14 @@ export function applyOperation(
   let description = "Project updated";
 
   switch (operation.type) {
+    case "rename_project": {
+      const name = operation.name.trim();
+      if (!name) throw new Error("Project name cannot be empty.");
+      project.name = name;
+      description = `${who} renamed the project to ${name}`;
+      result = { projectId: project.id, name };
+      break;
+    }
     case "set_plot": {
       const width = operation.width ?? project.plot.width;
       const length = operation.length ?? project.plot.length;
@@ -612,24 +925,26 @@ export function applyOperation(
         width: round(operation.width),
         length: round(operation.length),
         color: roomPalette[operation.roomType],
+        wallIds: [],
       };
       assertRoomInsidePlot(project, room);
       project.rooms.push(room);
-      project.walls.push(
-        ...roomWalls(room, project.floors.find((floor) => floor.id === room.floorId)?.height),
-      );
+      rebuildCanonicalTopology(project);
+      const createdRoom = project.rooms.find((item) => item.id === room.id)!;
       project.view.focusElementId = room.id;
       description = `${who} added ${room.name} · ${room.width} × ${room.length} ft`;
-      result = { room, area: roomArea(room), wallIds: roomWalls(room).map((wall) => wall.id) };
+      result = { room: createdRoom, area: roomArea(room), wallIds: createdRoom.wallIds };
       break;
     }
     case "move_room": {
       const index = project.rooms.findIndex((room) => room.id === operation.roomId);
       if (index < 0) throw new Error(`Room ${operation.roomId} does not exist.`);
-      const room = { ...project.rooms[index], x: round(operation.x), y: round(operation.y) };
+      const previousRoom = project.rooms[index];
+      const room = { ...previousRoom, x: round(operation.x), y: round(operation.y) };
       assertRoomInsidePlot(project, room);
+      const targets = roomOpeningTargets(project, previousRoom, room);
       project.rooms[index] = room;
-      project.walls = replaceRoomWalls(project, room);
+      rebuildCanonicalTopology(project, targets);
       assertAllOpeningsValid(project);
       project.view.focusElementId = room.id;
       description = `${who} moved ${room.name}`;
@@ -639,14 +954,16 @@ export function applyOperation(
     case "resize_room": {
       const index = project.rooms.findIndex((room) => room.id === operation.roomId);
       if (index < 0) throw new Error(`Room ${operation.roomId} does not exist.`);
+      const previousRoom = project.rooms[index];
       const room = {
-        ...project.rooms[index],
+        ...previousRoom,
         width: round(operation.width),
         length: round(operation.length),
       };
       assertRoomInsidePlot(project, room);
+      const targets = roomOpeningTargets(project, previousRoom, room);
       project.rooms[index] = room;
-      project.walls = replaceRoomWalls(project, room);
+      rebuildCanonicalTopology(project, targets);
       assertAllOpeningsValid(project);
       project.view.focusElementId = room.id;
       description = `${who} resized ${room.name} to ${room.width} × ${room.length} ft`;
@@ -671,10 +988,10 @@ export function applyOperation(
     case "delete_room": {
       const room = project.rooms.find((item) => item.id === operation.roomId);
       if (!room) throw new Error(`Room ${operation.roomId} does not exist.`);
-      const roomWallIds = new Set(project.walls.filter((wall) => wall.roomId === room.id).map((wall) => wall.id));
+      const roomWallIds = new Set(project.walls.filter((wall) => wall.roomIds.length === 1 && wall.roomIds[0] === room.id).map((wall) => wall.id));
       project.rooms = project.rooms.filter((item) => item.id !== room.id);
-      project.walls = project.walls.filter((wall) => wall.roomId !== room.id);
       project.openings = project.openings.filter((opening) => !roomWallIds.has(opening.wallId));
+      rebuildCanonicalTopology(project);
       if (project.view.focusElementId === room.id) project.view.focusElementId = undefined;
       description = `${who} deleted ${room.name}`;
       result = { deletedRoomId: room.id, name: room.name };
@@ -693,6 +1010,10 @@ export function applyOperation(
         y2: round(operation.y2),
         thickness: operation.thickness ?? 0.5,
         height: project.floors.find((floor) => floor.id === operation.floorId)?.height ?? 9,
+        roomIds: [],
+        roomSides: [],
+        exterior: false,
+        connectedWallIds: [],
       };
       if (wallLength(wall) < 1) throw new Error("A wall must be at least 1 ft long.");
       project.walls.push(wall);
@@ -705,7 +1026,7 @@ export function applyOperation(
       const index = project.walls.findIndex((wall) => wall.id === operation.wallId);
       if (index < 0) throw new Error(`Wall ${operation.wallId} does not exist.`);
       const previous = project.walls[index];
-      if (previous.roomId) {
+      if (previous.roomIds.length) {
         throw new Error("This wall is controlled by its room. Move or resize the room instead.");
       }
       const dx = operation.dx ?? 0;
@@ -739,8 +1060,19 @@ export function applyOperation(
         wallId: wall.id,
         offset: round(operation.offset),
         width: round(width),
-        height: operation.kind === "door" ? 7 : 4,
-        sillHeight: operation.kind === "window" ? 3 : 0,
+        height: round(operation.height ?? (operation.kind === "door" ? 7 : 4)),
+        sillHeight: round(operation.sillHeight ?? (operation.kind === "window" ? 3 : 0)),
+        ...(operation.kind === "door" ? {
+          hingeSide: operation.hingeSide ?? "start",
+          handing: operation.handing ?? "left",
+          swingDirection: operation.swingDirection ?? "inward",
+          state: operation.state ?? "open",
+        } : {
+          windowType: operation.windowType ?? "fixed",
+          operable: operation.operable ?? false,
+          glazing: operation.glazing ?? "clear",
+          solarTransmittance: operation.solarTransmittance ?? 0.7,
+        }),
       };
       assertOpeningPlacement(project, opening);
       project.openings.push(opening);
@@ -761,6 +1093,14 @@ export function applyOperation(
         width: round(operation.width ?? previous.width),
         height: round(operation.height ?? previous.height),
         sillHeight: round(operation.sillHeight ?? previous.sillHeight ?? 0),
+        hingeSide: operation.hingeSide ?? previous.hingeSide,
+        handing: operation.handing ?? previous.handing,
+        swingDirection: operation.swingDirection ?? previous.swingDirection,
+        state: operation.state ?? previous.state,
+        windowType: operation.windowType ?? previous.windowType,
+        operable: operation.operable ?? previous.operable,
+        glazing: operation.glazing ?? previous.glazing,
+        solarTransmittance: operation.solarTransmittance ?? previous.solarTransmittance,
       };
       const length = wallLength(wall);
       assertOpeningPlacement(project, opening, opening.id);
@@ -768,6 +1108,20 @@ export function applyOperation(
       project.view.focusElementId = opening.id;
       description = `${who} updated a ${opening.width} ft ${opening.kind}`;
       result = { opening, wallLength: round(length, 2) };
+      break;
+    }
+    case "rehost_opening": {
+      const index = project.openings.findIndex((item) => item.id === operation.openingId);
+      if (index < 0) throw new Error(`Opening ${operation.openingId} does not exist.`);
+      const wall = project.walls.find((item) => item.id === operation.wallId);
+      if (!wall) throw new Error(`Wall ${operation.wallId} does not exist.`);
+      const opening = { ...project.openings[index], wallId: wall.id, floorId: wall.floorId, offset: round(operation.offset) };
+      assertOpeningPlacement(project, opening, opening.id);
+      project.openings[index] = opening;
+      project.view.activeFloorId = wall.floorId;
+      project.view.focusElementId = opening.id;
+      description = `${who} rehosted a ${opening.kind} onto a different wall`;
+      result = { opening, hostWall: wall };
       break;
     }
     case "add_stairs": {
@@ -820,7 +1174,7 @@ export function applyOperation(
       const wall = project.walls.find((item) => item.id === operation.elementId);
       const opening = project.openings.find((item) => item.id === operation.elementId);
       const stair = project.stairs.find((item) => item.id === operation.elementId);
-      if (wall?.roomId) throw new Error("Room boundary walls are deleted with their room.");
+      if (wall?.roomIds.length) throw new Error("Canonical room-boundary walls are controlled by their rooms.");
       if (!wall && !opening && !stair) throw new Error("This element cannot be deleted.");
       project.walls = project.walls.filter((item) => item.id !== operation.elementId);
       project.openings = project.openings.filter(
@@ -889,6 +1243,82 @@ function rectanglesOverlap(a: Room, b: Room) {
   };
 }
 
+function roomContainsPoint(room: Room, point: { x: number; y: number }) {
+  return point.x >= room.x - 0.01 && point.x <= room.x + room.width + 0.01 && point.y >= room.y - 0.01 && point.y <= room.y + room.length + 0.01;
+}
+
+export function buildCirculationGraph(project: Project): CirculationGraph {
+  const exteriorId = "exterior-site";
+  const nodes: CirculationNode[] = [
+    { id: exteriorId, type: "exterior", label: "Exterior / site access" },
+    ...project.rooms.map((room) => ({ id: room.id, type: "room" as const, label: room.name, floorId: room.floorId })),
+  ];
+  const edges: CirculationEdge[] = [];
+  const invalidDoorIds: string[] = [];
+  const invalidStairIds: string[] = [];
+  const exteriorDoors: Array<{ opening: Opening; roomId: string; point: { x: number; y: number }; floorLevel: number }> = [];
+
+  project.openings.filter((opening) => opening.kind === "door").forEach((opening) => {
+    const wall = project.walls.find((item) => item.id === opening.wallId);
+    if (!wall || wall.roomIds.length < 1 || wall.roomIds.length > 2) {
+      invalidDoorIds.push(opening.id);
+      return;
+    }
+    if (wall.roomIds.length === 2) {
+      edges.push({ id: `circulation-${opening.id}`, type: "door", from: wall.roomIds[0], to: wall.roomIds[1], openingId: opening.id });
+      return;
+    }
+    const point = openingCenter(wall, opening);
+    const floorLevel = project.floors.find((floor) => floor.id === opening.floorId)?.level ?? 0;
+    exteriorDoors.push({ opening, roomId: wall.roomIds[0], point, floorLevel });
+    edges.push({ id: `circulation-${opening.id}`, type: "door", from: exteriorId, to: wall.roomIds[0], openingId: opening.id });
+  });
+
+  const floors = [...project.floors].sort((a, b) => a.level - b.level);
+  project.stairs.forEach((stair) => {
+    const floorIndex = floors.findIndex((floor) => floor.id === stair.floorId);
+    const targetFloor = stair.direction === "down" ? floors[floorIndex - 1] : floors[floorIndex + 1];
+    const point = { x: stair.x + stair.width / 2, y: stair.y + stair.length / 2 };
+    const sourceRoom = project.rooms.find((room) => room.floorId === stair.floorId && roomContainsPoint(room, point));
+    const targetRoom = targetFloor && project.rooms.find((room) => room.floorId === targetFloor.id && roomContainsPoint(room, point));
+    if (!sourceRoom || !targetRoom) {
+      invalidStairIds.push(stair.id);
+      return;
+    }
+    edges.push({ id: `circulation-${stair.id}`, type: "stair", from: sourceRoom.id, to: targetRoom.id, stairId: stair.id });
+  });
+
+  const mainEntrance = [...exteriorDoors].sort((a, b) => a.floorLevel - b.floorLevel || a.point.y - b.point.y)[0];
+  const primaryEntryRoomId = mainEntrance?.roomId;
+  const adjacency = new Map<string, Set<string>>();
+  edges.filter((edge) => edge.from !== exteriorId && edge.to !== exteriorId).forEach((edge) => {
+    adjacency.set(edge.from, new Set([...(adjacency.get(edge.from) ?? []), edge.to]));
+    adjacency.set(edge.to, new Set([...(adjacency.get(edge.to) ?? []), edge.from]));
+  });
+  const reachable = new Set<string>();
+  const queue = primaryEntryRoomId ? [primaryEntryRoomId] : [];
+  while (queue.length) {
+    const roomId = queue.shift()!;
+    if (reachable.has(roomId)) continue;
+    reachable.add(roomId);
+    (adjacency.get(roomId) ?? []).forEach((next) => {
+      if (!reachable.has(next)) queue.push(next);
+    });
+  }
+  const relevantRooms = project.rooms.filter((room) => room.type !== "Courtyard");
+  return {
+    nodes,
+    edges,
+    mainEntranceOpeningId: mainEntrance?.opening.id,
+    primaryEntryRoomId,
+    hasExteriorAccess: exteriorDoors.length > 0,
+    reachableRoomIds: Array.from(reachable),
+    disconnectedRoomIds: primaryEntryRoomId ? relevantRooms.filter((room) => !reachable.has(room.id)).map((room) => room.id) : relevantRooms.map((room) => room.id),
+    invalidDoorIds,
+    invalidStairIds,
+  };
+}
+
 export function validateLayout(project: Project, floorId?: string): ValidationReport {
   const targetFloors = floorId ? [floorId] : project.floors.map((floor) => floor.id);
   const rooms = project.rooms.filter((room) => targetFloors.includes(room.floorId));
@@ -932,7 +1362,7 @@ export function validateLayout(project: Project, floorId?: string): ValidationRe
       });
     }
 
-    const roomWalls = walls.filter((wall) => wall.roomId === room.id);
+    const roomWalls = walls.filter((wall) => wall.roomIds.includes(room.id));
     const roomDoors = project.openings.filter(
       (opening) => opening.kind === "door" && roomWalls.some((wall) => openingTouchesWall(project, opening, wall)),
     );
@@ -948,6 +1378,65 @@ export function validateLayout(project: Project, floorId?: string): ValidationRe
       });
     }
   }
+
+  const circulation = buildCirculationGraph(project);
+  const targetRoomIds = new Set(rooms.map((room) => room.id));
+  if (rooms.length && !circulation.hasExteriorAccess) {
+    issues.push({
+      id: createId("issue"),
+      code: "NO_EXTERIOR_ACCESS",
+      severity: "error",
+      message: "The building has no valid door connecting an occupied room to the exterior/site.",
+      elementIds: rooms.map((room) => room.id),
+      affectedRoomIds: rooms.map((room) => room.id),
+      evidence: { exteriorDoorCount: 0 },
+      suggestion: "Place a door on an exterior canonical wall to define the main entrance.",
+      possibleCorrection: "Add or rehost a door onto an exterior wall, then validate circulation again.",
+    });
+  }
+  const disconnected = circulation.disconnectedRoomIds.filter((roomId) => targetRoomIds.has(roomId));
+  if (circulation.hasExteriorAccess && disconnected.length) {
+    issues.push({
+      id: createId("issue"),
+      code: "DISCONNECTED_CIRCULATION",
+      severity: "error",
+      message: `${disconnected.length} room${disconnected.length === 1 ? " is" : "s are"} disconnected from the main entrance circulation network.`,
+      elementIds: disconnected,
+      affectedRoomIds: disconnected,
+      evidence: { disconnectedRoomCount: disconnected.length, mainEntranceOpeningId: circulation.mainEntranceOpeningId ?? "none" },
+      suggestion: "Add or rehost doors so every occupied room can reach the primary entry room without using the exterior as a shortcut.",
+      possibleCorrection: "Inspect circulation, then connect each isolated group to a reachable room with a valid interior door.",
+    });
+  }
+  circulation.invalidDoorIds.forEach((openingId) => {
+    const opening = project.openings.find((item) => item.id === openingId);
+    if (!opening || !targetFloors.includes(opening.floorId)) return;
+    issues.push({
+      id: createId("issue"),
+      code: "OPENING_WITHOUT_ADJACENCY",
+      severity: "error",
+      message: "A door is not hosted by a wall separating one or two valid spaces.",
+      elementIds: [opening.id, opening.wallId],
+      affectedOpeningId: opening.id,
+      evidence: { openingId: opening.id, wallId: opening.wallId },
+      suggestion: "Rehost the door onto an exterior wall or a shared wall between two rooms.",
+      possibleCorrection: "Use rehost_door with a compatible canonical wall and a valid offset.",
+    });
+  });
+  circulation.invalidStairIds.forEach((stairId) => {
+    const stair = project.stairs.find((item) => item.id === stairId);
+    if (!stair || !targetFloors.includes(stair.floorId)) return;
+    issues.push({
+      id: createId("issue"),
+      code: "INVALID_STAIR_CONNECTION",
+      severity: "error",
+      message: "A staircase does not connect valid rooms on adjacent floors at the same plan position.",
+      elementIds: [stair.id],
+      evidence: { stairId: stair.id, floorId: stair.floorId },
+      suggestion: "Move the stair within rooms that overlap vertically on adjacent floors, or add the missing destination floor/room.",
+      possibleCorrection: "Create aligned stair landings on consecutive floors and validate floor connections again.",
+    });
+  });
 
   for (let i = 0; i < rooms.length; i += 1) {
     for (let j = i + 1; j < rooms.length; j += 1) {
@@ -987,7 +1476,7 @@ export function validateLayout(project: Project, floorId?: string): ValidationRe
     const wall = project.walls.find((item) => item.id === opening.wallId);
     const length = wall ? wallLength(wall) : 0;
     const verticalInvalid = Boolean(wall && ((opening.sillHeight ?? 0) < 0 || opening.height <= 0 || (opening.sillHeight ?? 0) + opening.height > wall.height));
-    if (!wall || opening.offset < opening.width / 2 || opening.offset > length - opening.width / 2 || verticalInvalid) {
+    if (!wall || wall.roomIds.length < 1 || wall.roomIds.length > 2 || opening.offset < opening.width / 2 || opening.offset > length - opening.width / 2 || verticalInvalid) {
       issues.push({
         id: createId("issue"),
         code: "INVALID_OPENING",
@@ -1040,7 +1529,7 @@ export function validateLayout(project: Project, floorId?: string): ValidationRe
 export function inspectRoom(project: Project, roomId: string) {
   const room = project.rooms.find((item) => item.id === roomId);
   if (!room) throw new Error(`Room ${roomId} does not exist.`);
-  const walls = project.walls.filter((wall) => wall.roomId === room.id);
+  const walls = project.walls.filter((wall) => wall.roomIds.includes(room.id));
   const openings = project.openings.filter((opening) => walls.some((wall) => openingTouchesWall(project, opening, wall)));
   const adjacentRooms = project.rooms
     .filter((other) => other.id !== room.id && other.floorId === room.floorId)
@@ -1055,7 +1544,43 @@ export function inspectRoom(project: Project, roomId: string) {
     })
     .map((other) => ({ id: other.id, name: other.name }));
 
-  return { room, area: roomArea(room), perimeter: round(2 * (room.width + room.length)), walls, openings, adjacentRooms };
+  const circulation = buildCirculationGraph(project);
+  return {
+    room,
+    netRoomArea: roomArea(room),
+    area: roomArea(room),
+    areaDefinition: "Usable internal rectangular room area, excluding wall thickness.",
+    perimeter: round(2 * (room.width + room.length)),
+    walls,
+    openings,
+    adjacentRooms,
+    circulation: {
+      reachableFromMainEntrance: circulation.reachableRoomIds.includes(room.id),
+      connectedEdges: circulation.edges.filter((edge) => edge.from === room.id || edge.to === room.id),
+    },
+  };
+}
+
+export function inspectWall(project: Project, wallId: string) {
+  const wall = project.walls.find((item) => item.id === wallId);
+  if (!wall) throw new Error(`Wall ${wallId} does not exist.`);
+  return {
+    wall,
+    length: round(wallLength(wall)),
+    orientation: Math.abs(wall.y2 - wall.y1) < 0.01 ? "horizontal" : Math.abs(wall.x2 - wall.x1) < 0.01 ? "vertical" : "angled",
+    adjacentRooms: wall.roomIds.map((roomId) => {
+      const room = project.rooms.find((item) => item.id === roomId);
+      return { id: roomId, name: room?.name ?? roomId, side: wall.roomSides.find((item) => item.roomId === roomId)?.side };
+    }),
+    openings: project.openings.filter((opening) => opening.wallId === wall.id),
+    connectedWallIds: wall.connectedWallIds,
+  };
+}
+
+export function inspectOpening(project: Project, openingId: string) {
+  const opening = project.openings.find((item) => item.id === openingId);
+  if (!opening) throw new Error(`Opening ${openingId} does not exist.`);
+  return { opening, hostWall: inspectWall(project, opening.wallId) };
 }
 
 export function inspectFloor(project: Project, floorId: string) {
@@ -1068,6 +1593,7 @@ export function inspectFloor(project: Project, floorId: string) {
     openings: project.openings.filter((opening) => opening.floorId === floorId),
     stairs: project.stairs.filter((stair) => stair.floorId === floorId),
     metrics: projectMetrics(project, floorId),
+    circulation: buildCirculationGraph(project),
     validation: validateLayout(project, floorId),
   };
 }
@@ -1120,6 +1646,7 @@ export function projectInspection(project: Project) {
     project: {
       id: project.id,
       name: project.name,
+      schemaVersion: project.schemaVersion,
       version: project.version,
       unit: project.unit,
       updatedAt: project.updatedAt,
@@ -1136,6 +1663,7 @@ export function projectInspection(project: Project) {
     },
     metrics: projectMetrics(project),
     currentView: project.view,
+    circulation: buildCirculationGraph(project),
     validationSummary: (() => {
       const report = validateLayout(project);
       return { status: report.status, issues: report.issueCount, errors: report.errors, warnings: report.warnings };

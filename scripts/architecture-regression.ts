@@ -1,0 +1,112 @@
+import assert from "node:assert/strict";
+import {
+  applyOperation,
+  buildCirculationGraph,
+  createInitialProject,
+  projectMetrics,
+  validateLayout,
+  wallLength,
+  type ArchitectureOperation,
+} from "../src/lib/architecture.ts";
+
+const memory = new Map<string, string>();
+Object.assign(globalThis, {
+  window: {
+    localStorage: {
+      getItem: (key: string) => memory.get(key) ?? null,
+      setItem: (key: string, value: string) => memory.set(key, value),
+      removeItem: (key: string) => memory.delete(key),
+      clear: () => memory.clear(),
+      key: (index: number) => Array.from(memory.keys())[index] ?? null,
+      get length() { return memory.size; },
+    },
+  },
+});
+
+const persistence = await import("../src/lib/persistence.ts");
+let project = createInitialProject();
+const perform = (operation: ArchitectureOperation) => {
+  project = applyOperation(project, operation, "agent").project;
+  return project;
+};
+
+perform({ type: "rename_project", name: "Canonical House Regression" });
+perform({ type: "create_room", floorId: "floor-ground", name: "Living", roomType: "Living Room", x: 3, y: 10, width: 12, length: 12 });
+perform({ type: "create_room", floorId: "floor-ground", name: "Dining", roomType: "Dining Room", x: 15, y: 10, width: 12, length: 12 });
+perform({ type: "create_room", floorId: "floor-ground", name: "Kitchen", roomType: "Kitchen", x: 15, y: 22, width: 12, length: 10 });
+
+assert.equal(project.walls.filter((wall) => wall.roomIds.length === 2).length, 2, "adjacent rooms should share canonical walls");
+assert.equal(new Set(project.walls.map((wall) => wall.id)).size, project.walls.length, "canonical wall IDs must be unique");
+project.rooms.forEach((room) => assert.ok(room.wallIds.length >= 4, `${room.name} should reference its boundary segments`));
+
+const living = project.rooms.find((room) => room.name === "Living")!;
+const dining = project.rooms.find((room) => room.name === "Dining")!;
+const kitchen = project.rooms.find((room) => room.name === "Kitchen")!;
+const livingDiningWall = project.walls.find((wall) => wall.roomIds.includes(living.id) && wall.roomIds.includes(dining.id))!;
+const diningKitchenWall = project.walls.find((wall) => wall.roomIds.includes(dining.id) && wall.roomIds.includes(kitchen.id))!;
+const livingFrontWall = project.walls.find((wall) => wall.exterior && wall.roomSides.some((side) => side.roomId === living.id && side.side === "north"))!;
+const kitchenExteriorWall = project.walls.find((wall) => wall.exterior && wall.roomIds.includes(kitchen.id) && wallLength(wall) >= 5)!;
+const kitchenRehostWall = project.walls.find((wall) => wall.exterior && wall.roomIds.includes(kitchen.id) && wall.id !== kitchenExteriorWall.id && wallLength(wall) >= 5)!;
+
+perform({ type: "add_opening", kind: "door", wallId: livingFrontWall.id, offset: 6, width: 3, hingeSide: "start", handing: "left", swingDirection: "inward", state: "open" });
+perform({ type: "add_opening", kind: "door", wallId: livingDiningWall.id, offset: 6, width: 3, hingeSide: "end", handing: "right", swingDirection: "inward", state: "open" });
+perform({ type: "add_opening", kind: "door", wallId: diningKitchenWall.id, offset: 6, width: 3 });
+perform({ type: "add_opening", kind: "window", wallId: kitchenExteriorWall.id, offset: wallLength(kitchenExteriorWall) / 2, width: 4, height: 4, sillHeight: 3, windowType: "sliding", operable: true, glazing: "clear", solarTransmittance: 0.65 });
+
+let graph = buildCirculationGraph(project);
+assert.deepEqual(new Set(graph.reachableRoomIds), new Set([living.id, dining.id, kitchen.id]), "all rooms should reach the main entrance");
+assert.equal(validateLayout(project).issues.filter((issue) => issue.code.includes("CIRCULATION") || issue.code === "NO_EXTERIOR_ACCESS").length, 0);
+
+const interiorDoor = project.openings.find((opening) => opening.kind === "door" && opening.wallId === livingDiningWall.id)!;
+perform({ type: "rehost_opening", openingId: interiorDoor.id, wallId: kitchenRehostWall.id, offset: Math.min(4, wallLength(kitchenRehostWall) - interiorDoor.width / 2) });
+graph = buildCirculationGraph(project);
+assert.ok(graph.disconnectedRoomIds.includes(dining.id), "rehosting a circulation door should be reflected by graph reachability");
+assert.ok(validateLayout(project).issues.some((issue) => issue.code === "DISCONNECTED_CIRCULATION"));
+
+const window = project.openings.find((opening) => opening.kind === "window")!;
+perform({ type: "update_opening", openingId: window.id, windowType: "casement", operable: true, glazing: "privacy", solarTransmittance: 0.42 });
+assert.equal(project.openings.find((opening) => opening.id === window.id)?.glazing, "privacy");
+
+const metrics = projectMetrics(project);
+assert.ok(metrics.grossCoveredArea > metrics.totalNetFloorArea, "gross area should include canonical wall footprints");
+assert.equal(metrics.openSiteArea, metrics.plotArea - projectMetrics(project).grossCoveredArea);
+
+persistence.saveProjectLocally(project);
+const restored = persistence.loadLatestProject()!;
+assert.equal(restored.id, project.id);
+assert.equal(restored.schemaVersion, 2);
+assert.equal(restored.walls.length, project.walls.length);
+assert.equal(restored.openings.length, project.openings.length);
+assert.equal(restored.view.focusElementId, undefined, "temporary focus state should not be persisted");
+
+const exported = persistence.exportProjectDocument(project);
+const imported = persistence.importProjectDocument(exported);
+assert.notEqual(imported.id, project.id);
+assert.equal(imported.rooms.length, project.rooms.length);
+const duplicate = persistence.duplicateLocalProject(project);
+assert.notEqual(duplicate.id, project.id);
+assert.ok(persistence.listSavedProjects().length >= 3);
+const next = persistence.deleteLocalProject(duplicate.id);
+assert.ok(next, "deleting one saved project should leave another loadable project");
+
+let multiFloor = createInitialProject();
+const performMultiFloor = (operation: ArchitectureOperation) => {
+  multiFloor = applyOperation(multiFloor, operation, "agent").project;
+};
+performMultiFloor({ type: "create_room", floorId: "floor-ground", name: "Ground Hall", roomType: "Custom", x: 3, y: 10, width: 12, length: 12 });
+performMultiFloor({ type: "create_floor", name: "First Floor", height: 9 });
+const firstFloor = multiFloor.floors.find((floor) => floor.level === 1)!;
+performMultiFloor({ type: "create_room", floorId: firstFloor.id, name: "Upper Hall", roomType: "Custom", x: 3, y: 10, width: 12, length: 12 });
+performMultiFloor({ type: "add_stairs", floorId: "floor-ground", x: 5, y: 12, width: 3, length: 6, direction: "up" });
+const floorGraph = buildCirculationGraph(multiFloor);
+assert.ok(floorGraph.edges.some((edge) => edge.type === "stair"), "aligned rooms on consecutive floors should create a circulation stair edge");
+assert.equal(firstFloor.elevation, 9, "upper-floor elevation should derive from the floor below");
+
+console.log(JSON.stringify({
+  project: { id: project.id, schemaVersion: project.schemaVersion, rooms: project.rooms.length, walls: project.walls.length, openings: project.openings.length },
+  topology: { sharedWalls: project.walls.filter((wall) => wall.roomIds.length === 2).length, duplicateWallIds: project.walls.length - new Set(project.walls.map((wall) => wall.id)).size },
+  circulation: graph,
+  areas: { net: metrics.totalNetFloorArea, gross: metrics.grossCoveredArea, openSite: metrics.openSiteArea },
+  persistence: { savedProjects: persistence.listSavedProjects().length, restoredVersion: restored.version, importedProjectId: imported.id },
+  multiFloor: { floors: multiFloor.floors.length, firstFloorElevation: firstFloor.elevation, stairEdges: floorGraph.edges.filter((edge) => edge.type === "stair").length },
+}, null, 2));

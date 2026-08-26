@@ -1,0 +1,79 @@
+{
+  "format": "archmorph-project",
+  "schemaVersion": 1,
+  "exportedAt": "2026-08-26T00:00:00.000Z",
+  "project": {
+    "schemaVersion": 1,
+    "id": "project-recovered-modern-house",
+    "name": "Modern East-Facing Residence",
+    "unit": "ft",
+    "plot": {
+      "width": 30,
+      "length": 60,
+      "orientation": "East",
+      "setbacks": { "front": 10, "rear": 8, "left": 3, "right": 3 }
+    },
+    "floors": [
+      { "id": "floor-ground", "name": "Ground Floor", "level": 0, "elevation": 0, "height": 9 }
+    ],
+    "rooms": [
+      { "id": "room-entry", "floorId": "floor-ground", "name": "Entry Foyer", "type": "Custom", "x": 3, "y": 10, "width": 6, "length": 6, "color": "#c7b7ae", "wallIds": [] },
+      { "id": "room-living", "floorId": "floor-ground", "name": "Living Room", "type": "Living Room", "x": 3, "y": 16, "width": 13, "length": 11, "color": "#e8b39c", "wallIds": [] },
+      { "id": "room-bedroom-3", "floorId": "floor-ground", "name": "Bedroom 3", "type": "Bedroom", "x": 16, "y": 10, "width": 11, "length": 11, "color": "#a9c7c2", "wallIds": [] },
+      { "id": "room-private-hall", "floorId": "floor-ground", "name": "Private Hall", "type": "Custom", "x": 16, "y": 21, "width": 4, "length": 6, "color": "#c7b7ae", "wallIds": [] },
+      { "id": "room-shared-bath", "floorId": "floor-ground", "name": "Shared Bathroom", "type": "Bathroom", "x": 20, "y": 21, "width": 7, "length": 8, "color": "#a9bfd2", "wallIds": [] },
+      { "id": "room-dining", "floorId": "floor-ground", "name": "Dining Area", "type": "Dining Room", "x": 3, "y": 27, "width": 9, "length": 9, "color": "#d9b8a3", "wallIds": [] },
+      { "id": "room-kitchen", "floorId": "floor-ground", "name": "Modern Kitchen", "type": "Kitchen", "x": 12, "y": 27, "width": 8, "length": 9, "color": "#d8d2a7", "wallIds": [] },
+      { "id": "room-pantry", "floorId": "floor-ground", "name": "Utility Pantry", "type": "Storage", "x": 20, "y": 29, "width": 7, "length": 7, "color": "#c9b99e", "wallIds": [] },
+      { "id": "room-rear-gallery", "floorId": "floor-ground", "name": "Rear Gallery", "type": "Custom", "x": 3, "y": 36, "width": 18, "length": 4, "color": "#c7b7ae", "wallIds": [] },
+      { "id": "room-linen", "floorId": "floor-ground", "name": "Linen Storage", "type": "Storage", "x": 21, "y": 36, "width": 6, "length": 4, "color": "#c9b99e", "wallIds": [] },
+      { "id": "room-bedroom-2", "floorId": "floor-ground", "name": "Bedroom 2", "type": "Bedroom", "x": 3, "y": 40, "width": 8, "length": 12, "color": "#a9c7c2", "wallIds": [] },
+      { "id": "room-primary", "floorId": "floor-ground", "name": "Primary Bedroom", "type": "Bedroom", "x": 11, "y": 40, "width": 10, "length": 12, "color": "#a9c7c2", "wallIds": [] },
+      { "id": "room-ensuite", "floorId": "floor-ground", "name": "Primary Ensuite", "type": "Bathroom", "x": 21, "y": 40, "width": 6, "length": 8, "color": "#a9bfd2", "wallIds": [] }
+    ],
+    "walls": [],
+    "openings": [
+      { "id": "door-00", "floorId": "floor-ground", "kind": "door", "wallId": "legacy-point", "offset": 0, "width": 3, "height": 7, "legacyPosition": { "x": 6, "y": 10 } },
+      { "id": "door-01", "floorId": "floor-ground", "kind": "door", "wallId": "legacy-point", "offset": 0, "width": 3, "height": 7, "legacyPosition": { "x": 6, "y": 16 } },
+      { "id": "door-02", "floorId": "floor-ground", "kind": "door", "wallId": "legacy-point", "offset": 0, "width": 3.5, "height": 7, "legacyPosition": { "x": 8, "y": 27 } },
+      { "id": "door-03", "floorId": "floor-ground", "kind": "door", "wallId": "legacy-point", "offset": 0, "width": 3, "height": 7, "legacyPosition": { "x": 18, "y": 21 } },
+      { "id": "door-04", "floorId": "floor-ground", "kind": "door", "wallId": "legacy-point", "offset": 0, "width": 3, "height": 7, "legacyPosition": { "x": 16, "y": 24 } },
+      { "id": "door-05", "floorId": "floor-ground", "kind": "door", "wallId": "legacy-point", "offset": 0, "width": 3, "height": 7, "legacyPosition": { "x": 20, "y": 24 } },
+      { "id": "door-06", "floorId": "floor-ground", "kind": "door", "wallId": "legacy-point", "offset": 0, "width": 4, "height": 7, "legacyPosition": { "x": 12, "y": 31.5 } },
+      { "id": "door-07", "floorId": "floor-ground", "kind": "door", "wallId": "legacy-point", "offset": 0, "width": 3, "height": 7, "legacyPosition": { "x": 20, "y": 32 } },
+      { "id": "door-08", "floorId": "floor-ground", "kind": "door", "wallId": "legacy-point", "offset": 0, "width": 3, "height": 7, "legacyPosition": { "x": 27, "y": 34 } },
+      { "id": "door-09", "floorId": "floor-ground", "kind": "door", "wallId": "legacy-point", "offset": 0, "width": 3.5, "height": 7, "legacyPosition": { "x": 7.5, "y": 36 } },
+      { "id": "door-10", "floorId": "floor-ground", "kind": "door", "wallId": "legacy-point", "offset": 0, "width": 3, "height": 7, "legacyPosition": { "x": 16, "y": 36 } },
+      { "id": "door-11", "floorId": "floor-ground", "kind": "door", "wallId": "legacy-point", "offset": 0, "width": 3, "height": 7, "legacyPosition": { "x": 21, "y": 38 } },
+      { "id": "door-12", "floorId": "floor-ground", "kind": "door", "wallId": "legacy-point", "offset": 0, "width": 3, "height": 7, "legacyPosition": { "x": 7, "y": 40 } },
+      { "id": "door-13", "floorId": "floor-ground", "kind": "door", "wallId": "legacy-point", "offset": 0, "width": 3, "height": 7, "legacyPosition": { "x": 16, "y": 40 } },
+      { "id": "door-14", "floorId": "floor-ground", "kind": "door", "wallId": "legacy-point", "offset": 0, "width": 3, "height": 7, "legacyPosition": { "x": 21, "y": 44 } },
+      { "id": "window-00", "floorId": "floor-ground", "kind": "window", "wallId": "legacy-point", "offset": 0, "width": 3, "height": 4, "sillHeight": 3, "legacyPosition": { "x": 9, "y": 13 } },
+      { "id": "window-01", "floorId": "floor-ground", "kind": "window", "wallId": "legacy-point", "offset": 0, "width": 3, "height": 4, "sillHeight": 3, "legacyPosition": { "x": 3, "y": 24 } },
+      { "id": "window-02", "floorId": "floor-ground", "kind": "window", "wallId": "legacy-point", "offset": 0, "width": 3, "height": 4, "sillHeight": 3, "legacyPosition": { "x": 3, "y": 19 } },
+      { "id": "window-03", "floorId": "floor-ground", "kind": "window", "wallId": "legacy-point", "offset": 0, "width": 4, "height": 4, "sillHeight": 3, "legacyPosition": { "x": 13.5, "y": 16 } },
+      { "id": "window-04", "floorId": "floor-ground", "kind": "window", "wallId": "legacy-point", "offset": 0, "width": 3, "height": 4, "sillHeight": 3, "legacyPosition": { "x": 19, "y": 10 } },
+      { "id": "window-05", "floorId": "floor-ground", "kind": "window", "wallId": "legacy-point", "offset": 0, "width": 3, "height": 4, "sillHeight": 3, "legacyPosition": { "x": 24, "y": 10 } },
+      { "id": "window-06", "floorId": "floor-ground", "kind": "window", "wallId": "legacy-point", "offset": 0, "width": 4, "height": 4, "sillHeight": 3, "legacyPosition": { "x": 27, "y": 15.5 } },
+      { "id": "window-07", "floorId": "floor-ground", "kind": "window", "wallId": "legacy-point", "offset": 0, "width": 3, "height": 4, "sillHeight": 3, "legacyPosition": { "x": 27, "y": 25 } },
+      { "id": "window-08", "floorId": "floor-ground", "kind": "window", "wallId": "legacy-point", "offset": 0, "width": 4, "height": 4, "sillHeight": 3, "legacyPosition": { "x": 3, "y": 31.5 } },
+      { "id": "window-09", "floorId": "floor-ground", "kind": "window", "wallId": "legacy-point", "offset": 0, "width": 2, "height": 4, "sillHeight": 3, "legacyPosition": { "x": 27, "y": 30.25 } },
+      { "id": "window-10", "floorId": "floor-ground", "kind": "window", "wallId": "legacy-point", "offset": 0, "width": 2, "height": 4, "sillHeight": 3, "legacyPosition": { "x": 3, "y": 38 } },
+      { "id": "window-11", "floorId": "floor-ground", "kind": "window", "wallId": "legacy-point", "offset": 0, "width": 2, "height": 4, "sillHeight": 3, "legacyPosition": { "x": 27, "y": 38 } },
+      { "id": "window-12", "floorId": "floor-ground", "kind": "window", "wallId": "legacy-point", "offset": 0, "width": 3, "height": 4, "sillHeight": 3, "legacyPosition": { "x": 3, "y": 49 } },
+      { "id": "window-13", "floorId": "floor-ground", "kind": "window", "wallId": "legacy-point", "offset": 0, "width": 3, "height": 4, "sillHeight": 3, "legacyPosition": { "x": 3, "y": 43 } },
+      { "id": "window-14", "floorId": "floor-ground", "kind": "window", "wallId": "legacy-point", "offset": 0, "width": 4, "height": 4, "sillHeight": 3, "legacyPosition": { "x": 7, "y": 52 } },
+      { "id": "window-15", "floorId": "floor-ground", "kind": "window", "wallId": "legacy-point", "offset": 0, "width": 4, "height": 4, "sillHeight": 3, "legacyPosition": { "x": 16.5, "y": 52 } },
+      { "id": "window-16", "floorId": "floor-ground", "kind": "window", "wallId": "legacy-point", "offset": 0, "width": 2, "height": 4, "sillHeight": 3, "legacyPosition": { "x": 12, "y": 52 } },
+      { "id": "window-17", "floorId": "floor-ground", "kind": "window", "wallId": "legacy-point", "offset": 0, "width": 3, "height": 4, "sillHeight": 3, "legacyPosition": { "x": 27, "y": 44 } },
+      { "id": "window-18", "floorId": "floor-ground", "kind": "window", "wallId": "legacy-point", "offset": 0, "width": 3, "height": 4, "sillHeight": 3, "legacyPosition": { "x": 24, "y": 48 } }
+    ],
+    "stairs": [],
+    "view": { "mode": "2d", "navigationMode": "orbit", "activeFloorId": "floor-ground", "cameraPreset": "front-right" },
+    "activity": [
+      { "id": "activity-recovered", "actor": "system", "description": "Recovered the v58 stress-test house into schema v2", "operation": "migrate_project", "timestamp": "2026-08-26T00:00:00.000Z", "version": 58 }
+    ],
+    "version": 58,
+    "updatedAt": "2026-08-26T00:00:00.000Z"
+  }
+}

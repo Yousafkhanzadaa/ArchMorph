@@ -6,8 +6,11 @@ import {
   type Project,
   type RoomType,
   type ValidationReport,
+  buildCirculationGraph,
   inspectFloor,
+  inspectOpening,
   inspectRoom,
+  inspectWall,
   measureDistance,
   projectInspection,
   projectMetrics,
@@ -69,6 +72,20 @@ function optionalNumber(input: Record<string, unknown>, key: string) {
   const value = input[key];
   if (value === undefined) return undefined;
   if (typeof value !== "number" || Number.isNaN(value)) throw new Error(`${key} must be a number.`);
+  return value;
+}
+
+function optionalString(input: Record<string, unknown>, key: string) {
+  const value = input[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") throw new Error(`${key} must be a string.`);
+  return value;
+}
+
+function optionalBoolean(input: Record<string, unknown>, key: string) {
+  const value = input[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== "boolean") throw new Error(`${key} must be true or false.`);
   return value;
 }
 
@@ -159,6 +176,30 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
       },
       annotations: readOnly,
       execute: (input) => inspectRoom(runtime.getProject(), requiredString(input, "roomId")),
+    },
+    {
+      name: "inspect_wall",
+      category: "inspect",
+      description: "Inspect one canonical physical wall, its endpoints, length, exterior/interior status, adjacent rooms, connected wall segments, and hosted openings.",
+      inputSchema: { type: "object", properties: { wallId }, required: ["wallId"], additionalProperties: false },
+      annotations: readOnly,
+      execute: (input) => inspectWall(runtime.getProject(), requiredString(input, "wallId")),
+    },
+    {
+      name: "inspect_opening",
+      category: "inspect",
+      description: "Inspect one door or window together with its full architectural configuration and canonical host wall.",
+      inputSchema: { type: "object", properties: { openingId }, required: ["openingId"], additionalProperties: false },
+      annotations: readOnly,
+      execute: (input) => inspectOpening(runtime.getProject(), requiredString(input, "openingId")),
+    },
+    {
+      name: "inspect_circulation",
+      category: "inspect",
+      description: "Inspect the traversable room graph, main entrance, room-to-room door edges, stair edges, unreachable rooms, and invalid circulation elements.",
+      inputSchema: emptyObject,
+      annotations: readOnly,
+      execute: () => buildCirculationGraph(runtime.getProject()),
     },
     {
       name: "create_room",
@@ -304,10 +345,19 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
       name: "add_door",
       category: "edit",
       description:
-        "Place a door on a valid wall. Offset is the door center's distance in feet from the wall start point.",
+        "Place a configured door on a canonical wall. Offset is the door center's distance in feet from the wall start point; the same handing, swing, and state drive 2D and 3D.",
       inputSchema: {
         type: "object",
-        properties: { wallId, offset: { type: "number" }, width: { type: "number", minimum: 2, maximum: 8, default: 3 } },
+        properties: {
+          wallId,
+          offset: { type: "number" },
+          width: { type: "number", minimum: 2, maximum: 8, default: 3 },
+          height: { type: "number", minimum: 6, maximum: 9, default: 7 },
+          hingeSide: { type: "string", enum: ["start", "end"], default: "start" },
+          handing: { type: "string", enum: ["left", "right"], default: "left" },
+          swingDirection: { type: "string", enum: ["inward", "outward"], default: "inward" },
+          state: { type: "string", enum: ["open", "closed"], default: "open" },
+        },
         required: ["wallId", "offset"],
         additionalProperties: false,
       },
@@ -317,16 +367,31 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
         wallId: requiredString(input, "wallId"),
         offset: requiredNumber(input, "offset"),
         width: optionalNumber(input, "width"),
+        height: optionalNumber(input, "height"),
+        hingeSide: optionalString(input, "hingeSide") as "start" | "end" | undefined,
+        handing: optionalString(input, "handing") as "left" | "right" | undefined,
+        swingDirection: optionalString(input, "swingDirection") as "inward" | "outward" | undefined,
+        state: optionalString(input, "state") as "open" | "closed" | undefined,
       }).result,
     },
     {
       name: "add_window",
       category: "edit",
       description:
-        "Place a window on a valid wall. Offset is the window center's distance in feet from the wall start point.",
+        "Place a configured window on a canonical wall. Width, height, sill, type, operation, and glazing are shared by the 2D and 3D representations.",
       inputSchema: {
         type: "object",
-        properties: { wallId, offset: { type: "number" }, width: { type: "number", minimum: 2, maximum: 12, default: 4 } },
+        properties: {
+          wallId,
+          offset: { type: "number" },
+          width: { type: "number", minimum: 2, maximum: 12, default: 4 },
+          height: { type: "number", minimum: 1, maximum: 8, default: 4 },
+          sillHeight: { type: "number", minimum: 0, maximum: 8, default: 3 },
+          windowType: { type: "string", enum: ["fixed", "casement", "sliding", "awning"], default: "fixed" },
+          operable: { type: "boolean", default: false },
+          glazing: { type: "string", enum: ["clear", "privacy"], default: "clear" },
+          solarTransmittance: { type: "number", minimum: 0, maximum: 1, default: 0.7 },
+        },
         required: ["wallId", "offset"],
         additionalProperties: false,
       },
@@ -336,6 +401,12 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
         wallId: requiredString(input, "wallId"),
         offset: requiredNumber(input, "offset"),
         width: optionalNumber(input, "width"),
+        height: optionalNumber(input, "height"),
+        sillHeight: optionalNumber(input, "sillHeight"),
+        windowType: optionalString(input, "windowType") as "fixed" | "casement" | "sliding" | "awning" | undefined,
+        operable: optionalBoolean(input, "operable"),
+        glazing: optionalString(input, "glazing") as "clear" | "privacy" | undefined,
+        solarTransmittance: optionalNumber(input, "solarTransmittance"),
       }).result,
     },
     {
@@ -351,6 +422,14 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
           width: { type: "number", minimum: 0.5, maximum: 16 },
           height: { type: "number", minimum: 0.5, maximum: 12 },
           sillHeight: { type: "number", minimum: 0, maximum: 10 },
+          hingeSide: { type: "string", enum: ["start", "end"] },
+          handing: { type: "string", enum: ["left", "right"] },
+          swingDirection: { type: "string", enum: ["inward", "outward"] },
+          state: { type: "string", enum: ["open", "closed"] },
+          windowType: { type: "string", enum: ["fixed", "casement", "sliding", "awning"] },
+          operable: { type: "boolean" },
+          glazing: { type: "string", enum: ["clear", "privacy"] },
+          solarTransmittance: { type: "number", minimum: 0, maximum: 1 },
         },
         required: ["openingId"],
         additionalProperties: false,
@@ -362,7 +441,143 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
         width: optionalNumber(input, "width"),
         height: optionalNumber(input, "height"),
         sillHeight: optionalNumber(input, "sillHeight"),
+        hingeSide: optionalString(input, "hingeSide") as "start" | "end" | undefined,
+        handing: optionalString(input, "handing") as "left" | "right" | undefined,
+        swingDirection: optionalString(input, "swingDirection") as "inward" | "outward" | undefined,
+        state: optionalString(input, "state") as "open" | "closed" | undefined,
+        windowType: optionalString(input, "windowType") as "fixed" | "casement" | "sliding" | "awning" | undefined,
+        operable: optionalBoolean(input, "operable"),
+        glazing: optionalString(input, "glazing") as "clear" | "privacy" | undefined,
+        solarTransmittance: optionalNumber(input, "solarTransmittance"),
       }).result,
+    },
+    {
+      name: "set_door_properties",
+      category: "edit",
+      description: "Set architectural door width, height, hinge, handing, swing direction, and open/closed state without creating a separate rendering model.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          openingId,
+          width: { type: "number", minimum: 2, maximum: 8 },
+          height: { type: "number", minimum: 6, maximum: 9 },
+          hingeSide: { type: "string", enum: ["start", "end"] },
+          handing: { type: "string", enum: ["left", "right"] },
+          swingDirection: { type: "string", enum: ["inward", "outward"] },
+          state: { type: "string", enum: ["open", "closed"] },
+        },
+        required: ["openingId"],
+        additionalProperties: false,
+      },
+      execute: (input) => {
+        const id = requiredString(input, "openingId");
+        const opening = runtime.getProject().openings.find((item) => item.id === id);
+        if (opening?.kind !== "door") throw new Error(`${id} is not a door.`);
+        return runtime.perform({
+          type: "update_opening",
+          openingId: id,
+          width: optionalNumber(input, "width"),
+          height: optionalNumber(input, "height"),
+          hingeSide: optionalString(input, "hingeSide") as "start" | "end" | undefined,
+          handing: optionalString(input, "handing") as "left" | "right" | undefined,
+          swingDirection: optionalString(input, "swingDirection") as "inward" | "outward" | undefined,
+          state: optionalString(input, "state") as "open" | "closed" | undefined,
+        }).result;
+      },
+    },
+    {
+      name: "rehost_door",
+      category: "edit",
+      description: "Move an existing door onto another compatible canonical wall at an exact center offset.",
+      inputSchema: { type: "object", properties: { openingId, wallId, offset: { type: "number" } }, required: ["openingId", "wallId", "offset"], additionalProperties: false },
+      execute: (input) => {
+        const id = requiredString(input, "openingId");
+        if (runtime.getProject().openings.find((item) => item.id === id)?.kind !== "door") throw new Error(`${id} is not a door.`);
+        return runtime.perform({ type: "rehost_opening", openingId: id, wallId: requiredString(input, "wallId"), offset: requiredNumber(input, "offset") }).result;
+      },
+    },
+    {
+      name: "set_window_properties",
+      category: "edit",
+      description: "Set window size, sill height, type, operability, glazing, and basic solar transmittance in the shared architectural model.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          openingId,
+          width: { type: "number", minimum: 1, maximum: 16 },
+          height: { type: "number", minimum: 1, maximum: 8 },
+          sillHeight: { type: "number", minimum: 0, maximum: 8 },
+          windowType: { type: "string", enum: ["fixed", "casement", "sliding", "awning"] },
+          operable: { type: "boolean" },
+          glazing: { type: "string", enum: ["clear", "privacy"] },
+          solarTransmittance: { type: "number", minimum: 0, maximum: 1 },
+        },
+        required: ["openingId"],
+        additionalProperties: false,
+      },
+      execute: (input) => {
+        const id = requiredString(input, "openingId");
+        const opening = runtime.getProject().openings.find((item) => item.id === id);
+        if (opening?.kind !== "window") throw new Error(`${id} is not a window.`);
+        return runtime.perform({
+          type: "update_opening",
+          openingId: id,
+          width: optionalNumber(input, "width"),
+          height: optionalNumber(input, "height"),
+          sillHeight: optionalNumber(input, "sillHeight"),
+          windowType: optionalString(input, "windowType") as "fixed" | "casement" | "sliding" | "awning" | undefined,
+          operable: optionalBoolean(input, "operable"),
+          glazing: optionalString(input, "glazing") as "clear" | "privacy" | undefined,
+          solarTransmittance: optionalNumber(input, "solarTransmittance"),
+        }).result;
+      },
+    },
+    {
+      name: "rehost_window",
+      category: "edit",
+      description: "Move an existing window onto another compatible canonical wall at an exact center offset.",
+      inputSchema: { type: "object", properties: { openingId, wallId, offset: { type: "number" } }, required: ["openingId", "wallId", "offset"], additionalProperties: false },
+      execute: (input) => {
+        const id = requiredString(input, "openingId");
+        if (runtime.getProject().openings.find((item) => item.id === id)?.kind !== "window") throw new Error(`${id} is not a window.`);
+        return runtime.perform({ type: "rehost_opening", openingId: id, wallId: requiredString(input, "wallId"), offset: requiredNumber(input, "offset") }).result;
+      },
+    },
+    {
+      name: "set_exact_dimension",
+      category: "edit",
+      description: "Set one exact dimension or position on a room, opening, or the plot. The change uses the same operation pipeline as manual inspector input.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          elementId: { type: "string", description: "Room/opening ID, or the literal 'plot'." },
+          property: { type: "string", enum: ["width", "length", "x", "y", "offset", "height", "sillHeight"] },
+          value: { type: "number", description: "Exact value in feet." },
+        },
+        required: ["elementId", "property", "value"],
+        additionalProperties: false,
+      },
+      execute: (input) => {
+        const elementId = requiredString(input, "elementId");
+        const property = requiredString(input, "property");
+        const value = requiredNumber(input, "value");
+        const project = runtime.getProject();
+        if (elementId === "plot") {
+          if (property !== "width" && property !== "length") throw new Error("Plot supports width or length.");
+          return runtime.perform({ type: "set_plot", [property]: value }).result;
+        }
+        const room = project.rooms.find((item) => item.id === elementId);
+        if (room) {
+          if (property === "width" || property === "length") return runtime.perform({ type: "resize_room", roomId: room.id, width: property === "width" ? value : room.width, length: property === "length" ? value : room.length }).result;
+          if (property === "x" || property === "y") return runtime.perform({ type: "move_room", roomId: room.id, x: property === "x" ? value : room.x, y: property === "y" ? value : room.y }).result;
+          throw new Error("Rooms support width, length, x, or y.");
+        }
+        const opening = project.openings.find((item) => item.id === elementId);
+        if (opening && ["width", "offset", "height", "sillHeight"].includes(property)) {
+          return runtime.perform({ type: "update_opening", openingId: opening.id, [property]: value }).result;
+        }
+        throw new Error(`Element ${elementId} does not support ${property}.`);
+      },
     },
     {
       name: "delete_opening",
@@ -434,30 +649,43 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
       execute: (input) => {
         const room = runtime.getProject().rooms.find((item) => item.id === requiredString(input, "roomId"));
         if (!room) throw new Error("Room does not exist.");
-        return { roomId: room.id, name: room.name, width: room.width, length: room.length, area: roomArea(room), unit: "sq ft" };
+        return { roomId: room.id, name: room.name, width: room.width, length: room.length, netRoomArea: roomArea(room), area: roomArea(room), areaDefinition: "Usable internal rectangular area excluding wall thickness. The area alias is retained for compatibility.", unit: "sq ft" };
       },
     },
     {
       name: "calculate_total_area",
       category: "calculate",
       description:
-        "Calculate current floor coverage and total constructed area across all floors, using union area so overlaps are not double-counted.",
+        "Return explicitly named net and gross architectural areas for the active floor and whole building, with definitions that avoid ambiguous coverage values.",
       inputSchema: emptyObject,
       annotations: readOnly,
       execute: () => {
         const metrics = projectMetrics(runtime.getProject());
-        return { floorCoveredArea: metrics.floorCoveredArea, totalConstructedArea: metrics.totalConstructedArea, unit: metrics.unit };
+        return {
+          totalNetFloorArea: metrics.totalNetFloorArea,
+          totalNetBuildingArea: metrics.totalNetBuildingArea,
+          grossCoveredArea: metrics.grossCoveredArea,
+          totalGrossCoveredArea: metrics.totalGrossCoveredArea,
+          plotArea: metrics.plotArea,
+          definitions: metrics.measurementDefinitions,
+          compatibility: {
+            floorCoveredArea: metrics.floorCoveredArea,
+            totalConstructedArea: metrics.totalConstructedArea,
+            note: "Legacy union-of-room-footprints values retained for existing clients; prefer the explicitly named net/gross fields.",
+          },
+          unit: metrics.unit,
+        };
       },
     },
     {
       name: "calculate_open_area",
       category: "calculate",
-      description: "Calculate the current unbuilt ground-plot area and site coverage percentage.",
+      description: "Calculate open site area outside the gross ground-floor building footprint and the gross site coverage percentage.",
       inputSchema: emptyObject,
       annotations: readOnly,
       execute: () => {
         const metrics = projectMetrics(runtime.getProject());
-        return { plotArea: metrics.plotArea, openArea: metrics.openArea, coveragePercent: metrics.coveragePercent, unit: metrics.unit };
+        return { plotArea: metrics.plotArea, openSiteArea: metrics.openSiteArea, grossCoveragePercent: metrics.coveragePercent, definition: metrics.measurementDefinitions.openSiteArea, unit: metrics.unit };
       },
     },
     {
@@ -491,7 +719,7 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
       name: "validate_layout",
       category: "calculate",
       description:
-        "Analyze the live layout for room overlaps, plot and setback violations, invalid openings, wall bounds, and rooms with no obvious door access. Returns structured, correctable findings—not final code certification.",
+        "Analyze geometry, canonical openings, exterior access, main-entrance reachability, disconnected room groups, and stair connections. Returns structured, correctable findings—not final code certification.",
       inputSchema: {
         type: "object",
         properties: { floorId: { ...floorId, description: "Optional floor to validate; omit to validate the entire project." } },

@@ -8,13 +8,16 @@ import {
   Check,
   ChevronDown,
   CircleAlert,
+  Copy,
   Code2,
   DoorOpen,
   Download,
   Eye,
+  FilePlus2,
   Footprints,
   Grid2X2,
   History,
+  FolderOpen,
   Layers3,
   Maximize2,
   Minus,
@@ -24,10 +27,12 @@ import {
   Redo2,
   Ruler,
   Scan,
+  Save,
   Sparkles,
   Square,
   Trash2,
   Undo2,
+  Upload,
   X,
 } from "lucide-react";
 import {
@@ -56,6 +61,18 @@ import {
   type RoomType,
   type ValidationReport,
 } from "@/lib/architecture";
+import {
+  createNewLocalProject,
+  deleteLocalProject,
+  duplicateLocalProject,
+  exportProjectDocument,
+  importProjectDocument,
+  listSavedProjects,
+  loadLatestProject,
+  loadSavedProject,
+  saveProjectLocally,
+  type SavedProjectSummary,
+} from "@/lib/persistence";
 import { createArchMorphTools } from "@/lib/webmcp-tools";
 import FloorPlan, { type CanvasTool } from "./FloorPlan";
 import ModelView from "./ModelView";
@@ -267,6 +284,8 @@ export default function Studio() {
   const [debugToolName, setDebugToolName] = useState("inspect_project");
   const [debugInput, setDebugInput] = useState("{}");
   const [toast, setToast] = useState<string>();
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
+  const [savedProjects, setSavedProjects] = useState<SavedProjectSummary[]>([]);
   const [savedVersion, setSavedVersion] = useState(0);
   const [pastCount, setPastCount] = useState(0);
   const [futureCount, setFutureCount] = useState(0);
@@ -274,6 +293,7 @@ export default function Studio() {
   const futureRef = useRef<Project[]>([]);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   const toastTimer = useRef<number | undefined>(undefined);
 
   const notify = useCallback((message: string) => {
@@ -281,6 +301,34 @@ export default function Studio() {
     if (toastTimer.current) window.clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToast(undefined), 2600);
   }, []);
+
+  const replaceProject = useCallback((next: Project, message?: string) => {
+    projectRef.current = next;
+    setProject(next);
+    setSelectedId(undefined);
+    setValidation(validateLayout(next));
+    pastRef.current = [];
+    futureRef.current = [];
+    setPastCount(0);
+    setFutureCount(0);
+    setSavedVersion(next.version);
+    setSavedProjects(listSavedProjects());
+    setProjectMenuOpen(false);
+    if (message) notify(message);
+  }, [notify]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const restored = loadLatestProject();
+      if (restored) replaceProject(restored, "Restored latest local project");
+      else {
+        saveProjectLocally(projectRef.current);
+        setSavedVersion(projectRef.current.version);
+        setSavedProjects(listSavedProjects());
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [replaceProject]);
 
   const commit = useCallback(
     (operation: ArchitectureOperation, actor: Actor = "human"): OperationOutcome => {
@@ -291,6 +339,9 @@ export default function Studio() {
         futureRef.current = [];
         projectRef.current = outcome.project;
         setProject(outcome.project);
+        saveProjectLocally(outcome.project);
+        setSavedVersion(outcome.project.version);
+        setSavedProjects(listSavedProjects());
         if (outcome.project.view.focusElementId !== previous.view.focusElementId) {
           setSelectedId(outcome.project.view.focusElementId);
         }
@@ -326,6 +377,8 @@ export default function Studio() {
     };
     projectRef.current = next;
     setProject(next);
+    saveProjectLocally(next);
+    setSavedVersion(next.version);
   }, []);
 
   const captureSnapshot = useCallback(async (options?: { download?: boolean }) => {
@@ -363,7 +416,7 @@ export default function Studio() {
       if (download) setSavedVersion(current.version);
       return { format, filename, projectVersion: current.version, content };
     }
-    const content = JSON.stringify(current, null, 2);
+    const content = exportProjectDocument(current);
     const filename = `archmorph-project-v${current.version}.json`;
     if (download) downloadText(content, filename, "application/json");
     if (download) setSavedVersion(current.version);
@@ -457,6 +510,8 @@ export default function Studio() {
     futureRef.current.push(cloneProject(projectRef.current));
     projectRef.current = previous;
     setProject(previous);
+    saveProjectLocally(previous);
+    setSavedVersion(previous.version);
     setValidation(validateLayout(previous));
     setSelectedId(undefined);
     setPastCount(pastRef.current.length);
@@ -470,6 +525,8 @@ export default function Studio() {
     pastRef.current.push(cloneProject(projectRef.current));
     projectRef.current = next;
     setProject(next);
+    saveProjectLocally(next);
+    setSavedVersion(next.version);
     setValidation(validateLayout(next));
     setSelectedId(undefined);
     setPastCount(pastRef.current.length);
@@ -582,6 +639,42 @@ export default function Studio() {
     }
   };
 
+  const saveCurrentProject = () => {
+    saveProjectLocally(projectRef.current);
+    setSavedVersion(projectRef.current.version);
+    setSavedProjects(listSavedProjects());
+    setProjectMenuOpen(false);
+    notify("Project saved locally");
+  };
+
+  const createProject = () => {
+    const next = createNewLocalProject();
+    replaceProject(next, "Created a new local project");
+  };
+
+  const duplicateProject = () => {
+    const next = duplicateLocalProject(projectRef.current);
+    replaceProject(next, "Duplicated project");
+  };
+
+  const removeCurrentProject = () => {
+    if (!window.confirm(`Delete “${projectRef.current.name}” from this device? This cannot be undone.`)) return;
+    const next = deleteLocalProject(projectRef.current.id) ?? createNewLocalProject();
+    replaceProject(next, "Deleted local project");
+  };
+
+  const importProject = async (file?: File) => {
+    if (!file) return;
+    try {
+      const next = importProjectDocument(await file.text());
+      replaceProject(next, "Imported project");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Could not import this project.");
+    } finally {
+      if (importInputRef.current) importInputRef.current.value = "";
+    }
+  };
+
   return (
     <main className="studio-shell">
       <header className="topbar">
@@ -592,12 +685,33 @@ export default function Studio() {
             <span>RESIDENTIAL STUDIO</span>
           </div>
         </div>
-        <button className="project-title" type="button" title="Current project">
-          <Building2 size={14} />
-          <span>{project.name}</span>
-          <i>{savedVersion === project.version ? "Saved" : `v${project.version}`}</i>
-          <ChevronDown size={13} />
-        </button>
+        <div className="project-switcher">
+          <button className="project-title" type="button" title="Project files" aria-expanded={projectMenuOpen} onClick={() => { setSavedProjects(listSavedProjects()); setProjectMenuOpen((value) => !value); }}>
+            <Building2 size={14} />
+            <span>{project.name}</span>
+            <i>{savedVersion === project.version ? "Saved locally" : `v${project.version}`}</i>
+            <ChevronDown size={13} />
+          </button>
+          {projectMenuOpen && (
+            <div className="project-menu" role="dialog" aria-label="Project files">
+              <label className="project-name-field"><span>Project name</span><input key={`${project.id}:${project.name}`} defaultValue={project.name} onBlur={(event) => { const name = event.currentTarget.value.trim(); if (name && name !== project.name) safeCommit({ type: "rename_project", name }); else event.currentTarget.value = project.name; }} /></label>
+              <div className="project-menu-actions">
+                <button type="button" onClick={saveCurrentProject}><Save size={14} />Save</button>
+                <button type="button" onClick={createProject}><FilePlus2 size={14} />New</button>
+                <button type="button" onClick={duplicateProject}><Copy size={14} />Duplicate</button>
+                <button type="button" onClick={() => { exportPlan("json", true); setProjectMenuOpen(false); notify("Project exported"); }}><Download size={14} />Export</button>
+                <button type="button" onClick={() => importInputRef.current?.click()}><Upload size={14} />Import</button>
+                <button type="button" className="is-danger" onClick={removeCurrentProject}><Trash2 size={14} />Delete</button>
+              </div>
+              <div className="saved-projects"><span>Projects on this device</span>{savedProjects.map((saved) => (
+                <button key={saved.id} type="button" className={saved.id === project.id ? "is-active" : ""} onClick={() => replaceProject(loadSavedProject(saved.id), `Loaded ${saved.name}`)}>
+                  <FolderOpen size={14} /><span><b>{saved.name}</b><small>{saved.floorCount} floor{saved.floorCount === 1 ? "" : "s"} · {saved.roomCount} rooms · v{saved.version}</small></span>
+                </button>
+              ))}</div>
+            </div>
+          )}
+          <input ref={importInputRef} hidden type="file" accept="application/json,.json,.archmorph" onChange={(event) => void importProject(event.currentTarget.files?.[0])} />
+        </div>
         <div className="view-switch" role="group" aria-label="Drawing view">
           <button className={project.view.mode === "2d" ? "is-active" : ""} onClick={() => safeCommit({ type: "switch_view", mode: "2d" })}>
             <Grid2X2 size={14} /> Floor plan
@@ -702,9 +816,9 @@ export default function Studio() {
         <section className="canvas-stage">
           <div className="canvas-toolbar">
             <div className="metric-strip">
-              <span><small>COVERED</small><b>{metrics.floorCoveredArea.toLocaleString()} <i>sq ft</i></b></span>
-              <span><small>OPEN</small><b>{metrics.openArea.toLocaleString()} <i>sq ft</i></b></span>
-              <span><small>COVERAGE</small><b>{metrics.coveragePercent}<i>%</i></b></span>
+              <span><small>NET FLOOR</small><b>{metrics.totalNetFloorArea.toLocaleString()} <i>sq ft</i></b></span>
+              <span><small>GROSS</small><b>{metrics.grossCoveredArea.toLocaleString()} <i>sq ft</i></b></span>
+              <span><small>OPEN SITE</small><b>{metrics.openSiteArea.toLocaleString()} <i>sq ft</i></b></span>
             </div>
             <div className="canvas-controls">
               {project.view.mode === "3d" && navigationMode === "orbit" && (
@@ -769,7 +883,7 @@ export default function Studio() {
                   </span>
                   <div>
                     <small>{selectedRoom ? selectedRoom.type : selectedWall ? "Wall" : selectedOpening ? selectedOpening.kind : selectedStair ? "Staircase" : "Project site"}</small>
-                    <h2>{selectedRoom?.name ?? (selectedWall ? selectedWall.side ? `${selectedWall.side} wall` : "Independent wall" : selectedOpening ? `${selectedOpening.kind[0].toUpperCase()}${selectedOpening.kind.slice(1)}` : selectedStair ? "Staircase" : project.name)}</h2>
+                    <h2>{selectedRoom?.name ?? (selectedWall ? selectedWall.roomIds.length > 1 ? "Shared wall" : selectedWall.side ? `${selectedWall.side} wall` : "Independent wall" : selectedOpening ? `${selectedOpening.kind[0].toUpperCase()}${selectedOpening.kind.slice(1)}` : selectedStair ? "Staircase" : project.name)}</h2>
                   </div>
                   {selectedId && <button type="button" onClick={deleteSelected} title="Delete selected element"><Trash2 size={16} /></button>}
                 </div>
@@ -787,16 +901,16 @@ export default function Studio() {
                         <NumberField label="X position" value={selectedRoom.x} min={0} onCommit={(x) => safeCommit({ type: "move_room", roomId: selectedRoom.id, x, y: selectedRoom.y })} />
                         <NumberField label="Y position" value={selectedRoom.y} min={0} onCommit={(y) => safeCommit({ type: "move_room", roomId: selectedRoom.id, x: selectedRoom.x, y })} />
                       </div>
-                      <div className="area-result"><span>Calculated area</span><b>{roomArea(selectedRoom).toLocaleString()} sq ft</b></div>
+                      <div className="area-result"><span>Net room area</span><b>{roomArea(selectedRoom).toLocaleString()} sq ft</b></div>
                     </Section>
                     <Section title="Element">
-                      <div className="detail-list"><span>ID <code>{selectedRoom.id}</code></span><span>Floor <b>{activeFloor.name}</b></span><span>Walls <b>{project.walls.filter((wall) => wall.roomId === selectedRoom.id).length}</b></span></div>
+                      <div className="detail-list"><span>ID <code>{selectedRoom.id}</code></span><span>Floor <b>{activeFloor.name}</b></span><span>Canonical walls <b>{selectedRoom.wallIds.length}</b></span></div>
                       <button type="button" className="walk-inside-button" onClick={() => safeCommit({ type: "set_navigation_mode", mode: "walk", roomId: selectedRoom.id })}><Footprints size={15} /> Walk inside {selectedRoom.name}</button>
                     </Section>
                   </>
                 ) : selectedWall ? (
                   <>
-                    <Section title="Geometry"><div className="detail-list"><span>Length <b>{wallLength(selectedWall).toFixed(2)} ft</b></span><span>Thickness <b>{selectedWall.thickness} ft</b></span><span>Height <b>{selectedWall.height} ft</b></span><span>Control <b>{selectedWall.roomId ? "Room boundary" : "Independent"}</b></span></div></Section>
+                    <Section title="Geometry"><div className="detail-list"><span>Length <b>{wallLength(selectedWall).toFixed(2)} ft</b></span><span>Thickness <b>{selectedWall.thickness} ft</b></span><span>Height <b>{selectedWall.height} ft</b></span><span>Topology <b>{selectedWall.exterior ? "Exterior" : selectedWall.roomIds.length > 1 ? "Shared interior" : "Independent"}</b></span><span>Adjacent spaces <b>{selectedWall.roomIds.map((roomId) => project.rooms.find((room) => room.id === roomId)?.name ?? roomId).join(" / ") || "None"}</b></span></div></Section>
                     <Section title="Openings"><div className="detail-list"><span>Doors <b>{project.openings.filter((item) => item.wallId === selectedWall.id && item.kind === "door").length}</b></span><span>Windows <b>{project.openings.filter((item) => item.wallId === selectedWall.id && item.kind === "window").length}</b></span></div></Section>
                   </>
                 ) : selectedOpening ? (
@@ -809,7 +923,29 @@ export default function Studio() {
                         {selectedOpening.kind === "window" && <NumberField label="Sill height" value={selectedOpening.sillHeight ?? 0} min={0} onCommit={(sillHeight) => safeCommit({ type: "update_opening", openingId: selectedOpening.id, sillHeight })} />}
                       </div>
                     </Section>
-                    <Section title="Shared state"><div className="detail-list"><span>Element ID <code>{selectedOpening.id}</code></span><span>Wall <code>{selectedOpening.wallId}</code></span><span>3D behavior <b>Real wall cutout</b></span></div></Section>
+                    <Section title="Host wall">
+                      <label className="field field-full"><span>Canonical wall</span><select value={selectedOpening.wallId} onChange={(event) => { const wall = project.walls.find((item) => item.id === event.target.value); if (wall) safeCommit({ type: "rehost_opening", openingId: selectedOpening.id, wallId: wall.id, offset: Math.max(selectedOpening.width / 2, Math.min(selectedOpening.offset, wallLength(wall) - selectedOpening.width / 2)) }); }}>{project.walls.filter((wall) => wall.floorId === selectedOpening.floorId && wallLength(wall) >= selectedOpening.width).map((wall) => <option key={wall.id} value={wall.id}>{wall.exterior ? "Exterior" : wall.roomIds.length > 1 ? "Shared" : "Wall"} · {wallLength(wall).toFixed(1)} ft · {wall.id.slice(-12)}</option>)}</select></label>
+                    </Section>
+                    {selectedOpening.kind === "door" ? (
+                      <Section title="Door configuration">
+                        <div className="field-grid">
+                          <label className="field"><span>Hinge side</span><select value={selectedOpening.hingeSide ?? "start"} onChange={(event) => safeCommit({ type: "update_opening", openingId: selectedOpening.id, hingeSide: event.target.value as "start" | "end" })}><option value="start">Start</option><option value="end">End</option></select></label>
+                          <label className="field"><span>Handing</span><select value={selectedOpening.handing ?? "left"} onChange={(event) => safeCommit({ type: "update_opening", openingId: selectedOpening.id, handing: event.target.value as "left" | "right" })}><option value="left">Left</option><option value="right">Right</option></select></label>
+                          <label className="field"><span>Swing</span><select value={selectedOpening.swingDirection ?? "inward"} onChange={(event) => safeCommit({ type: "update_opening", openingId: selectedOpening.id, swingDirection: event.target.value as "inward" | "outward" })}><option value="inward">Inward</option><option value="outward">Outward</option></select></label>
+                          <label className="field"><span>State</span><select value={selectedOpening.state ?? "open"} onChange={(event) => safeCommit({ type: "update_opening", openingId: selectedOpening.id, state: event.target.value as "open" | "closed" })}><option value="open">Open</option><option value="closed">Closed</option></select></label>
+                        </div>
+                      </Section>
+                    ) : (
+                      <Section title="Window configuration">
+                        <div className="field-grid">
+                          <label className="field"><span>Type</span><select value={selectedOpening.windowType ?? "fixed"} onChange={(event) => safeCommit({ type: "update_opening", openingId: selectedOpening.id, windowType: event.target.value as "fixed" | "casement" | "sliding" | "awning" })}><option value="fixed">Fixed</option><option value="casement">Casement</option><option value="sliding">Sliding</option><option value="awning">Awning</option></select></label>
+                          <label className="field"><span>Operation</span><select value={selectedOpening.operable ? "operable" : "fixed"} onChange={(event) => safeCommit({ type: "update_opening", openingId: selectedOpening.id, operable: event.target.value === "operable" })}><option value="fixed">Fixed</option><option value="operable">Operable</option></select></label>
+                          <label className="field"><span>Glazing</span><select value={selectedOpening.glazing ?? "clear"} onChange={(event) => safeCommit({ type: "update_opening", openingId: selectedOpening.id, glazing: event.target.value as "clear" | "privacy" })}><option value="clear">Clear</option><option value="privacy">Privacy</option></select></label>
+                          <NumberField label="Solar factor" unit="" value={selectedOpening.solarTransmittance ?? 0.7} min={0} onCommit={(solarTransmittance) => safeCommit({ type: "update_opening", openingId: selectedOpening.id, solarTransmittance })} />
+                        </div>
+                      </Section>
+                    )}
+                    <Section title="Shared state"><div className="detail-list"><span>Element ID <code>{selectedOpening.id}</code></span><span>Wall <code>{selectedOpening.wallId}</code></span><span>2D / 3D source <b>One opening object</b></span></div></Section>
                   </>
                 ) : selectedStair ? (
                   <Section title="Stair geometry"><div className="detail-list"><span>Width <b>{selectedStair.width} ft</b></span><span>Length <b>{selectedStair.length} ft</b></span><span>Direction <b>{selectedStair.direction}</b></span></div></Section>
@@ -830,7 +966,7 @@ export default function Studio() {
                         {(["front", "rear", "left", "right"] as const).map((side) => <NumberField key={side} label={side[0].toUpperCase() + side.slice(1)} value={project.plot.setbacks[side]} min={0} onCommit={(value) => safeCommit({ type: "set_plot", setbacks: { [side]: value } })} />)}
                       </div>
                     </Section>
-                    <Section title="Live area schedule"><div className="detail-list"><span>Covered area <b>{metrics.floorCoveredArea.toLocaleString()} sq ft</b></span><span>Open area <b>{metrics.openArea.toLocaleString()} sq ft</b></span><span>Buildable envelope <b>{metrics.buildableEnvelope.area.toLocaleString()} sq ft</b></span></div></Section>
+                    <Section title="Live area schedule"><div className="detail-list"><span>Total net floor area <b>{metrics.totalNetFloorArea.toLocaleString()} sq ft</b></span><span>Gross covered area <b>{metrics.grossCoveredArea.toLocaleString()} sq ft</b></span><span>Open site area <b>{metrics.openSiteArea.toLocaleString()} sq ft</b></span><span>Plot area <b>{metrics.plotArea.toLocaleString()} sq ft</b></span><span>Buildable envelope <b>{metrics.buildableEnvelope.area.toLocaleString()} sq ft</b></span></div></Section>
                   </>
                 )}
               </>
