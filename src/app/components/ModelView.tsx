@@ -3,51 +3,76 @@
 import { useEffect, useRef, type RefObject } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { type Project, type Wall, wallLength } from "@/lib/architecture";
+import { type NavigationMode, type Project } from "@/lib/architecture";
+import { buildSpatialModel, resolveWalkPosition } from "@/lib/spatial3d";
 
 type ModelViewProps = {
   project: Project;
+  navigationMode: NavigationMode;
   selectedId?: string;
   canvasRef: RefObject<HTMLCanvasElement | null>;
   onSelect: (id?: string) => void;
+};
+
+type WalkPose = {
+  key: string;
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  pitch: number;
 };
 
 function colorWithSelection(base: string, selected: boolean) {
   return selected ? "#d8663f" : base;
 }
 
-function openingPoint(wall: Wall, offset: number) {
-  const length = wallLength(wall);
-  const ratio = length ? offset / length : 0;
-  return {
-    x: wall.x1 + (wall.x2 - wall.x1) * ratio,
-    z: wall.y1 + (wall.y2 - wall.y1) * ratio,
-    angle: Math.atan2(wall.y2 - wall.y1, wall.x2 - wall.x1),
-  };
+function meshBox(
+  size: [number, number, number],
+  position: [number, number, number],
+  rotationY: number,
+  material: THREE.Material,
+) {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
+  mesh.position.set(...position);
+  mesh.rotation.y = rotationY;
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
 }
 
-export default function ModelView({ project, selectedId, canvasRef, onSelect }: ModelViewProps) {
+export default function ModelView({
+  project,
+  navigationMode,
+  selectedId,
+  canvasRef,
+  onSelect,
+}: ModelViewProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const walkPoseRef = useRef<WalkPose>();
 
   useEffect(() => {
     const host = hostRef.current;
     const canvas = canvasRef.current;
     if (!host || !canvas) return;
 
+    const spatial = buildSpatialModel(project);
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color("#e7e8e4");
-    scene.fog = new THREE.Fog("#e7e8e4", 80, 170);
+    scene.background = new THREE.Color(navigationMode === "walk" ? "#dce5e4" : "#e7e8e4");
+    scene.fog = new THREE.Fog(scene.background, navigationMode === "walk" ? 48 : 80, navigationMode === "walk" ? 105 : 170);
 
-    const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 500);
+    const camera = new THREE.PerspectiveCamera(navigationMode === "walk" ? 68 : 34, 1, 0.1, 500);
+    camera.rotation.order = "YXZ";
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.08;
+    renderer.toneMappingExposure = navigationMode === "walk" ? 1.25 : 1.08;
 
     const controls = new OrbitControls(camera, canvas);
+    controls.enabled = navigationMode === "orbit";
     controls.enableDamping = true;
     controls.dampingFactor = 0.07;
     controls.screenSpacePanning = true;
@@ -57,30 +82,42 @@ export default function ModelView({ project, selectedId, canvasRef, onSelect }: 
 
     const maxDimension = Math.max(project.plot.width, project.plot.length);
     const center = new THREE.Vector3(project.plot.width / 2, 3.2, project.plot.length / 2);
-
     const focusedRoom = project.rooms.find((room) => room.id === project.view.focusElementId);
     const target = focusedRoom
       ? new THREE.Vector3(focusedRoom.x + focusedRoom.width / 2, 3.2, focusedRoom.y + focusedRoom.length / 2)
       : center;
 
-    const distance = maxDimension * 0.82;
-    const height = Math.max(24, maxDimension * 0.48);
-    const positions: Record<string, THREE.Vector3> = {
-      front: new THREE.Vector3(project.plot.width / 2, height, -distance),
-      rear: new THREE.Vector3(project.plot.width / 2, height, project.plot.length + distance),
-      left: new THREE.Vector3(-distance, height, project.plot.length / 2),
-      right: new THREE.Vector3(project.plot.width + distance, height, project.plot.length / 2),
-      top: new THREE.Vector3(project.plot.width / 2, maxDimension * 1.25, project.plot.length / 2 + 0.01),
-      "front-left": new THREE.Vector3(-distance * 0.62, height, -distance * 0.62),
-      "front-right": new THREE.Vector3(project.plot.width + distance * 0.62, height, -distance * 0.62),
-    };
-    camera.position.copy(positions[project.view.cameraPreset] ?? positions["front-right"]);
-    controls.target.copy(target);
-    camera.lookAt(target);
+    if (navigationMode === "orbit") {
+      const distance = maxDimension * 0.82;
+      const height = Math.max(24, maxDimension * 0.48);
+      const positions: Record<string, THREE.Vector3> = {
+        front: new THREE.Vector3(project.plot.width / 2, height, -distance),
+        rear: new THREE.Vector3(project.plot.width / 2, height, project.plot.length + distance),
+        left: new THREE.Vector3(-distance, height, project.plot.length / 2),
+        right: new THREE.Vector3(project.plot.width + distance, height, project.plot.length / 2),
+        top: new THREE.Vector3(project.plot.width / 2, maxDimension * 1.25, project.plot.length / 2 + 0.01),
+        "front-left": new THREE.Vector3(-distance * 0.62, height, -distance * 0.62),
+        "front-right": new THREE.Vector3(project.plot.width + distance * 0.62, height, -distance * 0.62),
+      };
+      camera.position.copy(positions[project.view.cameraPreset] ?? positions["front-right"]);
+      controls.target.copy(target);
+      camera.lookAt(target);
+    } else {
+      const floor = project.floors.find((item) => item.id === project.view.activeFloorId) ?? project.floors[0];
+      const startRoom = project.rooms.find((room) => room.id === project.view.walkStartRoomId)
+        ?? project.rooms.find((room) => room.id === project.view.focusElementId && room.floorId === floor?.id)
+        ?? project.rooms.find((room) => room.floorId === floor?.id);
+      const poseKey = `${floor?.id ?? "floor"}:${project.view.walkStartRoomId ?? startRoom?.id ?? "site"}`;
+      const storedPose = walkPoseRef.current?.key === poseKey ? walkPoseRef.current : undefined;
+      const startX = startRoom ? startRoom.x + startRoom.width / 2 : project.plot.width / 2;
+      const startZ = startRoom ? startRoom.y + startRoom.length / 2 : project.plot.length / 2;
+      camera.position.set(storedPose?.x ?? startX, storedPose?.y ?? ((floor?.elevation ?? 0) + 5.4), storedPose?.z ?? startZ);
+      camera.rotation.set(storedPose?.pitch ?? 0, storedPose?.yaw ?? 0, 0);
+    }
 
-    const ambient = new THREE.HemisphereLight("#f8fbff", "#8a7969", 2.4);
+    const ambient = new THREE.HemisphereLight("#f8fbff", "#81776d", navigationMode === "walk" ? 3.1 : 2.4);
     scene.add(ambient);
-    const sun = new THREE.DirectionalLight("#fff8e9", 3.8);
+    const sun = new THREE.DirectionalLight("#fff8e9", navigationMode === "walk" ? 3.1 : 3.8);
     sun.position.set(-30, 55, -35);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
@@ -90,19 +127,17 @@ export default function ModelView({ project, selectedId, canvasRef, onSelect }: 
     sun.shadow.camera.bottom = -80;
     scene.add(sun);
 
-    const groundMaterial = new THREE.MeshStandardMaterial({ color: "#d8d8d2", roughness: 0.95 });
     const ground = new THREE.Mesh(
       new THREE.BoxGeometry(project.plot.width + 18, 0.35, project.plot.length + 18),
-      groundMaterial,
+      new THREE.MeshStandardMaterial({ color: "#d8d8d2", roughness: 0.95 }),
     );
     ground.position.set(project.plot.width / 2, -0.22, project.plot.length / 2);
     ground.receiveShadow = true;
     scene.add(ground);
 
-    const plotMaterial = new THREE.MeshStandardMaterial({ color: "#eeeee9", roughness: 0.88 });
     const plotSlab = new THREE.Mesh(
       new THREE.BoxGeometry(project.plot.width, 0.16, project.plot.length),
-      plotMaterial,
+      new THREE.MeshStandardMaterial({ color: "#eeeee9", roughness: 0.88 }),
     );
     plotSlab.position.set(project.plot.width / 2, -0.06, project.plot.length / 2);
     plotSlab.receiveShadow = true;
@@ -112,7 +147,7 @@ export default function ModelView({ project, selectedId, canvasRef, onSelect }: 
     grid.position.set(project.plot.width / 2, 0.035, project.plot.length / 2);
     const gridMaterial = grid.material as THREE.Material;
     gridMaterial.transparent = true;
-    gridMaterial.opacity = 0.28;
+    gridMaterial.opacity = navigationMode === "walk" ? 0.08 : 0.28;
     scene.add(grid);
 
     const boundary = new THREE.LineSegments(
@@ -129,7 +164,7 @@ export default function ModelView({ project, selectedId, canvasRef, onSelect }: 
       const floor = floorById.get(room.floorId);
       if (!floor) continue;
       const slab = new THREE.Mesh(
-        new THREE.BoxGeometry(room.width - 0.15, 0.18, room.length - 0.15),
+        new THREE.BoxGeometry(Math.max(0.1, room.width - 0.15), 0.18, Math.max(0.1, room.length - 0.15)),
         new THREE.MeshStandardMaterial({
           color: colorWithSelection(room.color, selectedId === room.id),
           roughness: 0.82,
@@ -145,90 +180,170 @@ export default function ModelView({ project, selectedId, canvasRef, onSelect }: 
 
       if (room.type !== "Courtyard") {
         const ceiling = new THREE.Mesh(
-          new THREE.BoxGeometry(room.width, 0.16, room.length),
-          new THREE.MeshStandardMaterial({ color: "#b8b5ac", roughness: 0.92 }),
+          new THREE.BoxGeometry(room.width, 0.14, room.length),
+          new THREE.MeshStandardMaterial({ color: "#f0eee7", roughness: 0.94, side: THREE.DoubleSide }),
         );
-        ceiling.position.set(
-          room.x + room.width / 2,
-          floor.elevation + floor.height + 0.08,
-          room.y + room.length / 2,
-        );
+        ceiling.position.set(room.x + room.width / 2, floor.elevation + floor.height + 0.08, room.y + room.length / 2);
         ceiling.castShadow = true;
+        ceiling.userData.elementId = room.id;
+        selectable.push(ceiling);
         scene.add(ceiling);
       }
     }
 
-    for (const wall of project.walls) {
-      const floor = floorById.get(wall.floorId);
-      if (!floor) continue;
-      const length = wallLength(wall);
-      if (!length) continue;
-      const geometry = new THREE.BoxGeometry(length, wall.height, wall.thickness);
-      const material = new THREE.MeshStandardMaterial({
-        color: colorWithSelection("#e2ded3", selectedId === wall.id),
-        roughness: 0.8,
-      });
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.set(
-        (wall.x1 + wall.x2) / 2,
-        floor.elevation + wall.height / 2,
-        (wall.y1 + wall.y2) / 2,
+    let wallPieceCount = 0;
+    for (const solid of spatial.wallSolids) {
+      const floor = floorById.get(solid.floorId);
+      const length = Math.hypot(solid.x2 - solid.x1, solid.z2 - solid.z1);
+      if (!floor || !length) continue;
+      const selected = solid.wallIds.includes(selectedId ?? "");
+      const mesh = meshBox(
+        [length, solid.top - solid.bottom, solid.thickness],
+        [(solid.x1 + solid.x2) / 2, floor.elevation + (solid.bottom + solid.top) / 2, (solid.z1 + solid.z2) / 2],
+        -Math.atan2(solid.z2 - solid.z1, solid.x2 - solid.x1),
+        new THREE.MeshStandardMaterial({ color: colorWithSelection("#e6e1d6", selected), roughness: 0.84 }),
       );
-      mesh.rotation.y = -Math.atan2(wall.y2 - wall.y1, wall.x2 - wall.x1);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      mesh.userData.elementId = wall.id;
+      mesh.userData.elementId = solid.wallIds[0];
+      mesh.userData.wallIds = solid.wallIds;
       selectable.push(mesh);
       scene.add(mesh);
+      wallPieceCount += 1;
     }
 
-    for (const opening of project.openings) {
-      const wall = project.walls.find((item) => item.id === opening.wallId);
+    let daylightCount = 0;
+    for (const frame of spatial.openingFrames) {
+      const { opening } = frame;
       const floor = floorById.get(opening.floorId);
-      if (!wall || !floor) continue;
-      const point = openingPoint(wall, opening.offset);
-      const material = new THREE.MeshStandardMaterial({
-        color: opening.kind === "door" ? "#76594a" : "#6b9dad",
-        roughness: opening.kind === "door" ? 0.72 : 0.25,
-        metalness: opening.kind === "window" ? 0.18 : 0,
+      if (!floor) continue;
+      const selected = selectedId === opening.id;
+      const elevation = floor.elevation;
+      const depth = Math.max(0.18, frame.wall.thickness + 0.08);
+      const frameMaterial = new THREE.MeshStandardMaterial({
+        color: colorWithSelection(opening.kind === "door" ? "#80624f" : "#4f6b71", selected),
+        roughness: opening.kind === "door" ? 0.68 : 0.42,
+        metalness: opening.kind === "window" ? 0.2 : 0,
       });
-      const panel = new THREE.Mesh(
-        new THREE.BoxGeometry(opening.width, opening.height, 0.12),
-        material,
-      );
-      panel.position.set(
-        point.x,
-        floor.elevation + (opening.sillHeight ?? 0) + opening.height / 2,
-        point.z,
-      );
-      panel.rotation.y = -point.angle;
-      panel.userData.elementId = opening.id;
-      selectable.push(panel);
-      scene.add(panel);
+
+      if (opening.kind === "door") {
+        const jambWidth = 0.16;
+        const headerHeight = 0.17;
+        for (const side of [-1, 1]) {
+          const jamb = meshBox(
+            [jambWidth, opening.height, depth],
+            [
+              frame.x + frame.dirX * side * (opening.width / 2 - jambWidth / 2),
+              elevation + opening.height / 2,
+              frame.z + frame.dirZ * side * (opening.width / 2 - jambWidth / 2),
+            ],
+            -frame.angle,
+            frameMaterial,
+          );
+          jamb.userData.elementId = opening.id;
+          selectable.push(jamb);
+          scene.add(jamb);
+        }
+        const header = meshBox(
+          [opening.width, headerHeight, depth],
+          [frame.x, elevation + opening.height - headerHeight / 2, frame.z],
+          -frame.angle,
+          frameMaterial,
+        );
+        header.userData.elementId = opening.id;
+        selectable.push(header);
+        scene.add(header);
+
+        const hingeX = frame.x - frame.dirX * opening.width / 2;
+        const hingeZ = frame.z - frame.dirZ * opening.width / 2;
+        const panel = meshBox(
+          [Math.max(0.2, opening.width - 0.12), Math.max(0.2, opening.height - 0.12), 0.12],
+          [hingeX + frame.normalX * opening.width / 2, elevation + opening.height / 2, hingeZ + frame.normalZ * opening.width / 2],
+          -(frame.angle + Math.PI / 2),
+          new THREE.MeshStandardMaterial({ color: colorWithSelection("#9b765c", selected), roughness: 0.72 }),
+        );
+        panel.userData.elementId = opening.id;
+        panel.userData.openAngle = 90;
+        selectable.push(panel);
+        scene.add(panel);
+      } else {
+        const sill = opening.sillHeight ?? 0;
+        const rail = 0.16;
+        const centerY = elevation + sill + opening.height / 2;
+        for (const side of [-1, 1]) {
+          const jamb = meshBox(
+            [rail, opening.height, depth],
+            [
+              frame.x + frame.dirX * side * (opening.width / 2 - rail / 2),
+              centerY,
+              frame.z + frame.dirZ * side * (opening.width / 2 - rail / 2),
+            ],
+            -frame.angle,
+            frameMaterial,
+          );
+          jamb.userData.elementId = opening.id;
+          selectable.push(jamb);
+          scene.add(jamb);
+        }
+        for (const edge of [0, 1]) {
+          const railMesh = meshBox(
+            [opening.width, rail, depth],
+            [frame.x, elevation + sill + edge * opening.height + (edge ? -rail / 2 : rail / 2), frame.z],
+            -frame.angle,
+            frameMaterial,
+          );
+          railMesh.userData.elementId = opening.id;
+          selectable.push(railMesh);
+          scene.add(railMesh);
+        }
+        const glass = meshBox(
+          [Math.max(0.2, opening.width - 0.24), Math.max(0.2, opening.height - 0.24), 0.045],
+          [frame.x, centerY, frame.z],
+          -frame.angle,
+          new THREE.MeshPhysicalMaterial({
+            color: colorWithSelection("#9bc8d4", selected),
+            transparent: true,
+            opacity: 0.38,
+            transmission: selected ? 0 : 0.36,
+            roughness: 0.12,
+            metalness: 0.06,
+            side: THREE.DoubleSide,
+          }),
+        );
+        glass.userData.elementId = opening.id;
+        selectable.push(glass);
+        scene.add(glass);
+        if (daylightCount < 8) {
+          const daylight = new THREE.PointLight("#d9f2ff", 0.8, 14, 2);
+          daylight.position.set(frame.x + frame.normalX * 0.7, centerY, frame.z + frame.normalZ * 0.7);
+          scene.add(daylight);
+          daylightCount += 1;
+        }
+      }
     }
 
     for (const stair of project.stairs) {
       const floor = floorById.get(stair.floorId);
       if (!floor) continue;
       const stepCount = 10;
-      for (let i = 0; i < stepCount; i += 1) {
+      for (let index = 0; index < stepCount; index += 1) {
         const stepLength = stair.length / stepCount;
         const stepHeight = (floor.height * 0.72) / stepCount;
-        const step = new THREE.Mesh(
-          new THREE.BoxGeometry(stair.width, stepHeight * (i + 1), stepLength),
+        const step = meshBox(
+          [stair.width, stepHeight * (index + 1), stepLength],
+          [stair.x + stair.width / 2, floor.elevation + (stepHeight * (index + 1)) / 2, stair.y + stepLength * (index + 0.5)],
+          0,
           new THREE.MeshStandardMaterial({ color: "#b9b4aa", roughness: 0.9 }),
         );
-        step.position.set(
-          stair.x + stair.width / 2,
-          floor.elevation + (stepHeight * (i + 1)) / 2,
-          stair.y + stepLength * (i + 0.5),
-        );
-        step.castShadow = true;
         step.userData.elementId = stair.id;
         selectable.push(step);
         scene.add(step);
       }
     }
+
+    canvas.dataset.navigationMode = navigationMode;
+    canvas.dataset.wallPieceCount = String(wallPieceCount);
+    canvas.dataset.doorCount = String(project.openings.filter((item) => item.kind === "door").length);
+    canvas.dataset.windowCount = String(project.openings.filter((item) => item.kind === "window").length);
+    canvas.dataset.collisionSegmentCount = String(spatial.collisionSegments.length);
 
     const resize = () => {
       const width = Math.max(1, host.clientWidth);
@@ -244,6 +359,11 @@ export default function ModelView({ project, selectedId, canvasRef, onSelect }: 
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
     const handleClick = (event: MouseEvent) => {
+      if (navigationMode === "walk") {
+        canvas.focus();
+        void canvas.requestPointerLock();
+        return;
+      }
       const rect = canvas.getBoundingClientRect();
       pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -253,9 +373,103 @@ export default function ModelView({ project, selectedId, canvasRef, onSelect }: 
     };
     canvas.addEventListener("click", handleClick);
 
+    const activeCollisions = spatial.collisionSegments.filter((segment) => segment.floorId === project.view.activeFloorId);
+    const activeStairs = project.stairs.filter((stair) => stair.floorId === project.view.activeFloorId);
+    const radius = 0.38;
+    const pressed = new Set<string>();
+    let yaw = camera.rotation.y;
+    let pitch = camera.rotation.x;
+
+    const moveWalkCamera = (moveX: number, moveZ: number) => {
+      const distance = Math.hypot(moveX, moveZ);
+      const steps = Math.max(1, Math.ceil(distance / 0.1));
+      for (let step = 0; step < steps; step += 1) {
+        const previousX = camera.position.x;
+        const previousZ = camera.position.z;
+        let x = camera.position.x + moveX / steps;
+        let z = camera.position.z + moveZ / steps;
+        const resolved = resolveWalkPosition(x, z, radius, activeCollisions);
+        x = Math.max(radius, Math.min(project.plot.width - radius, resolved.x));
+        z = Math.max(radius, Math.min(project.plot.length - radius, resolved.z));
+        const hitsStair = activeStairs.some((stair) =>
+          x > stair.x - radius && x < stair.x + stair.width + radius &&
+          z > stair.y - radius && z < stair.y + stair.length + radius,
+        );
+        camera.position.x = hitsStair ? previousX : x;
+        camera.position.z = hitsStair ? previousZ : z;
+      }
+    };
+
+    const directionForKey = (code: string) => {
+      const forwardX = -Math.sin(yaw);
+      const forwardZ = -Math.cos(yaw);
+      const rightX = Math.cos(yaw);
+      const rightZ = -Math.sin(yaw);
+      if (code === "KeyW" || code === "ArrowUp") return { x: forwardX, z: forwardZ };
+      if (code === "KeyS" || code === "ArrowDown") return { x: -forwardX, z: -forwardZ };
+      if (code === "KeyA" || code === "ArrowLeft") return { x: -rightX, z: -rightZ };
+      if (code === "KeyD" || code === "ArrowRight") return { x: rightX, z: rightZ };
+      return undefined;
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (navigationMode !== "walk") return;
+      const direction = directionForKey(event.code);
+      if (!direction && event.code !== "ShiftLeft" && event.code !== "ShiftRight") return;
+      event.preventDefault();
+      pressed.add(event.code);
+      if (direction && !event.repeat) moveWalkCamera(direction.x * 0.25, direction.z * 0.25);
+    };
+    const handleKeyUp = (event: KeyboardEvent) => pressed.delete(event.code);
+    const handleMouseMove = (event: MouseEvent) => {
+      if (navigationMode !== "walk" || document.pointerLockElement !== canvas) return;
+      yaw -= event.movementX * 0.0022;
+      pitch = Math.max(-Math.PI * 0.46, Math.min(Math.PI * 0.46, pitch - event.movementY * 0.0022));
+      camera.rotation.set(pitch, yaw, 0);
+    };
+    const updatePointerState = () => {
+      host.dataset.pointerLocked = String(document.pointerLockElement === canvas);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("pointerlockchange", updatePointerState);
+
     let frame = 0;
-    const animate = () => {
-      controls.update();
+    let previousTime = performance.now();
+    const animate = (time = performance.now()) => {
+      const delta = Math.min(0.05, Math.max(0, (time - previousTime) / 1000));
+      previousTime = time;
+      if (navigationMode === "orbit") controls.update();
+      else {
+        let moveX = 0;
+        let moveZ = 0;
+        for (const code of pressed) {
+          const direction = directionForKey(code);
+          if (direction) {
+            moveX += direction.x;
+            moveZ += direction.z;
+          }
+        }
+        const magnitude = Math.hypot(moveX, moveZ);
+        if (magnitude) {
+          const fast = pressed.has("ShiftLeft") || pressed.has("ShiftRight");
+          const speed = fast ? 8 : 5;
+          moveWalkCamera((moveX / magnitude) * speed * delta, (moveZ / magnitude) * speed * delta);
+        }
+        camera.rotation.set(pitch, yaw, 0);
+        walkPoseRef.current = {
+          key: `${project.view.activeFloorId}:${project.view.walkStartRoomId ?? project.rooms.find((room) => room.floorId === project.view.activeFloorId)?.id ?? "site"}`,
+          x: camera.position.x,
+          y: camera.position.y,
+          z: camera.position.z,
+          yaw,
+          pitch,
+        };
+      }
+      canvas.dataset.cameraX = camera.position.x.toFixed(2);
+      canvas.dataset.cameraY = camera.position.y.toFixed(2);
+      canvas.dataset.cameraZ = camera.position.z.toFixed(2);
       renderer.render(scene, camera);
       frame = requestAnimationFrame(animate);
     };
@@ -265,6 +479,11 @@ export default function ModelView({ project, selectedId, canvasRef, onSelect }: 
       cancelAnimationFrame(frame);
       observer.disconnect();
       canvas.removeEventListener("click", handleClick);
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("pointerlockchange", updatePointerState);
+      if (document.pointerLockElement === canvas) document.exitPointerLock();
       controls.dispose();
       scene.traverse((object) => {
         const mesh = object as THREE.Mesh;
@@ -276,11 +495,18 @@ export default function ModelView({ project, selectedId, canvasRef, onSelect }: 
       });
       renderer.dispose();
     };
-  }, [canvasRef, onSelect, project, selectedId]);
+  }, [canvasRef, navigationMode, onSelect, project, selectedId]);
+
+  const doors = project.openings.filter((item) => item.kind === "door").length;
+  const windows = project.openings.filter((item) => item.kind === "window").length;
 
   return (
-    <div className="model-view" ref={hostRef}>
-      <canvas ref={canvasRef} aria-label={`Interactive 3D model of ${project.name}`} />
+    <div className={`model-view is-${navigationMode}`} ref={hostRef}>
+      <canvas
+        ref={canvasRef}
+        tabIndex={0}
+        aria-label={`${navigationMode === "walk" ? "Walkthrough" : "Interactive 3D model"} of ${project.name}`}
+      />
       <div className="model-view__horizon" aria-hidden="true" />
       {!project.rooms.length && (
         <div className="model-view__empty">
@@ -289,7 +515,17 @@ export default function ModelView({ project, selectedId, canvasRef, onSelect }: 
           <p>Add rooms in the floor plan to generate the shared 3D model.</p>
         </div>
       )}
-      <div className="model-view__help">ORBIT · DRAG &nbsp;&nbsp; PAN · RIGHT DRAG &nbsp;&nbsp; ZOOM · SCROLL</div>
+      {navigationMode === "walk" ? (
+        <div className="model-view__walk-help">
+          <b>WALK MODE</b>
+          <span>Click canvas to look · WASD / arrows to move · Shift to move faster · Esc releases mouse</span>
+        </div>
+      ) : (
+        <div className="model-view__help">ORBIT · DRAG &nbsp;&nbsp; PAN · RIGHT DRAG &nbsp;&nbsp; ZOOM · SCROLL</div>
+      )}
+      <div className="model-view__sync" aria-label={`3D sync: ${doors} doors and ${windows} windows`}>
+        <span /> 2D SYNCED&nbsp;&nbsp;·&nbsp;&nbsp;{doors} DOORS&nbsp;&nbsp;·&nbsp;&nbsp;{windows} WINDOWS
+      </div>
     </div>
   );
 }
