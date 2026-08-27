@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { stairConnection, type NavigationMode, type Project } from "@/lib/architecture";
@@ -23,6 +23,10 @@ type WalkPose = {
   yaw: number;
   pitch: number;
 };
+
+const WALK_EYE_HEIGHT = 5.4;
+const WALK_RADIUS = 0.38;
+const STAIR_LANDING_CLEARANCE = 0.75;
 
 function colorWithSelection(base: string, selected: boolean) {
   return selected ? "#d8663f" : base;
@@ -106,6 +110,10 @@ export default function ModelView({
 }: ModelViewProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const walkPoseRef = useRef<WalkPose | undefined>(undefined);
+  const minimapMarkerRef = useRef<SVGGElement | null>(null);
+  const minimapRoomLabelRef = useRef<HTMLSpanElement | null>(null);
+  const minimapRoomRefs = useRef(new Map<string, SVGRectElement>());
+  const [showWalkDoors, setShowWalkDoors] = useState(false);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -113,6 +121,11 @@ export default function ModelView({
     if (!host || !canvas) return;
 
     const spatial = buildSpatialModel(project);
+    const floorById = new Map(project.floors.map((floor) => [floor.id, floor]));
+    const stairConnections = project.stairs.flatMap((stair) => {
+      const connection = stairConnection(project, stair);
+      return connection ? [connection] : [];
+    });
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(navigationMode === "walk" ? "#dce5e4" : "#e7e8e4");
     scene.fog = new THREE.Fog(scene.background, navigationMode === "walk" ? 48 : 80, navigationMode === "walk" ? 105 : 170);
@@ -165,10 +178,57 @@ export default function ModelView({
         ?? project.rooms.find((room) => room.floorId === floor?.id);
       const poseKey = `${floor?.id ?? "floor"}:${project.view.walkStartRoomId ?? startRoom?.id ?? "site"}`;
       const storedPose = walkPoseRef.current?.key === poseKey ? walkPoseRef.current : undefined;
-      const startX = startRoom ? startRoom.x + startRoom.width / 2 : project.plot.width / 2;
-      const startZ = startRoom ? startRoom.y + startRoom.length / 2 : project.plot.length / 2;
-      camera.position.set(storedPose?.x ?? startX, storedPose?.y ?? ((floor?.elevation ?? 0) + 5.4), storedPose?.z ?? startZ);
-      camera.rotation.set(storedPose?.pitch ?? 0, storedPose?.yaw ?? 0, 0);
+      const roomCenter = {
+        x: startRoom ? startRoom.x + startRoom.width / 2 : project.plot.width / 2,
+        z: startRoom ? startRoom.y + startRoom.length / 2 : project.plot.length / 2,
+        yaw: 0,
+      };
+      const activeConnections = stairConnections.filter(
+        (connection) => connection.lowerFloor.id === floor?.id || connection.upperFloor.id === floor?.id,
+      );
+      const landingCandidate = (connection: (typeof activeConnections)[number]) => {
+        const atLowerLanding = connection.lowerFloor.id === floor?.id;
+        return {
+          x: connection.stair.x + connection.stair.width / 2,
+          z: atLowerLanding
+            ? connection.stair.y + connection.stair.length + STAIR_LANDING_CLEARANCE
+            : connection.stair.y - STAIR_LANDING_CLEARANCE,
+          yaw: atLowerLanding ? 0 : Math.PI,
+        };
+      };
+      const selectedConnection = activeConnections.find(({ stair }) => stair.id === selectedId);
+      const candidates = [
+        ...(selectedConnection ? [landingCandidate(selectedConnection)] : []),
+        roomCenter,
+        ...activeConnections.map(landingCandidate),
+        ...(startRoom ? [
+          { x: startRoom.x + WALK_RADIUS * 2, z: startRoom.y + WALK_RADIUS * 2, yaw: 0 },
+          { x: startRoom.x + startRoom.width - WALK_RADIUS * 2, z: startRoom.y + WALK_RADIUS * 2, yaw: 0 },
+          { x: startRoom.x + WALK_RADIUS * 2, z: startRoom.y + startRoom.length - WALK_RADIUS * 2, yaw: Math.PI },
+          { x: startRoom.x + startRoom.width - WALK_RADIUS * 2, z: startRoom.y + startRoom.length - WALK_RADIUS * 2, yaw: Math.PI },
+        ] : []),
+      ];
+      const safeStart = candidates.find((candidate) => {
+        const insideRoom = !startRoom || (
+          candidate.x >= startRoom.x + WALK_RADIUS
+          && candidate.x <= startRoom.x + startRoom.width - WALK_RADIUS
+          && candidate.z >= startRoom.y + WALK_RADIUS
+          && candidate.z <= startRoom.y + startRoom.length - WALK_RADIUS
+        );
+        const clearOfStairs = !activeConnections.some(({ stair }) => (
+          candidate.x >= stair.x - WALK_RADIUS
+          && candidate.x <= stair.x + stair.width + WALK_RADIUS
+          && candidate.z >= stair.y - WALK_RADIUS
+          && candidate.z <= stair.y + stair.length + WALK_RADIUS
+        ));
+        return insideRoom && clearOfStairs;
+      }) ?? roomCenter;
+      camera.position.set(
+        storedPose?.x ?? safeStart.x,
+        storedPose?.y ?? ((floor?.elevation ?? 0) + WALK_EYE_HEIGHT),
+        storedPose?.z ?? safeStart.z,
+      );
+      camera.rotation.set(storedPose?.pitch ?? 0, storedPose?.yaw ?? safeStart.yaw, 0);
     }
 
     const ambient = new THREE.HemisphereLight("#f8fbff", "#81776d", navigationMode === "walk" ? 3.1 : 2.4);
@@ -213,12 +273,7 @@ export default function ModelView({
     boundary.position.set(project.plot.width / 2, 0.08, project.plot.length / 2);
     scene.add(boundary);
 
-    const floorById = new Map(project.floors.map((floor) => [floor.id, floor]));
     const selectable: THREE.Object3D[] = [];
-    const stairConnections = project.stairs.flatMap((stair) => {
-      const connection = stairConnection(project, stair);
-      return connection ? [connection] : [];
-    });
 
     for (const room of project.rooms) {
       const floor = floorById.get(room.floorId);
@@ -277,8 +332,11 @@ export default function ModelView({
       wallPieceCount += 1;
     }
 
+    let renderedDoorCount = 0;
+    let renderedDoorPanelCount = 0;
     for (const frame of spatial.openingFrames) {
       const { opening } = frame;
+      if (navigationMode === "walk" && opening.floorId !== project.view.activeFloorId) continue;
       const floor = floorById.get(opening.floorId);
       if (!floor) continue;
       const selected = selectedId === opening.id;
@@ -291,6 +349,7 @@ export default function ModelView({
       });
 
       if (opening.kind === "door") {
+        renderedDoorCount += 1;
         const jambWidth = 0.16;
         const headerHeight = 0.17;
         for (const side of [-1, 1]) {
@@ -318,23 +377,26 @@ export default function ModelView({
         selectable.push(header);
         scene.add(header);
 
-        const hingeDirection = opening.hingeSide === "end" ? 1 : -1;
-        const hingeX = frame.x + frame.dirX * hingeDirection * opening.width / 2;
-        const hingeZ = frame.z + frame.dirZ * hingeDirection * opening.width / 2;
-        const swingSign = (opening.swingDirection === "outward" ? 1 : -1) * (opening.handing === "right" ? -1 : 1);
-        const isClosed = opening.state === "closed";
-        const panel = meshBox(
-          [Math.max(0.2, opening.width - 0.12), Math.max(0.2, opening.height - 0.12), 0.12],
-          isClosed
-            ? [frame.x, elevation + opening.height / 2, frame.z]
-            : [hingeX + frame.normalX * swingSign * opening.width / 2, elevation + opening.height / 2, hingeZ + frame.normalZ * swingSign * opening.width / 2],
-          isClosed ? -frame.angle : -(frame.angle + swingSign * Math.PI / 2),
-          new THREE.MeshStandardMaterial({ color: colorWithSelection("#9b765c", selected), roughness: 0.72 }),
-        );
-        panel.userData.elementId = opening.id;
-        panel.userData.openAngle = isClosed ? 0 : 90 * swingSign;
-        selectable.push(panel);
-        scene.add(panel);
+        if (navigationMode !== "walk" || showWalkDoors) {
+          const hingeDirection = opening.hingeSide === "end" ? 1 : -1;
+          const hingeX = frame.x + frame.dirX * hingeDirection * opening.width / 2;
+          const hingeZ = frame.z + frame.dirZ * hingeDirection * opening.width / 2;
+          const swingSign = (opening.swingDirection === "outward" ? 1 : -1) * (opening.handing === "right" ? -1 : 1);
+          const isClosed = opening.state === "closed";
+          const panel = meshBox(
+            [Math.max(0.2, opening.width - 0.12), Math.max(0.2, opening.height - 0.12), 0.12],
+            isClosed
+              ? [frame.x, elevation + opening.height / 2, frame.z]
+              : [hingeX + frame.normalX * swingSign * opening.width / 2, elevation + opening.height / 2, hingeZ + frame.normalZ * swingSign * opening.width / 2],
+            isClosed ? -frame.angle : -(frame.angle + swingSign * Math.PI / 2),
+            new THREE.MeshStandardMaterial({ color: colorWithSelection("#9b765c", selected), roughness: 0.72 }),
+          );
+          panel.userData.elementId = opening.id;
+          panel.userData.openAngle = isClosed ? 0 : 90 * swingSign;
+          selectable.push(panel);
+          scene.add(panel);
+          renderedDoorPanelCount += 1;
+        }
       } else {
         const sill = opening.sillHeight ?? 0;
         const rail = 0.16;
@@ -403,29 +465,78 @@ export default function ModelView({
       const floor = floorById.get(stair.floorId);
       if (!floor) continue;
       const connection = stairConnection(project, stair);
+      if (navigationMode === "walk" && connection
+        && connection.lowerFloor.id !== project.view.activeFloorId
+        && connection.upperFloor.id !== project.view.activeFloorId) continue;
       const lowerElevation = connection?.lowerFloor.elevation ?? floor.elevation;
       const rise = connection?.rise ?? floor.height * 0.72;
       const treadCount = connection?.treadCount ?? 10;
       const stepLength = stair.length / treadCount;
+      const riserHeight = rise / (treadCount + 1);
+      const selected = selectedId === stair.id;
+      const stairMaterial = new THREE.MeshStandardMaterial({
+        color: colorWithSelection("#aaa69d", selected),
+        roughness: 0.86,
+      });
+      const supportMaterial = new THREE.MeshStandardMaterial({
+        color: colorWithSelection("#77776f", selected),
+        roughness: 0.78,
+      });
+      const riserMaterial = new THREE.MeshStandardMaterial({
+        color: colorWithSelection("#918e87", selected),
+        roughness: 0.9,
+      });
+      const treadThickness = 0.18;
       for (let index = 0; index < treadCount; index += 1) {
-        const progress = (index + 1) / treadCount;
-        const solidHeight = rise * progress;
+        const treadElevation = lowerElevation + riserHeight * (index + 1);
         const step = meshBox(
-          [stair.width, solidHeight, stepLength],
-          [stair.x + stair.width / 2, lowerElevation + solidHeight / 2, stair.y + stair.length - stepLength * (index + 0.5)],
+          [stair.width, treadThickness, stepLength + 0.05],
+          [stair.x + stair.width / 2, treadElevation - treadThickness / 2, stair.y + stair.length - stepLength * (index + 0.5)],
           0,
-          new THREE.MeshStandardMaterial({ color: colorWithSelection("#b9b4aa", selectedId === stair.id), roughness: 0.9 }),
+          stairMaterial,
         );
         step.userData.elementId = stair.id;
-        step.userData.stairProgress = progress;
+        step.userData.stairProgress = (index + 1) / (treadCount + 1);
         selectable.push(step);
         scene.add(step);
+      }
+      for (let index = 0; index <= treadCount; index += 1) {
+        const riser = meshBox(
+          [stair.width, riserHeight, 0.12],
+          [
+            stair.x + stair.width / 2,
+            lowerElevation + riserHeight * (index + 0.5),
+            stair.y + stair.length - stepLength * index,
+          ],
+          0,
+          riserMaterial,
+        );
+        riser.userData.elementId = stair.id;
+        selectable.push(riser);
+        scene.add(riser);
+      }
+
+      const stringerLength = Math.hypot(stair.length, rise);
+      const stringerAngle = Math.atan2(rise, stair.length);
+      for (const side of [0.18, stair.width - 0.18]) {
+        const stringer = meshBox(
+          [0.16, 0.24, stringerLength],
+          [stair.x + side, lowerElevation + rise / 2 - 0.2, stair.y + stair.length / 2],
+          0,
+          supportMaterial,
+        );
+        stringer.rotation.x = stringerAngle;
+        stringer.userData.elementId = stair.id;
+        selectable.push(stringer);
+        scene.add(stringer);
       }
     }
 
     canvas.dataset.navigationMode = navigationMode;
     canvas.dataset.wallPieceCount = String(wallPieceCount);
     canvas.dataset.doorCount = String(project.openings.filter((item) => item.kind === "door").length);
+    canvas.dataset.renderedDoorCount = String(renderedDoorCount);
+    canvas.dataset.renderedDoorPanelCount = String(renderedDoorPanelCount);
     canvas.dataset.windowCount = String(project.openings.filter((item) => item.kind === "window").length);
     canvas.dataset.collisionSegmentCount = String(spatial.collisionSegments.length);
 
@@ -470,16 +581,22 @@ export default function ModelView({
       })),
       spatial.collisionSegments.filter((segment) => segment.floorId === project.view.activeFloorId),
     );
-    const eyeHeight = 5.4;
-    const radius = 0.38;
     const pressed = new Set<string>();
     let yaw = camera.rotation.y;
     let pitch = camera.rotation.x;
     let transitionRequested = false;
 
-    const stairAt = (x: number, z: number) => activeStairConnections.find(({ stair }) =>
-      x >= stair.x && x <= stair.x + stair.width && z >= stair.y && z <= stair.y + stair.length,
-    );
+    const stairAt = (x: number, z: number) => activeStairConnections
+      .filter(({ stair }) => (
+        x >= stair.x && x <= stair.x + stair.width && z >= stair.y && z <= stair.y + stair.length
+      ))
+      .sort((left, right) => {
+        const leftProgress = Math.max(0, Math.min(1, (left.stair.y + left.stair.length - z) / left.stair.length));
+        const rightProgress = Math.max(0, Math.min(1, (right.stair.y + right.stair.length - z) / right.stair.length));
+        const leftEye = left.lowerFloor.elevation + leftProgress * left.rise + WALK_EYE_HEIGHT;
+        const rightEye = right.lowerFloor.elevation + rightProgress * right.rise + WALK_EYE_HEIGHT;
+        return Math.abs(camera.position.y - leftEye) - Math.abs(camera.position.y - rightEye);
+      })[0];
 
     const poseKeyForFloor = (floorId: string) => `${floorId}:${project.view.walkStartRoomId ?? project.rooms.find((room) => room.floorId === floorId)?.id ?? "site"}`;
 
@@ -491,12 +608,12 @@ export default function ModelView({
         const previousZ = camera.position.z;
         let x = camera.position.x + moveX / steps;
         let z = camera.position.z + moveZ / steps;
-        const resolved = resolveWalkPosition(x, z, radius, activeCollisions);
-        x = Math.max(radius, Math.min(project.plot.width - radius, resolved.x));
-        z = Math.max(radius, Math.min(project.plot.length - radius, resolved.z));
+        const resolved = resolveWalkPosition(x, z, WALK_RADIUS, activeCollisions);
+        x = Math.max(WALK_RADIUS, Math.min(project.plot.width - WALK_RADIUS, resolved.x));
+        z = Math.max(WALK_RADIUS, Math.min(project.plot.length - WALK_RADIUS, resolved.z));
         const previousStair = stairAt(previousX, previousZ);
         const nextStair = stairAt(x, z);
-        const activeFloorEye = (activeFloor?.elevation ?? 0) + eyeHeight;
+        const activeFloorEye = (activeFloor?.elevation ?? 0) + WALK_EYE_HEIGHT;
         const betweenLandings = previousStair && Math.abs(camera.position.y - activeFloorEye) > 0.3;
         if (betweenLandings && !nextStair) continue;
 
@@ -508,7 +625,7 @@ export default function ModelView({
         }
 
         const progress = Math.max(0, Math.min(1, (nextStair.stair.y + nextStair.stair.length - z) / nextStair.stair.length));
-        camera.position.y = nextStair.lowerFloor.elevation + progress * nextStair.rise + eyeHeight;
+        camera.position.y = nextStair.lowerFloor.elevation + progress * nextStair.rise + WALK_EYE_HEIGHT;
         const targetFloorId = activeFloor?.id === nextStair.lowerFloor.id && progress >= 0.96
           ? nextStair.upperFloor.id
           : activeFloor?.id === nextStair.upperFloor.id && progress <= 0.04
@@ -516,11 +633,15 @@ export default function ModelView({
             : undefined;
         if (targetFloorId && !transitionRequested) {
           transitionRequested = true;
+          const targetFloor = floorById.get(targetFloorId);
+          const ascending = targetFloorId === nextStair.upperFloor.id;
           walkPoseRef.current = {
             key: poseKeyForFloor(targetFloorId),
             x: camera.position.x,
-            y: camera.position.y,
-            z: camera.position.z,
+            y: (targetFloor?.elevation ?? camera.position.y - WALK_EYE_HEIGHT) + WALK_EYE_HEIGHT,
+            z: ascending
+              ? nextStair.stair.y - STAIR_LANDING_CLEARANCE
+              : nextStair.stair.y + nextStair.stair.length + STAIR_LANDING_CLEARANCE,
             yaw,
             pitch,
           };
@@ -601,6 +722,28 @@ export default function ModelView({
       canvas.dataset.cameraX = camera.position.x.toFixed(2);
       canvas.dataset.cameraY = camera.position.y.toFixed(2);
       canvas.dataset.cameraZ = camera.position.z.toFixed(2);
+      if (navigationMode === "walk") {
+        const marker = minimapMarkerRef.current;
+        if (marker) {
+          marker.setAttribute(
+            "transform",
+            `translate(${camera.position.x} ${camera.position.z}) rotate(${THREE.MathUtils.radToDeg(-yaw)})`,
+          );
+        }
+        const currentRoom = project.rooms.find((room) =>
+          room.floorId === project.view.activeFloorId
+          && camera.position.x >= room.x
+          && camera.position.x <= room.x + room.width
+          && camera.position.z >= room.y
+          && camera.position.z <= room.y + room.length,
+        );
+        const roomLabel = minimapRoomLabelRef.current;
+        const nextLabel = currentRoom?.name ?? "Outside rooms";
+        if (roomLabel && roomLabel.textContent !== nextLabel) roomLabel.textContent = nextLabel;
+        minimapRoomRefs.current.forEach((element, roomId) => {
+          element.classList.toggle("is-current", roomId === currentRoom?.id);
+        });
+      }
       renderer.render(scene, camera);
       frame = requestAnimationFrame(animate);
     };
@@ -626,11 +769,20 @@ export default function ModelView({
       });
       renderer.dispose();
     };
-  }, [canvasRef, navigationMode, onSelect, onWalkFloorChange, project, selectedId]);
+  }, [canvasRef, navigationMode, onSelect, onWalkFloorChange, project, selectedId, showWalkDoors]);
 
   const doors = project.openings.filter((item) => item.kind === "door").length;
   const windows = project.openings.filter((item) => item.kind === "window").length;
   const stairs = project.stairs.length;
+  const activeFloor = project.floors.find((floor) => floor.id === project.view.activeFloorId) ?? project.floors[0];
+  const minimapRooms = project.rooms.filter((room) => room.floorId === activeFloor?.id);
+  const minimapWalls = project.walls.filter((wall) => wall.floorId === activeFloor?.id);
+  const minimapStairs = project.stairs.filter((stair) => {
+    const connection = stairConnection(project, stair);
+    return stair.floorId === activeFloor?.id || connection?.targetFloor.id === activeFloor?.id;
+  });
+  const markerSize = Math.max(project.plot.width, project.plot.length) / 55;
+  const activeFloorIndex = project.floors.findIndex((floor) => floor.id === activeFloor?.id);
 
   return (
     <div className={`model-view is-${navigationMode}`} ref={hostRef}>
@@ -648,10 +800,83 @@ export default function ModelView({
         </div>
       )}
       {navigationMode === "walk" ? (
-        <div className="model-view__walk-help">
-          <b>WALK MODE</b>
-          <span>Click canvas to look · WASD / arrows to move · Walk onto stairs to change levels · Esc releases mouse</span>
-        </div>
+        <>
+          <aside className="walk-minimap" aria-label={`Current position on ${activeFloor?.name ?? "active floor"}`}>
+            <div className="walk-minimap__heading">
+              <b>{activeFloor?.name ?? "Active floor"} · {Math.max(1, activeFloorIndex + 1)} of {project.floors.length}</b>
+              <span ref={minimapRoomLabelRef}>{minimapRooms[0]?.name ?? "Outside rooms"}</span>
+            </div>
+            <svg
+              viewBox={`0 0 ${project.plot.width} ${project.plot.length}`}
+              role="img"
+              aria-label={`Mini floor plan of ${activeFloor?.name ?? "the active floor"}`}
+              preserveAspectRatio="xMidYMid meet"
+            >
+              <rect className="walk-minimap__plot" x="0" y="0" width={project.plot.width} height={project.plot.length} />
+              {minimapRooms.map((room) => (
+                <rect
+                  key={room.id}
+                  ref={(element) => {
+                    if (element) minimapRoomRefs.current.set(room.id, element);
+                    else minimapRoomRefs.current.delete(room.id);
+                  }}
+                  className="walk-minimap__room"
+                  x={room.x}
+                  y={room.y}
+                  width={room.width}
+                  height={room.length}
+                  fill={room.color}
+                />
+              ))}
+              {minimapWalls.map((wall) => (
+                <line
+                  key={wall.id}
+                  className="walk-minimap__wall"
+                  x1={wall.x1}
+                  y1={wall.y1}
+                  x2={wall.x2}
+                  y2={wall.y2}
+                  strokeWidth={Math.max(0.35, wall.thickness)}
+                />
+              ))}
+              {minimapStairs.map((stair) => (
+                <rect
+                  key={stair.id}
+                  className="walk-minimap__stair"
+                  x={stair.x}
+                  y={stair.y}
+                  width={stair.width}
+                  height={stair.length}
+                />
+              ))}
+              <g ref={minimapMarkerRef} className="walk-minimap__marker">
+                <circle r={markerSize * 0.62} />
+                <path d={`M 0 ${-markerSize * 1.55} L ${markerSize * 0.62} ${markerSize * 0.45} L 0 ${markerSize * 0.12} L ${-markerSize * 0.62} ${markerSize * 0.45} Z`} />
+              </g>
+            </svg>
+          </aside>
+          <div className="walk-options" aria-label="Walk Mode options">
+            <div className="walk-options__copy">
+              <b>Doors</b>
+              <span>{showWalkDoors ? "Panels visible" : "Frames only"}</span>
+            </div>
+            <label className="walk-switch">
+              <input
+                type="checkbox"
+                role="switch"
+                checked={showWalkDoors}
+                aria-checked={showWalkDoors}
+                aria-label="Show door panels in Walk Mode"
+                onChange={(event) => setShowWalkDoors(event.target.checked)}
+              />
+              <span aria-hidden="true" />
+            </label>
+          </div>
+          <div className="model-view__walk-help">
+            <b>WALK MODE</b>
+            <span>Click canvas to look · WASD / arrows to move · Walk onto stairs to change levels · Esc releases mouse</span>
+          </div>
+        </>
       ) : (
         <div className="model-view__help">ORBIT · DRAG &nbsp;&nbsp; PAN · RIGHT DRAG &nbsp;&nbsp; ZOOM · SCROLL</div>
       )}

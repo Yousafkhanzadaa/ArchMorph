@@ -38,6 +38,7 @@ type FloorPlanProps = {
   onAddWall: (start: Point, end: Point) => void;
   onMoveWall: (id: string, dx: number, dy: number) => void;
   onAddOpening: (kind: "door" | "window", wallId: string, offset: number) => void;
+  onRemoveOpening: (openingId: string) => void;
   onAddStair: (point: Point) => void;
   onMoveStair: (id: string, x: number, y: number) => void;
 };
@@ -72,6 +73,7 @@ export default function FloorPlan({
   onAddWall,
   onMoveWall,
   onAddOpening,
+  onRemoveOpening,
   onAddStair,
   onMoveStair,
 }: FloorPlanProps) {
@@ -409,16 +411,23 @@ export default function FloorPlan({
           const selected = wall.id === selectedId;
           const focused = wall.id === project.view.focusElementId;
           return (
-            <line
-              key={wall.id}
-              x1={wall.x1} y1={wall.y1} x2={wall.x2} y2={wall.y2}
-              stroke={selected ? "#d65b32" : "#29362f"}
-              strokeWidth={selected ? Math.max(0.62, wall.thickness) : wall.thickness}
-              strokeLinecap="square"
-              vectorEffect="non-scaling-stroke"
-              filter={focused ? "url(#focus-glow)" : undefined}
-              onPointerDown={(event) => handleWallPointerDown(event, wall)}
-            />
+            <g key={wall.id} className="wall">
+              <line
+                x1={wall.x1} y1={wall.y1} x2={wall.x2} y2={wall.y2}
+                className="wall-hit-target"
+                vectorEffect="non-scaling-stroke"
+                onPointerDown={(event) => handleWallPointerDown(event, wall)}
+              />
+              <line
+                x1={wall.x1} y1={wall.y1} x2={wall.x2} y2={wall.y2}
+                className="wall-visible"
+                stroke={selected ? "#d65b32" : "#29362f"}
+                strokeWidth={selected ? Math.max(0.62, wall.thickness) : wall.thickness}
+                strokeLinecap="square"
+                filter={focused ? "url(#focus-glow)" : undefined}
+                pointerEvents="none"
+              />
+            </g>
           );
         })}
       </g>
@@ -433,9 +442,20 @@ export default function FloorPlan({
               key={opening.id}
               transform={`translate(${geometry.x} ${geometry.y}) rotate(${geometry.angle})`}
               filter={focused ? "url(#focus-glow)" : undefined}
-              onPointerDown={(event) => { event.stopPropagation(); onSelect(opening.id); }}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+                if (tool === opening.kind) onRemoveOpening(opening.id);
+                else onSelect(opening.id);
+              }}
               className={`opening opening--${opening.kind}`}
             >
+              <rect
+                x={-opening.width / 2 - 0.45}
+                y="-0.9"
+                width={opening.width + 0.9}
+                height="1.8"
+                className="opening-hit-target"
+              />
               <line x1={-opening.width / 2} y1="0" x2={opening.width / 2} y2="0" stroke="#f7f5f0" strokeWidth="0.78" />
               {opening.kind === "window" ? (
                 <>

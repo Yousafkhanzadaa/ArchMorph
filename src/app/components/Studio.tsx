@@ -325,6 +325,7 @@ export default function Studio() {
     projectRef.current = next;
     setProject(next);
     setSelectedId(undefined);
+    setTool("select");
     setValidation(validateLayout(next));
     pastRef.current = [];
     futureRef.current = [];
@@ -599,6 +600,13 @@ export default function Studio() {
   const selectedOpening = project.openings.find((item) => item.id === selectedId);
   const selectedStair = project.stairs.find((item) => item.id === selectedId);
   const selectedStairConnection = selectedStair ? stairConnection(project, selectedStair) : undefined;
+  const selectedStairRoom = selectedStair ? project.rooms.find((room) => (
+    room.floorId === selectedStair.floorId
+    && selectedStair.x + selectedStair.width / 2 >= room.x
+    && selectedStair.x + selectedStair.width / 2 <= room.x + room.width
+    && selectedStair.y + selectedStair.length / 2 >= room.y
+    && selectedStair.y + selectedStair.length / 2 <= room.y + room.length
+  )) : undefined;
   const selectedOpeningWall = selectedOpening ? project.walls.find((item) => item.id === selectedOpening.wallId) : undefined;
   const selectedFacadeFacing = selectedOpeningWall ? wallCardinalFacing(project, selectedOpeningWall) : undefined;
   const activeFloor = project.floors.find((item) => item.id === project.view.activeFloorId)!;
@@ -811,6 +819,7 @@ export default function Studio() {
                   className={tool === item.id ? "is-active" : ""}
                   onClick={() => setTool(item.id)}
                   title={`${item.label} (${item.key})`}
+                  aria-pressed={tool === item.id}
                 >
                   <Icon size={19} />
                   <span>{item.label}</span>
@@ -918,6 +927,7 @@ export default function Studio() {
                 onAddWall={(start, end) => safeCommit({ type: "add_wall", floorId: project.view.activeFloorId, x1: start.x, y1: start.y, x2: end.x, y2: end.y })}
                 onMoveWall={(wallId, dx, dy) => safeCommit({ type: "move_wall", wallId, dx, dy })}
                 onAddOpening={(kind, wallId, offset) => safeCommit({ type: "add_opening", kind, wallId, offset })}
+                onRemoveOpening={(openingId) => safeCommit({ type: "delete_element", elementId: openingId })}
                 onAddStair={createStairAt}
                 onMoveStair={(stairId, x, y) => safeCommit({ type: "update_stairs", stairId, x, y })}
               />
@@ -936,7 +946,7 @@ export default function Studio() {
           <div className="statusbar">
             <span><span className="status-dot" /> {activeFloor.name}</span>
             <span>{toolItems.find((item) => item.id === tool)?.label}</span>
-            <span className="status-message">{project.view.mode === "3d" && navigationMode === "walk" ? "WASD / arrows to move · Walk onto a stair to change levels · Doorways remain traversable" : tool === "room" ? `Click the plot to place a ${roomType.toLowerCase()}` : tool === "stair" ? "Click the plan to place a straight stair between adjacent floors" : tool === "door" || tool === "window" ? `Click a valid wall to place a ${tool}` : project.view.mode === "3d" ? "Drag to orbit · Shift-drag to pan · Scroll to zoom" : "Drag rooms and stairs to move · Draw walls with orthogonal / 45° snapping"}</span>
+            <span className="status-message">{project.view.mode === "3d" && navigationMode === "walk" ? "WASD / arrows to move · Walk onto a stair to change levels · Minimap tracks your floor and room" : tool === "room" ? `Click the plot to place a ${roomType.toLowerCase()}` : tool === "stair" ? "Click the plan to place a straight stair between adjacent floors" : tool === "door" || tool === "window" ? `Click a wall to add a ${tool} · Click an existing ${tool} to remove it` : project.view.mode === "3d" ? "Drag to orbit · Shift-drag to pan · Scroll to zoom" : "Drag rooms and stairs to move · Draw walls with orthogonal / 45° snapping"}</span>
             {debugMode && <span>Project v{project.version}</span>}
           </div>
         </section>
@@ -1042,7 +1052,7 @@ export default function Studio() {
                       ) : <p className="technical-note is-warning">This stair has no adjacent destination floor in its current direction.</p>}
                       <p className="technical-note">Concept check uses a 7¾ in maximum riser and 10 in minimum tread. Landings, headroom, handrails, guards, structure, and local code still require project-specific review.</p>
                     </Section>
-                    <button type="button" className="walk-inside-button inspector-walk-button" onClick={() => safeCommit({ type: "set_navigation_mode", mode: "walk" })}><Footprints size={15} /> Test this connection in Walk Mode</button>
+                    <button type="button" className="walk-inside-button inspector-walk-button" onClick={() => safeCommit({ type: "set_navigation_mode", mode: "walk", roomId: selectedStairRoom?.id })}><Footprints size={15} /> Test this connection in Walk Mode</button>
                   </>
                 ) : (
                   <>
