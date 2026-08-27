@@ -4,6 +4,8 @@ import {
   buildCirculationGraph,
   createInitialProject,
   projectMetrics,
+  recommendedStairRun,
+  stairConnection,
   validateLayout,
   wallLength,
   type ArchitectureOperation,
@@ -51,7 +53,7 @@ const kitchenRehostWall = project.walls.find((wall) => wall.exterior && wall.roo
 perform({ type: "add_opening", kind: "door", wallId: livingFrontWall.id, offset: 6, width: 3, hingeSide: "start", handing: "left", swingDirection: "inward", state: "open" });
 perform({ type: "add_opening", kind: "door", wallId: livingDiningWall.id, offset: 6, width: 3, hingeSide: "end", handing: "right", swingDirection: "inward", state: "open" });
 perform({ type: "add_opening", kind: "door", wallId: diningKitchenWall.id, offset: 6, width: 3 });
-perform({ type: "add_opening", kind: "window", wallId: kitchenExteriorWall.id, offset: wallLength(kitchenExteriorWall) / 2, width: 4, height: 4, sillHeight: 3, windowType: "sliding", operable: true, glazing: "clear", solarTransmittance: 0.65 });
+perform({ type: "add_opening", kind: "window", wallId: kitchenExteriorWall.id, offset: wallLength(kitchenExteriorWall) / 2, width: 4, height: 4, sillHeight: 3, windowType: "sliding", operable: true, glazing: "low-e", solarHeatGainCoefficient: 0.35, visibleTransmittance: 0.62, uFactor: 0.3 });
 
 let graph = buildCirculationGraph(project);
 assert.deepEqual(new Set(graph.reachableRoomIds), new Set([living.id, dining.id, kitchen.id]), "all rooms should reach the main entrance");
@@ -64,8 +66,9 @@ assert.ok(graph.disconnectedRoomIds.includes(dining.id), "rehosting a circulatio
 assert.ok(validateLayout(project).issues.some((issue) => issue.code === "DISCONNECTED_CIRCULATION"));
 
 const window = project.openings.find((opening) => opening.kind === "window")!;
-perform({ type: "update_opening", openingId: window.id, windowType: "casement", operable: true, glazing: "privacy", solarTransmittance: 0.42 });
+perform({ type: "update_opening", openingId: window.id, windowType: "casement", operable: true, glazing: "privacy", solarHeatGainCoefficient: 0.4, visibleTransmittance: 0.35, uFactor: 0.45 });
 assert.equal(project.openings.find((opening) => opening.id === window.id)?.glazing, "privacy");
+assert.equal(project.openings.find((opening) => opening.id === window.id)?.visibleTransmittance, 0.35);
 
 const metrics = projectMetrics(project);
 assert.ok(metrics.grossCoveredArea > metrics.totalNetFloorArea, "gross area should include canonical wall footprints");
@@ -74,7 +77,7 @@ assert.equal(metrics.openSiteArea, metrics.plotArea - projectMetrics(project).gr
 persistence.saveProjectLocally(project);
 const restored = persistence.loadLatestProject()!;
 assert.equal(restored.id, project.id);
-assert.equal(restored.schemaVersion, 2);
+assert.equal(restored.schemaVersion, 3);
 assert.equal(restored.walls.length, project.walls.length);
 assert.equal(restored.openings.length, project.openings.length);
 assert.equal(restored.view.focusElementId, undefined, "temporary focus state should not be persisted");
@@ -97,10 +100,19 @@ performMultiFloor({ type: "create_room", floorId: "floor-ground", name: "Ground 
 performMultiFloor({ type: "create_floor", name: "First Floor", height: 9 });
 const firstFloor = multiFloor.floors.find((floor) => floor.level === 1)!;
 performMultiFloor({ type: "create_room", floorId: firstFloor.id, name: "Upper Hall", roomType: "Custom", x: 3, y: 10, width: 12, length: 12 });
-performMultiFloor({ type: "add_stairs", floorId: "floor-ground", x: 5, y: 12, width: 3, length: 6, direction: "up" });
+const stairRun = recommendedStairRun(multiFloor, "floor-ground", "up");
+performMultiFloor({ type: "add_stairs", floorId: "floor-ground", x: 5, y: 10, width: 3.5, length: stairRun, direction: "up" });
 const floorGraph = buildCirculationGraph(multiFloor);
 assert.ok(floorGraph.edges.some((edge) => edge.type === "stair"), "aligned rooms on consecutive floors should create a circulation stair edge");
 assert.equal(firstFloor.elevation, 9, "upper-floor elevation should derive from the floor below");
+const stair = multiFloor.stairs[0];
+const connection = stairConnection(multiFloor, stair)!;
+assert.equal(connection.targetFloor.id, firstFloor.id, "stair should resolve its adjacent destination floor");
+assert.ok(connection.riserHeight * 12 <= 7.75, "concept stair risers should not exceed 7 3/4 inches");
+assert.ok(connection.treadDepth * 12 >= 10, "concept stair treads should be at least 10 inches at the recommended run");
+assert.ok(!validateLayout(multiFloor).issues.some((issue) => issue.code === "INVALID_STAIR_GEOMETRY"));
+performMultiFloor({ type: "update_stairs", stairId: stair.id, length: 6 });
+assert.ok(validateLayout(multiFloor).issues.some((issue) => issue.code === "INVALID_STAIR_GEOMETRY"), "short straight stair runs should be flagged");
 
 console.log(JSON.stringify({
   project: { id: project.id, schemaVersion: project.schemaVersion, rooms: project.rooms.length, walls: project.walls.length, openings: project.openings.length },

@@ -28,7 +28,7 @@ button:disabled { cursor: not-allowed; opacity: .36; }
 code, kbd, pre { font-family: var(--font-geist-mono), monospace; }
 
 .studio-shell { width: 100vw; height: 100dvh; min-width: 920px; display: grid; grid-template-rows: 64px minmax(0, 1fr); background: #e9ebe7; }
-.topbar { position: relative; z-index: 20; display: grid; grid-template-columns: 278px minmax(170px, 1fr) auto minmax(350px, 1fr); align-items: center; min-height: 64px; background: rgb(253 253 251 / 96%); border-bottom: 1px solid var(--line-dark); padding: 0 16px 0 12px; box-shadow: 0 1px 8px rgb(30 38 33 / 4%); }
+.topbar { position: relative; z-index: 20; display: grid; grid-template-columns: 278px minmax(170px, 1fr) auto minmax(190px, 1fr); align-items: center; min-height: 64px; background: rgb(253 253 251 / 96%); border-bottom: 1px solid var(--line-dark); padding: 0 16px 0 12px; box-shadow: 0 1px 8px rgb(30 38 33 / 4%); }
 .brand { display: flex; align-items: center; gap: 10px; }
 .brand-mark { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--ink); background: var(--ink); color: white; position: relative; }
 .brand-mark::after { content: ""; position: absolute; inset: 5px; border: 1px solid rgb(255 255 255 / 32%); }
@@ -126,7 +126,7 @@ code, kbd, pre { font-family: var(--font-geist-mono), monospace; }
 .floor-plan { display: block; width: 100%; height: 100%; touch-action: none; user-select: none; }
 .floor-plan--select .room-group rect, .floor-plan--select .walls line, .opening, .stair { cursor: pointer; }
 .floor-plan--room { cursor: crosshair; }
-.floor-plan--wall, .floor-plan--measure { cursor: crosshair; }
+.floor-plan--wall, .floor-plan--stair, .floor-plan--measure { cursor: crosshair; }
 .floor-plan--door .walls line, .floor-plan--window .walls line { cursor: copy; }
 .plot-note { font-size: .65px; font-weight: 650; letter-spacing: .18em; fill: #7f8781; }
 .setback-label { font-size: .58px; letter-spacing: .12em; fill: #718077; }
@@ -144,6 +144,10 @@ code, kbd, pre { font-family: var(--font-geist-mono), monospace; }
 .opening { cursor: pointer; }
 .stair rect, .stair line { fill: #aeb5ae33; stroke: #45534b; stroke-width: .08; }
 .stair-arrow { stroke-width: .14 !important; }
+.stair.is-linked { opacity: .56; }
+.stair.is-linked rect { stroke-dasharray: .45 .3; }
+.stair.is-selected rect { stroke: var(--accent); stroke-width: .2; }
+.stair-label { fill: #45534b; font-size: .55px; font-weight: 800; letter-spacing: .12em; paint-order: stroke; stroke: #f5f4ef; stroke-width: .22px; }
 .preview-wall { stroke: var(--accent); stroke-width: .55; stroke-dasharray: .5 .25; }
 .measurement line { stroke: #d15d37; stroke-width: .1; stroke-dasharray: .35 .2; }
 .measurement circle { fill: #d15d37; }
@@ -204,6 +208,10 @@ code, kbd, pre { font-family: var(--font-geist-mono), monospace; }
 .detail-list code { max-width: 150px; overflow: hidden; text-overflow: ellipsis; color: #55615a; font-size: 8px; }
 .walk-inside-button { width: 100%; height: 34px; margin-top: 13px; border: 1px solid #cad5cd; border-radius: 4px; background: #edf3ef; color: #405b4b; display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 9px; font-weight: 700; cursor: pointer; }
 .walk-inside-button:hover { border-color: #9fb3a5; background: #e5eee8; }
+.technical-note { margin: 11px 0 0; color: #7e8781; font-size: 7.5px; line-height: 1.55; }
+.technical-note.is-warning { margin: 0; padding: 9px; background: #f2ead7; color: #80631f; border-left: 2px solid #b88a31; }
+.stair-direction-field { margin-top: 11px; margin-bottom: 0; }
+.inspector-walk-button { width: calc(100% - 30px); margin: 14px 15px 20px; }
 .panel-intro { padding: 17px 15px; border-bottom: 1px solid var(--line); display: flex; gap: 9px; }
 .panel-intro h2 { font-size: 13px; margin: 0 0 4px; }
 .panel-intro p { margin: 0; font-size: 9px; color: #7d8580; line-height: 1.45; }
@@ -286,7 +294,7 @@ code, kbd, pre { font-family: var(--font-geist-mono), monospace; }
 @media (max-width: 1180px) {
   .workspace { grid-template-columns: 60px minmax(430px, 1fr) 292px; }
   .library-panel { display: none; }
-  .topbar { grid-template-columns: 220px minmax(140px, 1fr) auto minmax(320px, 1fr); }
+  .topbar { grid-template-columns: 220px minmax(140px, 1fr) auto minmax(190px, 1fr); }
   .brand span { display: none; }
   .debug-drawer { right: 292px; }
 }

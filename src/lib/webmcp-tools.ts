@@ -289,7 +289,6 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
         required: ["roomId"],
         additionalProperties: false,
       },
-      annotations: { destructiveHint: true },
       execute: (input) => runtime.perform({
         type: "delete_room",
         roomId: requiredString(input, "roomId"),
@@ -389,8 +388,10 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
           sillHeight: { type: "number", minimum: 0, maximum: 8, default: 3 },
           windowType: { type: "string", enum: ["fixed", "casement", "sliding", "awning"], default: "fixed" },
           operable: { type: "boolean", default: false },
-          glazing: { type: "string", enum: ["clear", "privacy"], default: "clear" },
-          solarTransmittance: { type: "number", minimum: 0, maximum: 1, default: 0.7 },
+          glazing: { type: "string", enum: ["clear", "low-e", "privacy"], default: "clear" },
+          solarHeatGainCoefficient: { type: "number", minimum: 0, maximum: 1, description: "Concept SHGC input; verify against a rated product." },
+          visibleTransmittance: { type: "number", minimum: 0, maximum: 1, description: "Concept visible-transmittance input; verify against a rated product." },
+          uFactor: { type: "number", minimum: 0.1, maximum: 2, description: "Concept U-factor in Btu/(h·ft²·°F); verify against a rated product." },
         },
         required: ["wallId", "offset"],
         additionalProperties: false,
@@ -405,8 +406,10 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
         sillHeight: optionalNumber(input, "sillHeight"),
         windowType: optionalString(input, "windowType") as "fixed" | "casement" | "sliding" | "awning" | undefined,
         operable: optionalBoolean(input, "operable"),
-        glazing: optionalString(input, "glazing") as "clear" | "privacy" | undefined,
-        solarTransmittance: optionalNumber(input, "solarTransmittance"),
+        glazing: optionalString(input, "glazing") as "clear" | "low-e" | "privacy" | undefined,
+        solarHeatGainCoefficient: optionalNumber(input, "solarHeatGainCoefficient"),
+        visibleTransmittance: optionalNumber(input, "visibleTransmittance"),
+        uFactor: optionalNumber(input, "uFactor"),
       }).result,
     },
     {
@@ -428,8 +431,10 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
           state: { type: "string", enum: ["open", "closed"] },
           windowType: { type: "string", enum: ["fixed", "casement", "sliding", "awning"] },
           operable: { type: "boolean" },
-          glazing: { type: "string", enum: ["clear", "privacy"] },
-          solarTransmittance: { type: "number", minimum: 0, maximum: 1 },
+          glazing: { type: "string", enum: ["clear", "low-e", "privacy"] },
+          solarHeatGainCoefficient: { type: "number", minimum: 0, maximum: 1 },
+          visibleTransmittance: { type: "number", minimum: 0, maximum: 1 },
+          uFactor: { type: "number", minimum: 0.1, maximum: 2 },
         },
         required: ["openingId"],
         additionalProperties: false,
@@ -447,8 +452,10 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
         state: optionalString(input, "state") as "open" | "closed" | undefined,
         windowType: optionalString(input, "windowType") as "fixed" | "casement" | "sliding" | "awning" | undefined,
         operable: optionalBoolean(input, "operable"),
-        glazing: optionalString(input, "glazing") as "clear" | "privacy" | undefined,
-        solarTransmittance: optionalNumber(input, "solarTransmittance"),
+        glazing: optionalString(input, "glazing") as "clear" | "low-e" | "privacy" | undefined,
+        solarHeatGainCoefficient: optionalNumber(input, "solarHeatGainCoefficient"),
+        visibleTransmittance: optionalNumber(input, "visibleTransmittance"),
+        uFactor: optionalNumber(input, "uFactor"),
       }).result,
     },
     {
@@ -499,7 +506,7 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
     {
       name: "set_window_properties",
       category: "edit",
-      description: "Set window size, sill height, type, operability, glazing, and basic solar transmittance in the shared architectural model.",
+      description: "Set window size, sill height, type, operability, and concept-stage NFRC-style glazing inputs in the shared architectural model.",
       inputSchema: {
         type: "object",
         properties: {
@@ -509,8 +516,10 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
           sillHeight: { type: "number", minimum: 0, maximum: 8 },
           windowType: { type: "string", enum: ["fixed", "casement", "sliding", "awning"] },
           operable: { type: "boolean" },
-          glazing: { type: "string", enum: ["clear", "privacy"] },
-          solarTransmittance: { type: "number", minimum: 0, maximum: 1 },
+          glazing: { type: "string", enum: ["clear", "low-e", "privacy"] },
+          solarHeatGainCoefficient: { type: "number", minimum: 0, maximum: 1 },
+          visibleTransmittance: { type: "number", minimum: 0, maximum: 1 },
+          uFactor: { type: "number", minimum: 0.1, maximum: 2 },
         },
         required: ["openingId"],
         additionalProperties: false,
@@ -527,8 +536,10 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
           sillHeight: optionalNumber(input, "sillHeight"),
           windowType: optionalString(input, "windowType") as "fixed" | "casement" | "sliding" | "awning" | undefined,
           operable: optionalBoolean(input, "operable"),
-          glazing: optionalString(input, "glazing") as "clear" | "privacy" | undefined,
-          solarTransmittance: optionalNumber(input, "solarTransmittance"),
+          glazing: optionalString(input, "glazing") as "clear" | "low-e" | "privacy" | undefined,
+          solarHeatGainCoefficient: optionalNumber(input, "solarHeatGainCoefficient"),
+          visibleTransmittance: optionalNumber(input, "visibleTransmittance"),
+          uFactor: optionalNumber(input, "uFactor"),
         }).result;
       },
     },
@@ -590,7 +601,6 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
         required: ["openingId"],
         additionalProperties: false,
       },
-      annotations: { destructiveHint: true },
       execute: (input) => {
         const id = requiredString(input, "openingId");
         const opening = runtime.getProject().openings.find((item) => item.id === id);
@@ -601,7 +611,7 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
     {
       name: "add_stairs",
       category: "edit",
-      description: "Add a simple rectangular staircase to a floor using position and dimensions in feet.",
+      description: "Add a straight stair flight between adjacent floors. The same footprint, connection, and dimensions drive plan, 3D, validation, and Walk Mode.",
       inputSchema: {
         type: "object",
         properties: {
@@ -619,6 +629,29 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
         x: requiredNumber(input, "x"), y: requiredNumber(input, "y"),
         width: requiredNumber(input, "width"), length: requiredNumber(input, "length"),
         direction: input.direction as "up" | "down" | undefined,
+      }).result,
+    },
+    {
+      name: "update_stairs",
+      category: "edit",
+      description: "Move or resize an existing straight stair flight, or reverse which adjacent floor it connects to.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          stairId: { type: "string", description: "Stable staircase ID." },
+          x: { type: "number" }, y: { type: "number" },
+          width: { type: "number", minimum: 3 }, length: { type: "number", minimum: 6 },
+          direction: { type: "string", enum: ["up", "down"] },
+        },
+        required: ["stairId"],
+        additionalProperties: false,
+      },
+      execute: (input) => runtime.perform({
+        type: "update_stairs",
+        stairId: requiredString(input, "stairId"),
+        x: optionalNumber(input, "x"), y: optionalNumber(input, "y"),
+        width: optionalNumber(input, "width"), length: optionalNumber(input, "length"),
+        direction: optionalString(input, "direction") as "up" | "down" | undefined,
       }).result,
     },
     {

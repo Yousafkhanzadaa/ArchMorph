@@ -1,8 +1,6 @@
 type WebMCPToolAnnotations = {
   readOnlyHint?: boolean;
-  destructiveHint?: boolean;
-  idempotentHint?: boolean;
-  openWorldHint?: boolean;
+  untrustedContentHint?: boolean;
 };
 
 type WebMCPToolDefinition = {
@@ -10,13 +8,18 @@ type WebMCPToolDefinition = {
   description: string;
   inputSchema: Record<string, unknown>;
   annotations?: WebMCPToolAnnotations;
-  execute: (input: Record<string, unknown>) => Promise<unknown> | unknown;
+  execute: (
+    input: Record<string, unknown>,
+    options?: { signal: AbortSignal },
+  ) => Promise<unknown> | unknown;
 };
 
 interface Document {
   modelContext?: {
-    registerTool: (tool: WebMCPToolDefinition) => Promise<void> | void;
-    unregisterTool?: (name: string) => Promise<void> | void;
+    registerTool: (
+      tool: WebMCPToolDefinition,
+      options?: { exposedTo?: string[]; signal?: AbortSignal },
+    ) => Promise<void> | void;
   };
 }
 

@@ -6,19 +6,22 @@ import {
   type Project,
   type Room,
   type RoomType,
+  type Stair,
   type Wall,
   round,
   roomArea,
+  stairConnection,
   wallLength,
 } from "@/lib/architecture";
 
-export type CanvasTool = "select" | "room" | "wall" | "door" | "window" | "measure";
+export type CanvasTool = "select" | "room" | "wall" | "door" | "window" | "stair" | "measure";
 
 type Point = { x: number; y: number };
 type DragState =
   | { kind: "move-room"; id: string; start: Point; origin: Point; room: Room }
   | { kind: "resize-room"; id: string; start: Point; room: Room }
   | { kind: "move-wall"; id: string; start: Point; origin: Wall; wall: Wall }
+  | { kind: "move-stair"; id: string; start: Point; origin: Stair; stair: Stair }
   | { kind: "draw-wall"; start: Point; current: Point }
   | { kind: "measure"; start: Point; current: Point };
 
@@ -35,6 +38,8 @@ type FloorPlanProps = {
   onAddWall: (start: Point, end: Point) => void;
   onMoveWall: (id: string, dx: number, dy: number) => void;
   onAddOpening: (kind: "door" | "window", wallId: string, offset: number) => void;
+  onAddStair: (point: Point) => void;
+  onMoveStair: (id: string, x: number, y: number) => void;
 };
 
 const snap = (value: number, grid = 0.5) => round(Math.round(value / grid) * grid);
@@ -67,6 +72,8 @@ export default function FloorPlan({
   onAddWall,
   onMoveWall,
   onAddOpening,
+  onAddStair,
+  onMoveStair,
 }: FloorPlanProps) {
   const [drag, setDrag] = useState<DragState>();
   const [alignmentGuides, setAlignmentGuides] = useState<{ vertical?: number; horizontal?: number }>({});
@@ -77,6 +84,10 @@ export default function FloorPlan({
   const walls = project.walls.filter((wall) => wall.floorId === floorId);
   const openings = project.openings.filter((opening) => opening.floorId === floorId);
   const stairs = project.stairs.filter((stair) => stair.floorId === floorId);
+  const linkedStairs = project.stairs.filter((stair) => {
+    const connection = stairConnection(project, stair);
+    return connection?.targetFloor.id === floorId && stair.floorId !== floorId;
+  });
   const northRotation = { North: 0, East: -90, South: 180, West: 90 }[project.plot.orientation];
   const viewBox = useMemo(
     () => `${-8} ${-7} ${project.plot.width + 16} ${project.plot.length + 19}`,
@@ -138,6 +149,15 @@ export default function FloorPlan({
     const dy = current.y - start.y;
     if (Math.abs(dx) > Math.abs(dy) * 2.5) current = { x: current.x, y: start.y };
     else if (Math.abs(dy) > Math.abs(dx) * 2.5) current = { x: start.x, y: current.y };
+    else if (!nearest) {
+      const length = Math.hypot(dx, dy);
+      const angle = Math.atan2(dy, dx);
+      const snappedAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+      const angleDelta = Math.abs(Math.atan2(Math.sin(angle - snappedAngle), Math.cos(angle - snappedAngle)));
+      if (length > 0 && angleDelta <= Math.PI / 18) {
+        current = { x: start.x + Math.cos(snappedAngle) * length, y: start.y + Math.sin(snappedAngle) * length };
+      }
+    }
     setAlignmentGuides({ vertical: current.x === start.x ? start.x : undefined, horizontal: current.y === start.y ? start.y : undefined });
     return { x: snap(current.x), y: snap(current.y) };
   };
@@ -146,6 +166,7 @@ export default function FloorPlan({
     const point = toPoint(event);
     onSelect(undefined);
     if (tool === "room") onCreateRoom(point, roomType);
+    if (tool === "stair") onAddStair(point);
     if (tool === "wall") {
       event.currentTarget.setPointerCapture(event.pointerId);
       setDrag({ kind: "draw-wall", start: point, current: point });
@@ -157,7 +178,21 @@ export default function FloorPlan({
     }
   };
 
+  const handleStairPointerDown = (event: ReactPointerEvent<SVGGElement>, stair: Stair, linked: boolean) => {
+    event.stopPropagation();
+    onSelect(stair.id);
+    if (tool !== "select" || linked) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDrag({ kind: "move-stair", id: stair.id, start: toPoint(event), origin: stair, stair });
+  };
+
   const handleRoomPointerDown = (event: ReactPointerEvent<SVGRectElement>, room: Room) => {
+    if (tool === "stair") {
+      event.stopPropagation();
+      onSelect(undefined);
+      onAddStair(toPoint(event));
+      return;
+    }
     if (tool !== "select") return;
     event.stopPropagation();
     onSelect(room.id);
@@ -222,6 +257,12 @@ export default function FloorPlan({
         x1: snap(drag.origin.x1 + dx), y1: snap(drag.origin.y1 + dy),
         x2: snap(drag.origin.x2 + dx), y2: snap(drag.origin.y2 + dy),
       } });
+    } else if (drag.kind === "move-stair") {
+      const dx = point.x - drag.start.x;
+      const dy = point.y - drag.start.y;
+      const x = Math.max(0, Math.min(project.plot.width - drag.stair.width, snap(drag.origin.x + dx)));
+      const y = Math.max(0, Math.min(project.plot.length - drag.stair.length, snap(drag.origin.y + dy)));
+      setDrag({ ...drag, stair: { ...drag.origin, x, y } });
     }
   };
 
@@ -238,6 +279,9 @@ export default function FloorPlan({
     }
     if (drag.kind === "move-wall" && (drag.wall.x1 !== drag.origin.x1 || drag.wall.y1 !== drag.origin.y1 || drag.wall.x2 !== drag.origin.x2 || drag.wall.y2 !== drag.origin.y2)) {
       onMoveWall(drag.id, drag.wall.x1 - drag.origin.x1, drag.wall.y1 - drag.origin.y1);
+    }
+    if (drag.kind === "move-stair" && (drag.stair.x !== drag.origin.x || drag.stair.y !== drag.origin.y)) {
+      onMoveStair(drag.id, drag.stair.x, drag.stair.y);
     }
     if (drag.kind === "measure") setMeasurement({ start: drag.start, end: drag.current });
     setDrag(undefined);
@@ -417,16 +461,34 @@ export default function FloorPlan({
         })}
       </g>
 
-      {stairs.map((stair) => (
-        <g key={stair.id} className="stair" onPointerDown={(event) => { event.stopPropagation(); onSelect(stair.id); }}>
-          <rect x={stair.x} y={stair.y} width={stair.width} height={stair.length} />
-          {Array.from({ length: 8 }).map((_, index) => (
-            <line key={index} x1={stair.x} y1={stair.y + (index + 1) * stair.length / 9} x2={stair.x + stair.width} y2={stair.y + (index + 1) * stair.length / 9} />
-          ))}
-          <line x1={stair.x + stair.width / 2} y1={stair.y + stair.length - 0.7} x2={stair.x + stair.width / 2} y2={stair.y + 0.8} className="stair-arrow" />
-          <path d={`M ${stair.x + stair.width / 2} ${stair.y + 0.5} l -0.4 0.8 h 0.8 z`} fill="#45534b" />
-        </g>
-      ))}
+      {[...stairs.map((stair) => ({ stair, linked: false })), ...linkedStairs.map((stair) => ({ stair, linked: true }))].map(({ stair: rawStair, linked }) => {
+        const stair = drag?.kind === "move-stair" && drag.id === rawStair.id ? drag.stair : rawStair;
+        const connection = stairConnection(project, stair);
+        const arrowUp = linked ? stair.direction === "down" : stair.direction === "up";
+        const startY = arrowUp ? stair.y + stair.length - 0.7 : stair.y + 0.7;
+        const endY = arrowUp ? stair.y + 0.8 : stair.y + stair.length - 0.8;
+        const headY = arrowUp ? stair.y + 0.5 : stair.y + stair.length - 0.5;
+        return (
+          <g
+            key={`${stair.id}:${linked ? "linked" : "owned"}`}
+            className={`stair ${linked ? "is-linked" : ""} ${selectedId === stair.id ? "is-selected" : ""}`}
+            onPointerDown={(event) => handleStairPointerDown(event, stair, linked)}
+          >
+            <title>{linked ? "Linked stair landing" : "Straight stair"} · {connection?.lowerFloor.name ?? "Unconnected"} to {connection?.upperFloor.name ?? "adjacent floor"}</title>
+            <rect x={stair.x} y={stair.y} width={stair.width} height={stair.length} />
+            {Array.from({ length: Math.min(14, Math.max(8, connection?.treadCount ?? 8)) }).map((_, index, items) => (
+              <line key={index} x1={stair.x} y1={stair.y + (index + 1) * stair.length / (items.length + 1)} x2={stair.x + stair.width} y2={stair.y + (index + 1) * stair.length / (items.length + 1)} />
+            ))}
+            <line x1={stair.x + stair.width / 2} y1={startY} x2={stair.x + stair.width / 2} y2={endY} className="stair-arrow" />
+            <path d={arrowUp
+              ? `M ${stair.x + stair.width / 2} ${headY} l -0.4 0.8 h 0.8 z`
+              : `M ${stair.x + stair.width / 2} ${headY} l -0.4 -0.8 h 0.8 z`}
+              fill="#45534b"
+            />
+            <text x={stair.x + stair.width / 2} y={stair.y + stair.length / 2 + 0.25} textAnchor="middle" className="stair-label">{arrowUp ? "UP" : "DN"}</text>
+          </g>
+        );
+      })}
 
       {previewWall && (
         <g pointerEvents="none">
@@ -448,7 +510,7 @@ export default function FloorPlan({
         </g>
       )}
 
-      {!rooms.length && !walls.length && (
+      {!rooms.length && !walls.length && !stairs.length && (
         <g className="empty-plan" pointerEvents="none">
           <circle cx={project.plot.width / 2} cy={project.plot.length / 2 - 2} r="2.2" />
           <path d={`M ${project.plot.width / 2 - 0.8} ${project.plot.length / 2 - 2} h 1.6 M ${project.plot.width / 2} ${project.plot.length / 2 - 2.8} v 1.6`} />

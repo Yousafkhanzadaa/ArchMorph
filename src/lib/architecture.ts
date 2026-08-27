@@ -80,7 +80,33 @@ export type DoorHanding = "left" | "right";
 export type DoorSwingDirection = "inward" | "outward";
 export type DoorState = "open" | "closed";
 export type WindowType = "fixed" | "casement" | "sliding" | "awning";
-export type GlazingType = "clear" | "privacy";
+export type GlazingType = "clear" | "low-e" | "privacy";
+
+export const glazingPerformanceDefaults: Record<GlazingType, {
+  label: string;
+  solarHeatGainCoefficient: number;
+  visibleTransmittance: number;
+  uFactor: number;
+}> = {
+  clear: {
+    label: "Clear double glazing",
+    solarHeatGainCoefficient: 0.55,
+    visibleTransmittance: 0.7,
+    uFactor: 0.45,
+  },
+  "low-e": {
+    label: "Low-e double glazing",
+    solarHeatGainCoefficient: 0.35,
+    visibleTransmittance: 0.62,
+    uFactor: 0.3,
+  },
+  privacy: {
+    label: "Obscure double glazing",
+    solarHeatGainCoefficient: 0.4,
+    visibleTransmittance: 0.35,
+    uFactor: 0.45,
+  },
+};
 
 export type Opening = {
   id: string;
@@ -98,6 +124,10 @@ export type Opening = {
   windowType?: WindowType;
   operable?: boolean;
   glazing?: GlazingType;
+  solarHeatGainCoefficient?: number;
+  visibleTransmittance?: number;
+  uFactor?: number;
+  /** @deprecated Legacy concept input retained for imported projects and older tool clients. */
   solarTransmittance?: number;
   /** Import-only world position used to migrate geometry-only legacy projects. */
   legacyPosition?: { x: number; y: number };
@@ -111,6 +141,20 @@ export type Stair = {
   width: number;
   length: number;
   direction: "up" | "down";
+};
+
+export type StairConnection = {
+  stair: Stair;
+  sourceFloor: Floor;
+  targetFloor: Floor;
+  lowerFloor: Floor;
+  upperFloor: Floor;
+  rise: number;
+  riserCount: number;
+  riserHeight: number;
+  treadCount: number;
+  treadDepth: number;
+  recommendedRun: number;
 };
 
 export type ActivityEntry = {
@@ -157,6 +201,7 @@ export type ValidationIssue = {
     | "NO_EXTERIOR_ACCESS"
     | "DISCONNECTED_CIRCULATION"
     | "INVALID_STAIR_CONNECTION"
+    | "INVALID_STAIR_GEOMETRY"
     | "OPENING_WITHOUT_ADJACENCY"
     | "OPENING_OVERLAP"
     | "WALL_OUTSIDE_PLOT";
@@ -265,6 +310,9 @@ export type ArchitectureOperation =
       windowType?: WindowType;
       operable?: boolean;
       glazing?: GlazingType;
+      solarHeatGainCoefficient?: number;
+      visibleTransmittance?: number;
+      uFactor?: number;
       solarTransmittance?: number;
     }
   | {
@@ -281,6 +329,9 @@ export type ArchitectureOperation =
       windowType?: WindowType;
       operable?: boolean;
       glazing?: GlazingType;
+      solarHeatGainCoefficient?: number;
+      visibleTransmittance?: number;
+      uFactor?: number;
       solarTransmittance?: number;
     }
   | { type: "rehost_opening"; openingId: string; wallId: string; offset: number }
@@ -291,6 +342,15 @@ export type ArchitectureOperation =
       y: number;
       width: number;
       length: number;
+      direction?: "up" | "down";
+    }
+  | {
+      type: "update_stairs";
+      stairId: string;
+      x?: number;
+      y?: number;
+      width?: number;
+      length?: number;
       direction?: "up" | "down";
     }
   | { type: "create_floor"; name?: string; height?: number }
@@ -338,7 +398,7 @@ export function createInitialProject(): Project {
   };
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     id: "project-archmorph-home",
     name: "Untitled Residence",
     unit: "ft",
@@ -385,6 +445,56 @@ export function roomArea(room: Room) {
 
 export function wallLength(wall: Wall) {
   return Math.hypot(wall.x2 - wall.x1, wall.y2 - wall.y1);
+}
+
+const CONCEPT_MAX_RISER = 7.75 / 12;
+const CONCEPT_MIN_TREAD = 10 / 12;
+
+export function stairConnection(project: Project, stair: Stair): StairConnection | undefined {
+  const floors = [...project.floors].sort((a, b) => a.level - b.level);
+  const sourceIndex = floors.findIndex((floor) => floor.id === stair.floorId);
+  if (sourceIndex < 0) return undefined;
+  const sourceFloor = floors[sourceIndex];
+  const targetFloor = stair.direction === "down" ? floors[sourceIndex - 1] : floors[sourceIndex + 1];
+  if (!targetFloor) return undefined;
+  const lowerFloor = sourceFloor.elevation <= targetFloor.elevation ? sourceFloor : targetFloor;
+  const upperFloor = sourceFloor.elevation > targetFloor.elevation ? sourceFloor : targetFloor;
+  const rise = Math.abs(upperFloor.elevation - lowerFloor.elevation);
+  if (rise <= 0) return undefined;
+  const riserCount = Math.max(1, Math.ceil(rise / CONCEPT_MAX_RISER));
+  const treadCount = Math.max(1, riserCount - 1);
+  return {
+    stair,
+    sourceFloor,
+    targetFloor,
+    lowerFloor,
+    upperFloor,
+    rise: round(rise, 3),
+    riserCount,
+    riserHeight: round(rise / riserCount, 3),
+    treadCount,
+    treadDepth: round(stair.length / treadCount, 3),
+    recommendedRun: Math.ceil(treadCount * CONCEPT_MIN_TREAD * 2) / 2,
+  };
+}
+
+export function recommendedStairRun(
+  project: Project,
+  floorId: string,
+  direction: "up" | "down",
+) {
+  const placeholder: Stair = { id: "stair-preview", floorId, x: 0, y: 0, width: 3, length: 6, direction };
+  return stairConnection(project, placeholder)?.recommendedRun ?? 10;
+}
+
+export function wallCardinalFacing(project: Project, wall: Wall) {
+  if (!wall.exterior || wall.roomIds.length !== 1) return undefined;
+  const side = wall.roomSides.find((item) => item.roomId === wall.roomIds[0])?.side;
+  if (!side) return undefined;
+  const directions = ["North", "East", "South", "West"] as const;
+  const frontIndex = directions.indexOf(project.plot.orientation);
+  const offset = { north: 0, east: 1, south: 2, west: 3 }[side];
+  return directions[(frontIndex + offset) % directions.length];
 }
 
 type Segment = { x1: number; y1: number; x2: number; y2: number };
@@ -450,6 +560,20 @@ function assertOpeningPlacement(project: Project, opening: Opening, ignoredId?: 
   }
   const conflict = overlappingOpening(project, opening, ignoredId);
   if (conflict) throw new Error(`The ${opening.kind} overlaps an existing ${conflict.kind}. Reposition or resize it first.`);
+}
+
+function assertWindowPerformance(opening: Opening) {
+  if (opening.kind !== "window") return;
+  const bounded = [
+    ["Solar heat-gain coefficient", opening.solarHeatGainCoefficient, 0, 1],
+    ["Visible transmittance", opening.visibleTransmittance, 0, 1],
+    ["U-factor", opening.uFactor, 0.1, 2],
+  ] as const;
+  for (const [label, value, minimum, maximum] of bounded) {
+    if (value === undefined || value < minimum || value > maximum) {
+      throw new Error(`${label} must be between ${minimum} and ${maximum}.`);
+    }
+  }
 }
 
 function assertAllOpeningsValid(project: Project) {
@@ -770,7 +894,7 @@ function roomOpeningTargets(project: Project, room: Room, nextRoom: Room) {
 
 export function migrateProject(input: Project): Project {
   const project = cloneProject(input);
-  project.schemaVersion = 2;
+  project.schemaVersion = 3;
   project.rooms = (project.rooms ?? []).map((room) => ({ ...room, wallIds: room.wallIds ?? [] }));
   project.walls = (project.walls ?? []).map((wall) => ({
     ...wall,
@@ -779,9 +903,23 @@ export function migrateProject(input: Project): Project {
     exterior: wall.exterior ?? Boolean(wall.roomId),
     connectedWallIds: wall.connectedWallIds ?? [],
   }));
-  const normalizedOpenings = (project.openings ?? []).map((opening) => opening.kind === "door"
-    ? { ...opening, sillHeight: 0, hingeSide: opening.hingeSide ?? "start", handing: opening.handing ?? "left", swingDirection: opening.swingDirection ?? "inward", state: opening.state ?? "open" }
-    : { ...opening, windowType: opening.windowType ?? "fixed", operable: opening.operable ?? false, glazing: opening.glazing ?? "clear", solarTransmittance: opening.solarTransmittance ?? 0.7 });
+  const normalizedOpenings = (project.openings ?? []).map((opening) => {
+    if (opening.kind === "door") {
+      return { ...opening, sillHeight: 0, hingeSide: opening.hingeSide ?? "start", handing: opening.handing ?? "left", swingDirection: opening.swingDirection ?? "inward", state: opening.state ?? "open" };
+    }
+    const glazing = opening.glazing ?? "clear";
+    const defaults = glazingPerformanceDefaults[glazing];
+    const legacySolarFactor = opening.solarTransmittance;
+    return {
+      ...opening,
+      windowType: opening.windowType ?? "fixed",
+      operable: opening.operable ?? false,
+      glazing,
+      solarHeatGainCoefficient: opening.solarHeatGainCoefficient ?? legacySolarFactor ?? defaults.solarHeatGainCoefficient,
+      visibleTransmittance: opening.visibleTransmittance ?? defaults.visibleTransmittance,
+      uFactor: opening.uFactor ?? defaults.uFactor,
+    };
+  });
   project.floors = (project.floors ?? []).map((floor, index) => ({ ...floor, level: floor.level ?? index, elevation: floor.elevation ?? index * (floor.height ?? 9), height: floor.height ?? 9 }));
   if (!project.view || !project.floors.some((floor) => floor.id === project.view.activeFloorId)) {
     project.view = { mode: "2d", navigationMode: "orbit", activeFloorId: project.floors[0]?.id ?? "floor-ground", cameraPreset: "front-right" };
@@ -818,6 +956,15 @@ function assertRoomInsidePlot(project: Project, room: Pick<Room, "x" | "y" | "wi
   ) {
     throw new Error("The room must remain inside the plot boundary.");
   }
+}
+
+function assertStairInsidePlot(project: Project, stair: Pick<Stair, "x" | "y" | "width" | "length">) {
+  if (stair.width < 3 || stair.length < 6) throw new Error("Straight stairs must be at least 3 × 6 ft.");
+  if (
+    stair.x < 0 || stair.y < 0 ||
+    stair.x + stair.width > project.plot.width ||
+    stair.y + stair.length > project.plot.length
+  ) throw new Error("The staircase must remain inside the plot.");
 }
 
 function actorLabel(actor: Actor) {
@@ -1071,10 +1218,13 @@ export function applyOperation(
           windowType: operation.windowType ?? "fixed",
           operable: operation.operable ?? false,
           glazing: operation.glazing ?? "clear",
-          solarTransmittance: operation.solarTransmittance ?? 0.7,
+          solarHeatGainCoefficient: operation.solarHeatGainCoefficient ?? operation.solarTransmittance ?? glazingPerformanceDefaults[operation.glazing ?? "clear"].solarHeatGainCoefficient,
+          visibleTransmittance: operation.visibleTransmittance ?? glazingPerformanceDefaults[operation.glazing ?? "clear"].visibleTransmittance,
+          uFactor: operation.uFactor ?? glazingPerformanceDefaults[operation.glazing ?? "clear"].uFactor,
         }),
       };
       assertOpeningPlacement(project, opening);
+      assertWindowPerformance(opening);
       project.openings.push(opening);
       project.view.focusElementId = opening.id;
       description = `${who} added a ${opening.width} ft ${opening.kind}`;
@@ -1100,10 +1250,14 @@ export function applyOperation(
         windowType: operation.windowType ?? previous.windowType,
         operable: operation.operable ?? previous.operable,
         glazing: operation.glazing ?? previous.glazing,
-        solarTransmittance: operation.solarTransmittance ?? previous.solarTransmittance,
+        solarHeatGainCoefficient: operation.solarHeatGainCoefficient ?? operation.solarTransmittance ?? previous.solarHeatGainCoefficient,
+        visibleTransmittance: operation.visibleTransmittance ?? previous.visibleTransmittance,
+        uFactor: operation.uFactor ?? previous.uFactor,
+        solarTransmittance: previous.solarTransmittance,
       };
       const length = wallLength(wall);
       assertOpeningPlacement(project, opening, opening.id);
+      assertWindowPerformance(opening);
       project.openings[index] = opening;
       project.view.focusElementId = opening.id;
       description = `${who} updated a ${opening.width} ft ${opening.kind}`;
@@ -1125,6 +1279,9 @@ export function applyOperation(
       break;
     }
     case "add_stairs": {
+      if (!project.floors.some((floor) => floor.id === operation.floorId)) {
+        throw new Error(`Floor ${operation.floorId} does not exist.`);
+      }
       const stair: Stair = {
         id: createId("stair"),
         floorId: operation.floorId,
@@ -1134,16 +1291,30 @@ export function applyOperation(
         length: round(operation.length),
         direction: operation.direction ?? "up",
       };
-      if (stair.width < 3 || stair.length < 6) throw new Error("Stairs must be at least 3 × 6 ft.");
-      if (
-        stair.x < 0 || stair.y < 0 ||
-        stair.x + stair.width > project.plot.width ||
-        stair.y + stair.length > project.plot.length
-      ) throw new Error("The staircase must remain inside the plot.");
+      assertStairInsidePlot(project, stair);
       project.stairs.push(stair);
       project.view.focusElementId = stair.id;
       description = `${who} added a staircase`;
-      result = { stair };
+      result = { stair, connection: stairConnection(project, stair) ?? null };
+      break;
+    }
+    case "update_stairs": {
+      const index = project.stairs.findIndex((item) => item.id === operation.stairId);
+      if (index < 0) throw new Error(`Stair ${operation.stairId} does not exist.`);
+      const previous = project.stairs[index];
+      const stair: Stair = {
+        ...previous,
+        x: round(operation.x ?? previous.x),
+        y: round(operation.y ?? previous.y),
+        width: round(operation.width ?? previous.width),
+        length: round(operation.length ?? previous.length),
+        direction: operation.direction ?? previous.direction,
+      };
+      assertStairInsidePlot(project, stair);
+      project.stairs[index] = stair;
+      project.view.focusElementId = stair.id;
+      description = `${who} updated a staircase`;
+      result = { stair, connection: stairConnection(project, stair) ?? null };
       break;
     }
     case "create_floor": {
@@ -1437,6 +1608,27 @@ export function validateLayout(project: Project, floorId?: string): ValidationRe
       possibleCorrection: "Create aligned stair landings on consecutive floors and validate floor connections again.",
     });
   });
+  project.stairs.filter((stair) => targetFloors.includes(stair.floorId)).forEach((stair) => {
+    const connection = stairConnection(project, stair);
+    if (!connection || stair.length + 0.01 >= connection.recommendedRun) return;
+    issues.push({
+      id: createId("issue"),
+      code: "INVALID_STAIR_GEOMETRY",
+      severity: "error",
+      message: `The straight stair run is ${round(connection.recommendedRun - stair.length, 2)} ft too short for the current floor-to-floor rise.`,
+      elementIds: [stair.id],
+      evidence: {
+        rise: connection.rise,
+        riserCount: connection.riserCount,
+        riserHeightInches: round(connection.riserHeight * 12, 2),
+        treadDepthInches: round(connection.treadDepth * 12, 2),
+        actualRun: stair.length,
+        recommendedRun: connection.recommendedRun,
+      },
+      suggestion: `Extend the run to at least ${connection.recommendedRun} ft for this concept check, or develop a landing/turning stair outside this straight-flight model.`,
+      possibleCorrection: "Resize the stair, then confirm landings, headroom, guards, and local code requirements separately.",
+    });
+  });
 
   for (let i = 0; i < rooms.length; i += 1) {
     for (let j = i + 1; j < rooms.length; j += 1) {
@@ -1580,7 +1772,18 @@ export function inspectWall(project: Project, wallId: string) {
 export function inspectOpening(project: Project, openingId: string) {
   const opening = project.openings.find((item) => item.id === openingId);
   if (!opening) throw new Error(`Opening ${openingId} does not exist.`);
-  return { opening, hostWall: inspectWall(project, opening.wallId) };
+  const wall = project.walls.find((item) => item.id === opening.wallId);
+  return {
+    opening,
+    hostWall: inspectWall(project, opening.wallId),
+    facadeFacing: wall ? wallCardinalFacing(project, wall) ?? null : null,
+    glazingPerformance: opening.kind === "window" ? {
+      solarHeatGainCoefficient: opening.solarHeatGainCoefficient,
+      visibleTransmittance: opening.visibleTransmittance,
+      uFactor: opening.uFactor,
+      status: "Concept input; verify against a rated product and project climate.",
+    } : undefined,
+  };
 }
 
 export function inspectFloor(project: Project, floorId: string) {

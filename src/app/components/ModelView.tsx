@@ -3,8 +3,8 @@
 import { useEffect, useRef, type RefObject } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { type NavigationMode, type Project } from "@/lib/architecture";
-import { buildSpatialModel, resolveWalkPosition } from "@/lib/spatial3d";
+import { stairConnection, type NavigationMode, type Project } from "@/lib/architecture";
+import { buildSpatialModel, resolveWalkPosition, type CollisionSegment } from "@/lib/spatial3d";
 
 type ModelViewProps = {
   project: Project;
@@ -12,6 +12,7 @@ type ModelViewProps = {
   selectedId?: string;
   canvasRef: RefObject<HTMLCanvasElement | null>;
   onSelect: (id?: string) => void;
+  onWalkFloorChange: (floorId: string) => void;
 };
 
 type WalkPose = {
@@ -41,12 +42,67 @@ function meshBox(
   return mesh;
 }
 
+type PlanRectangle = { x: number; z: number; width: number; length: number };
+
+function subtractRectangle(source: PlanRectangle, cut: PlanRectangle) {
+  const left = Math.max(source.x, cut.x);
+  const right = Math.min(source.x + source.width, cut.x + cut.width);
+  const top = Math.max(source.z, cut.z);
+  const bottom = Math.min(source.z + source.length, cut.z + cut.length);
+  if (right - left <= 0.01 || bottom - top <= 0.01) return [source];
+  return [
+    { x: source.x, z: source.z, width: source.width, length: top - source.z },
+    { x: source.x, z: bottom, width: source.width, length: source.z + source.length - bottom },
+    { x: source.x, z: top, width: left - source.x, length: bottom - top },
+    { x: right, z: top, width: source.x + source.width - right, length: bottom - top },
+  ].filter((piece) => piece.width > 0.01 && piece.length > 0.01);
+}
+
+function subtractRectangles(source: PlanRectangle, cuts: PlanRectangle[]) {
+  return cuts.reduce<PlanRectangle[]>((pieces, cut) => pieces.flatMap((piece) => subtractRectangle(piece, cut)), [source]);
+}
+
+function cutCollisionSegmentAtStair(segment: CollisionSegment, stair: PlanRectangle) {
+  const dx = segment.x2 - segment.x1;
+  const dz = segment.z2 - segment.z1;
+  let enter = 0;
+  let exit = 1;
+  const limits: Array<[number, number]> = [
+    [-dx, segment.x1 - stair.x],
+    [dx, stair.x + stair.width - segment.x1],
+    [-dz, segment.z1 - stair.z],
+    [dz, stair.z + stair.length - segment.z1],
+  ];
+  for (const [direction, distance] of limits) {
+    if (Math.abs(direction) < 0.0001) {
+      if (distance < 0) return [segment];
+      continue;
+    }
+    const ratio = distance / direction;
+    if (direction < 0) enter = Math.max(enter, ratio);
+    else exit = Math.min(exit, ratio);
+    if (enter > exit) return [segment];
+  }
+  const piece = (start: number, end: number): CollisionSegment => ({
+    ...segment,
+    x1: segment.x1 + dx * start,
+    z1: segment.z1 + dz * start,
+    x2: segment.x1 + dx * end,
+    z2: segment.z1 + dz * end,
+  });
+  return [
+    ...(enter > 0.001 ? [piece(0, enter)] : []),
+    ...(exit < 0.999 ? [piece(exit, 1)] : []),
+  ];
+}
+
 export default function ModelView({
   project,
   navigationMode,
   selectedId,
   canvasRef,
   onSelect,
+  onWalkFloorChange,
 }: ModelViewProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const walkPoseRef = useRef<WalkPose | undefined>(undefined);
@@ -104,7 +160,7 @@ export default function ModelView({
       camera.lookAt(target);
     } else {
       const floor = project.floors.find((item) => item.id === project.view.activeFloorId) ?? project.floors[0];
-      const startRoom = project.rooms.find((room) => room.id === project.view.walkStartRoomId)
+      const startRoom = project.rooms.find((room) => room.id === project.view.walkStartRoomId && room.floorId === floor?.id)
         ?? project.rooms.find((room) => room.id === project.view.focusElementId && room.floorId === floor?.id)
         ?? project.rooms.find((room) => room.floorId === floor?.id);
       const poseKey = `${floor?.id ?? "floor"}:${project.view.walkStartRoomId ?? startRoom?.id ?? "site"}`;
@@ -159,35 +215,46 @@ export default function ModelView({
 
     const floorById = new Map(project.floors.map((floor) => [floor.id, floor]));
     const selectable: THREE.Object3D[] = [];
+    const stairConnections = project.stairs.flatMap((stair) => {
+      const connection = stairConnection(project, stair);
+      return connection ? [connection] : [];
+    });
 
     for (const room of project.rooms) {
       const floor = floorById.get(room.floorId);
       if (!floor) continue;
-      const slab = new THREE.Mesh(
-        new THREE.BoxGeometry(Math.max(0.1, room.width - 0.15), 0.18, Math.max(0.1, room.length - 0.15)),
-        new THREE.MeshStandardMaterial({
-          color: colorWithSelection(room.color, selectedId === room.id),
-          roughness: 0.82,
-          transparent: room.type === "Courtyard",
-          opacity: room.type === "Courtyard" ? 0.45 : 1,
-        }),
-      );
-      slab.position.set(room.x + room.width / 2, floor.elevation + 0.1, room.y + room.length / 2);
-      slab.receiveShadow = true;
-      slab.userData.elementId = room.id;
-      selectable.push(slab);
-      scene.add(slab);
+      const roomRectangle = { x: room.x + 0.075, z: room.y + 0.075, width: Math.max(0.1, room.width - 0.15), length: Math.max(0.1, room.length - 0.15) };
+      const slabVoids = stairConnections
+        .filter((connection) => connection.upperFloor.id === floor.id)
+        .map(({ stair }) => ({ x: stair.x - 0.08, z: stair.y - 0.08, width: stair.width + 0.16, length: stair.length + 0.16 }));
+      const slabMaterial = new THREE.MeshStandardMaterial({
+        color: colorWithSelection(room.color, selectedId === room.id),
+        roughness: 0.82,
+        transparent: room.type === "Courtyard",
+        opacity: room.type === "Courtyard" ? 0.45 : 1,
+      });
+      for (const piece of subtractRectangles(roomRectangle, slabVoids)) {
+        const slab = new THREE.Mesh(new THREE.BoxGeometry(piece.width, 0.18, piece.length), slabMaterial);
+        slab.position.set(piece.x + piece.width / 2, floor.elevation + 0.1, piece.z + piece.length / 2);
+        slab.receiveShadow = true;
+        slab.userData.elementId = room.id;
+        selectable.push(slab);
+        scene.add(slab);
+      }
 
       if (room.type !== "Courtyard") {
-        const ceiling = new THREE.Mesh(
-          new THREE.BoxGeometry(room.width, 0.14, room.length),
-          new THREE.MeshStandardMaterial({ color: "#f0eee7", roughness: 0.94, side: THREE.DoubleSide }),
-        );
-        ceiling.position.set(room.x + room.width / 2, floor.elevation + floor.height + 0.08, room.y + room.length / 2);
-        ceiling.castShadow = true;
-        ceiling.userData.elementId = room.id;
-        selectable.push(ceiling);
-        scene.add(ceiling);
+        const ceilingVoids = stairConnections
+          .filter((connection) => connection.lowerFloor.id === floor.id)
+          .map(({ stair }) => ({ x: stair.x - 0.08, z: stair.y - 0.08, width: stair.width + 0.16, length: stair.length + 0.16 }));
+        const ceilingMaterial = new THREE.MeshStandardMaterial({ color: "#f0eee7", roughness: 0.94, side: THREE.DoubleSide });
+        for (const piece of subtractRectangles({ x: room.x, z: room.y, width: room.width, length: room.length }, ceilingVoids)) {
+          const ceiling = new THREE.Mesh(new THREE.BoxGeometry(piece.width, 0.14, piece.length), ceilingMaterial);
+          ceiling.position.set(piece.x + piece.width / 2, floor.elevation + floor.height + 0.08, piece.z + piece.length / 2);
+          ceiling.castShadow = true;
+          ceiling.userData.elementId = room.id;
+          selectable.push(ceiling);
+          scene.add(ceiling);
+        }
       }
     }
 
@@ -210,7 +277,6 @@ export default function ModelView({
       wallPieceCount += 1;
     }
 
-    let daylightCount = 0;
     for (const frame of spatial.openingFrames) {
       const { opening } = frame;
       const floor = floorById.get(opening.floorId);
@@ -273,6 +339,7 @@ export default function ModelView({
         const sill = opening.sillHeight ?? 0;
         const rail = 0.16;
         const centerY = elevation + sill + opening.height / 2;
+        const visibleTransmittance = opening.visibleTransmittance ?? (opening.glazing === "privacy" ? 0.35 : 0.7);
         for (const side of [-1, 1]) {
           const jamb = meshBox(
             [rail, opening.height, depth],
@@ -304,16 +371,18 @@ export default function ModelView({
           [frame.x, centerY, frame.z],
           -frame.angle,
           new THREE.MeshPhysicalMaterial({
-            color: colorWithSelection(opening.glazing === "privacy" ? "#c4d2d0" : "#9bc8d4", selected),
+            color: colorWithSelection(opening.glazing === "privacy" ? "#c4d2d0" : opening.glazing === "low-e" ? "#96bdb9" : "#9bc8d4", selected),
             transparent: true,
-            opacity: opening.glazing === "privacy" ? 0.72 : Math.max(0.24, 0.52 - (opening.solarTransmittance ?? 0.7) * 0.2),
-            transmission: selected || opening.glazing === "privacy" ? 0 : Math.max(0.08, (opening.solarTransmittance ?? 0.7) * 0.52),
+            opacity: opening.glazing === "privacy" ? 0.72 : Math.max(0.22, 0.5 - visibleTransmittance * 0.3),
+            transmission: selected || opening.glazing === "privacy" ? 0 : Math.max(0.08, Math.min(0.72, visibleTransmittance * 0.78)),
             roughness: opening.glazing === "privacy" ? 0.48 : 0.12,
             metalness: 0.06,
             side: THREE.DoubleSide,
           }),
         );
         glass.userData.elementId = opening.id;
+        glass.userData.visibleTransmittance = visibleTransmittance;
+        glass.userData.solarHeatGainCoefficient = opening.solarHeatGainCoefficient;
         selectable.push(glass);
         scene.add(glass);
         if (opening.windowType === "sliding" || opening.windowType === "casement") {
@@ -327,29 +396,28 @@ export default function ModelView({
           selectable.push(mullion);
           scene.add(mullion);
         }
-        if (daylightCount < 8) {
-          const daylight = new THREE.PointLight("#d9f2ff", 0.8, 14, 2);
-          daylight.position.set(frame.x + frame.normalX * 0.7, centerY, frame.z + frame.normalZ * 0.7);
-          scene.add(daylight);
-          daylightCount += 1;
-        }
       }
     }
 
     for (const stair of project.stairs) {
       const floor = floorById.get(stair.floorId);
       if (!floor) continue;
-      const stepCount = 10;
-      for (let index = 0; index < stepCount; index += 1) {
-        const stepLength = stair.length / stepCount;
-        const stepHeight = (floor.height * 0.72) / stepCount;
+      const connection = stairConnection(project, stair);
+      const lowerElevation = connection?.lowerFloor.elevation ?? floor.elevation;
+      const rise = connection?.rise ?? floor.height * 0.72;
+      const treadCount = connection?.treadCount ?? 10;
+      const stepLength = stair.length / treadCount;
+      for (let index = 0; index < treadCount; index += 1) {
+        const progress = (index + 1) / treadCount;
+        const solidHeight = rise * progress;
         const step = meshBox(
-          [stair.width, stepHeight * (index + 1), stepLength],
-          [stair.x + stair.width / 2, floor.elevation + (stepHeight * (index + 1)) / 2, stair.y + stepLength * (index + 0.5)],
+          [stair.width, solidHeight, stepLength],
+          [stair.x + stair.width / 2, lowerElevation + solidHeight / 2, stair.y + stair.length - stepLength * (index + 0.5)],
           0,
-          new THREE.MeshStandardMaterial({ color: "#b9b4aa", roughness: 0.9 }),
+          new THREE.MeshStandardMaterial({ color: colorWithSelection("#b9b4aa", selectedId === stair.id), roughness: 0.9 }),
         );
         step.userData.elementId = stair.id;
+        step.userData.stairProgress = progress;
         selectable.push(step);
         scene.add(step);
       }
@@ -389,12 +457,31 @@ export default function ModelView({
     };
     canvas.addEventListener("click", handleClick);
 
-    const activeCollisions = spatial.collisionSegments.filter((segment) => segment.floorId === project.view.activeFloorId);
-    const activeStairs = project.stairs.filter((stair) => stair.floorId === project.view.activeFloorId);
+    const activeFloor = project.floors.find((floor) => floor.id === project.view.activeFloorId) ?? project.floors[0];
+    const activeStairConnections = stairConnections.filter(
+      (connection) => connection.lowerFloor.id === activeFloor?.id || connection.upperFloor.id === activeFloor?.id,
+    );
+    const activeCollisions = activeStairConnections.reduce(
+      (segments, { stair }) => segments.flatMap((segment) => cutCollisionSegmentAtStair(segment, {
+        x: stair.x,
+        z: stair.y,
+        width: stair.width,
+        length: stair.length,
+      })),
+      spatial.collisionSegments.filter((segment) => segment.floorId === project.view.activeFloorId),
+    );
+    const eyeHeight = 5.4;
     const radius = 0.38;
     const pressed = new Set<string>();
     let yaw = camera.rotation.y;
     let pitch = camera.rotation.x;
+    let transitionRequested = false;
+
+    const stairAt = (x: number, z: number) => activeStairConnections.find(({ stair }) =>
+      x >= stair.x && x <= stair.x + stair.width && z >= stair.y && z <= stair.y + stair.length,
+    );
+
+    const poseKeyForFloor = (floorId: string) => `${floorId}:${project.view.walkStartRoomId ?? project.rooms.find((room) => room.floorId === floorId)?.id ?? "site"}`;
 
     const moveWalkCamera = (moveX: number, moveZ: number) => {
       const distance = Math.hypot(moveX, moveZ);
@@ -407,12 +494,38 @@ export default function ModelView({
         const resolved = resolveWalkPosition(x, z, radius, activeCollisions);
         x = Math.max(radius, Math.min(project.plot.width - radius, resolved.x));
         z = Math.max(radius, Math.min(project.plot.length - radius, resolved.z));
-        const hitsStair = activeStairs.some((stair) =>
-          x > stair.x - radius && x < stair.x + stair.width + radius &&
-          z > stair.y - radius && z < stair.y + stair.length + radius,
-        );
-        camera.position.x = hitsStair ? previousX : x;
-        camera.position.z = hitsStair ? previousZ : z;
+        const previousStair = stairAt(previousX, previousZ);
+        const nextStair = stairAt(x, z);
+        const activeFloorEye = (activeFloor?.elevation ?? 0) + eyeHeight;
+        const betweenLandings = previousStair && Math.abs(camera.position.y - activeFloorEye) > 0.3;
+        if (betweenLandings && !nextStair) continue;
+
+        camera.position.x = x;
+        camera.position.z = z;
+        if (!nextStair) {
+          camera.position.y = activeFloorEye;
+          continue;
+        }
+
+        const progress = Math.max(0, Math.min(1, (nextStair.stair.y + nextStair.stair.length - z) / nextStair.stair.length));
+        camera.position.y = nextStair.lowerFloor.elevation + progress * nextStair.rise + eyeHeight;
+        const targetFloorId = activeFloor?.id === nextStair.lowerFloor.id && progress >= 0.96
+          ? nextStair.upperFloor.id
+          : activeFloor?.id === nextStair.upperFloor.id && progress <= 0.04
+            ? nextStair.lowerFloor.id
+            : undefined;
+        if (targetFloorId && !transitionRequested) {
+          transitionRequested = true;
+          walkPoseRef.current = {
+            key: poseKeyForFloor(targetFloorId),
+            x: camera.position.x,
+            y: camera.position.y,
+            z: camera.position.z,
+            yaw,
+            pitch,
+          };
+          onWalkFloorChange(targetFloorId);
+        }
       }
     };
 
@@ -474,14 +587,16 @@ export default function ModelView({
           moveWalkCamera((moveX / magnitude) * speed * delta, (moveZ / magnitude) * speed * delta);
         }
         camera.rotation.set(pitch, yaw, 0);
-        walkPoseRef.current = {
-          key: `${project.view.activeFloorId}:${project.view.walkStartRoomId ?? project.rooms.find((room) => room.floorId === project.view.activeFloorId)?.id ?? "site"}`,
-          x: camera.position.x,
-          y: camera.position.y,
-          z: camera.position.z,
-          yaw,
-          pitch,
-        };
+        if (!transitionRequested) {
+          walkPoseRef.current = {
+            key: poseKeyForFloor(project.view.activeFloorId),
+            x: camera.position.x,
+            y: camera.position.y,
+            z: camera.position.z,
+            yaw,
+            pitch,
+          };
+        }
       }
       canvas.dataset.cameraX = camera.position.x.toFixed(2);
       canvas.dataset.cameraY = camera.position.y.toFixed(2);
@@ -511,10 +626,11 @@ export default function ModelView({
       });
       renderer.dispose();
     };
-  }, [canvasRef, navigationMode, onSelect, project, selectedId]);
+  }, [canvasRef, navigationMode, onSelect, onWalkFloorChange, project, selectedId]);
 
   const doors = project.openings.filter((item) => item.kind === "door").length;
   const windows = project.openings.filter((item) => item.kind === "window").length;
+  const stairs = project.stairs.length;
 
   return (
     <div className={`model-view is-${navigationMode}`} ref={hostRef}>
@@ -534,13 +650,13 @@ export default function ModelView({
       {navigationMode === "walk" ? (
         <div className="model-view__walk-help">
           <b>WALK MODE</b>
-          <span>Click canvas to look · WASD / arrows to move · Shift to move faster · Esc releases mouse</span>
+          <span>Click canvas to look · WASD / arrows to move · Walk onto stairs to change levels · Esc releases mouse</span>
         </div>
       ) : (
         <div className="model-view__help">ORBIT · DRAG &nbsp;&nbsp; PAN · RIGHT DRAG &nbsp;&nbsp; ZOOM · SCROLL</div>
       )}
-      <div className="model-view__sync" aria-label={`3D sync: ${doors} doors and ${windows} windows`}>
-        <span /> 2D SYNCED&nbsp;&nbsp;·&nbsp;&nbsp;{doors} DOORS&nbsp;&nbsp;·&nbsp;&nbsp;{windows} WINDOWS
+      <div className="model-view__sync" aria-label={`3D sync: ${doors} doors, ${windows} windows, and ${stairs} stairs`}>
+        <span /> 2D SYNCED&nbsp;&nbsp;·&nbsp;&nbsp;{doors} DOORS&nbsp;&nbsp;·&nbsp;&nbsp;{windows} WINDOWS&nbsp;&nbsp;·&nbsp;&nbsp;{stairs} STAIRS
       </div>
     </div>
   );
