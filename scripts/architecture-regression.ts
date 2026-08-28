@@ -10,6 +10,7 @@ import {
   wallLength,
   type ArchitectureOperation,
 } from "../src/lib/architecture.ts";
+import { buildSpatialModel, type SpatialModel } from "../src/lib/spatial3d.ts";
 
 const memory = new Map<string, string>();
 Object.assign(globalThis, {
@@ -114,6 +115,53 @@ assert.ok(!validateLayout(multiFloor).issues.some((issue) => issue.code === "INV
 performMultiFloor({ type: "update_stairs", stairId: stair.id, length: 6 });
 assert.ok(validateLayout(multiFloor).issues.some((issue) => issue.code === "INVALID_STAIR_GEOMETRY"), "short straight stair runs should be flagged");
 
+let spatialProject = createInitialProject();
+const performSpatial = (operation: ArchitectureOperation) => {
+  spatialProject = applyOperation(spatialProject, operation, "agent").project;
+};
+performSpatial({ type: "create_room", floorId: "floor-ground", name: "Walk Test", roomType: "Custom", x: 3, y: 10, width: 12, length: 12 });
+const spatialRoom = spatialProject.rooms[0];
+const spatialNorthWall = spatialProject.walls.find((wall) => wall.roomSides.some((side) => side.roomId === spatialRoom.id && side.side === "north"))!;
+performSpatial({ type: "add_opening", kind: "door", wallId: spatialNorthWall.id, offset: 6, width: 3, state: "closed" });
+
+const designSpatial = buildSpatialModel(spatialProject);
+const walkSpatial = buildSpatialModel(spatialProject, { doorMode: "all-open" });
+const closedDoorFrame = designSpatial.openingFrames.find(({ opening }) => opening.kind === "door")!;
+const distanceToSegment = (x: number, z: number, segment: SpatialModel["collisionSegments"][number]) => {
+  const dx = segment.x2 - segment.x1;
+  const dz = segment.z2 - segment.z1;
+  const lengthSquared = dx * dx + dz * dz;
+  const ratio = lengthSquared ? Math.max(0, Math.min(1, ((x - segment.x1) * dx + (z - segment.z1) * dz) / lengthSquared)) : 0;
+  return Math.hypot(x - (segment.x1 + dx * ratio), z - (segment.z1 + dz * ratio));
+};
+const collisionAtDoor = (model: SpatialModel) => model.collisionSegments.some((segment) => (
+  segment.floorId === closedDoorFrame.opening.floorId && distanceToSegment(closedDoorFrame.x, closedDoorFrame.z, segment) < 0.01
+));
+assert.ok(collisionAtDoor(designSpatial), "a closed design door should remain collidable outside Walk Mode");
+assert.ok(!collisionAtDoor(walkSpatial), "Walk Mode should treat every door opening as traversable");
+assert.equal(spatialProject.openings[0].state, "closed", "the Walk Mode collision policy must not mutate canonical door state");
+
+const northEastCorner = { x: spatialRoom.x + spatialRoom.width + 0.2, z: spatialRoom.y - 0.2, height: 4 };
+const cornerVolumes = walkSpatial.wallVolumes.filter((volume) => (
+  northEastCorner.x >= volume.x && northEastCorner.x <= volume.x + volume.width
+  && northEastCorner.z >= volume.z && northEastCorner.z <= volume.z + volume.length
+  && northEastCorner.height >= volume.bottom && northEastCorner.height <= volume.top
+));
+assert.equal(cornerVolumes.length, 1, "orthogonal wall corners should be closed by one non-overlapping derived volume");
+
+performSpatial({ type: "create_floor", name: "Upper Test" });
+const spatialUpperFloor = spatialProject.floors.find((floor) => floor.level === 1)!;
+performSpatial({ type: "create_room", floorId: spatialUpperFloor.id, name: "Upper Walk Test", roomType: "Custom", x: 3, y: 10, width: 12, length: 12 });
+const upperRoom = spatialProject.rooms.find((room) => room.floorId === spatialUpperFloor.id)!;
+const upperNorthWall = spatialProject.walls.find((wall) => wall.roomSides.some((side) => side.roomId === upperRoom.id && side.side === "north"))!;
+performSpatial({ type: "add_opening", kind: "window", wallId: upperNorthWall.id, offset: 6, width: 4, height: 4, sillHeight: 3 });
+const multiFloorSpatial = buildSpatialModel(spatialProject, { doorMode: "all-open" });
+assert.deepEqual(
+  new Set(multiFloorSpatial.openingFrames.map(({ opening }) => opening.floorId)),
+  new Set(["floor-ground", spatialUpperFloor.id]),
+  "the spatial model should expose opening frames from every floor while walking",
+);
+
 console.log(JSON.stringify({
   project: { id: project.id, schemaVersion: project.schemaVersion, rooms: project.rooms.length, walls: project.walls.length, openings: project.openings.length },
   topology: { sharedWalls: project.walls.filter((wall) => wall.roomIds.length === 2).length, duplicateWallIds: project.walls.length - new Set(project.walls.map((wall) => wall.id)).size },
@@ -121,4 +169,5 @@ console.log(JSON.stringify({
   areas: { net: metrics.totalNetFloorArea, gross: metrics.grossCoveredArea, openSite: metrics.openSiteArea },
   persistence: { savedProjects: persistence.listSavedProjects().length, restoredVersion: restored.version, importedProjectId: imported.id },
   multiFloor: { floors: multiFloor.floors.length, firstFloorElevation: firstFloor.elevation, stairEdges: floorGraph.edges.filter((edge) => edge.type === "stair").length },
+  spatial: { wallVolumes: walkSpatial.wallVolumes.length, designDoorBlocked: collisionAtDoor(designSpatial), walkDoorBlocked: collisionAtDoor(walkSpatial), renderedFloorIds: Array.from(new Set(multiFloorSpatial.openingFrames.map(({ opening }) => opening.floorId))) },
 }, null, 2));

@@ -1,5 +1,7 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+ArchMorph is being developed for [The WebMCP Challenge](https://webmcp.devpost.com/rules), a hackathon focused on building web applications where people and AI agents collaborate through WebMCP.
+
 ## Getting Started
 
 First, run the development server:
