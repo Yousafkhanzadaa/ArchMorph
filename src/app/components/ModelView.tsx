@@ -36,6 +36,12 @@ type WalkPose = {
   pitch: number;
 };
 
+type OrbitPose = {
+  viewKey: string;
+  position: [number, number, number];
+  target: [number, number, number];
+};
+
 const WALK_EYE_HEIGHT = 5.4;
 const WALK_BODY_HEIGHT = 6.4;
 const WALK_RADIUS = 0.38;
@@ -126,6 +132,7 @@ export default function ModelView({
 }: ModelViewProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const walkPoseRef = useRef<WalkPose | undefined>(undefined);
+  const orbitPoseRef = useRef<OrbitPose | undefined>(undefined);
   const minimapMarkerRef = useRef<SVGGElement | null>(null);
   const minimapRoomLabelRef = useRef<HTMLSpanElement | null>(null);
   const minimapRoomRefs = useRef(new Map<string, SVGPolygonElement>());
@@ -170,22 +177,30 @@ export default function ModelView({
     const target = focusedCenter
       ? new THREE.Vector3(focusedCenter.x, 3.2, focusedCenter.y)
       : center;
+    const orbitViewKey = `${project.view.cameraPreset}:${project.view.focusElementId ?? "project"}:${project.plot.width}x${project.plot.length}`;
 
     if (navigationMode === "orbit") {
-      const distance = maxDimension * 0.82;
-      const height = Math.max(24, maxDimension * 0.48);
-      const positions: Record<string, THREE.Vector3> = {
-        front: new THREE.Vector3(project.plot.width / 2, height, -distance),
-        rear: new THREE.Vector3(project.plot.width / 2, height, project.plot.length + distance),
-        left: new THREE.Vector3(-distance, height, project.plot.length / 2),
-        right: new THREE.Vector3(project.plot.width + distance, height, project.plot.length / 2),
-        top: new THREE.Vector3(project.plot.width / 2, maxDimension * 1.25, project.plot.length / 2 + 0.01),
-        "front-left": new THREE.Vector3(-distance * 0.62, height, -distance * 0.62),
-        "front-right": new THREE.Vector3(project.plot.width + distance * 0.62, height, -distance * 0.62),
-      };
-      camera.position.copy(positions[project.view.cameraPreset] ?? positions["front-right"]);
-      controls.target.copy(target);
-      camera.lookAt(target);
+      const storedPose = orbitPoseRef.current?.viewKey === orbitViewKey ? orbitPoseRef.current : undefined;
+      if (storedPose) {
+        camera.position.fromArray(storedPose.position);
+        controls.target.fromArray(storedPose.target);
+        camera.lookAt(controls.target);
+      } else {
+        const distance = maxDimension * 0.82;
+        const height = Math.max(24, maxDimension * 0.48);
+        const positions: Record<string, THREE.Vector3> = {
+          front: new THREE.Vector3(project.plot.width / 2, height, -distance),
+          rear: new THREE.Vector3(project.plot.width / 2, height, project.plot.length + distance),
+          left: new THREE.Vector3(-distance, height, project.plot.length / 2),
+          right: new THREE.Vector3(project.plot.width + distance, height, project.plot.length / 2),
+          top: new THREE.Vector3(project.plot.width / 2, maxDimension * 1.25, project.plot.length / 2 + 0.01),
+          "front-left": new THREE.Vector3(-distance * 0.62, height, -distance * 0.62),
+          "front-right": new THREE.Vector3(project.plot.width + distance * 0.62, height, -distance * 0.62),
+        };
+        camera.position.copy(positions[project.view.cameraPreset] ?? positions["front-right"]);
+        controls.target.copy(target);
+        camera.lookAt(target);
+      }
     } else {
       const floor = project.floors.find((item) => item.id === project.view.activeFloorId) ?? project.floors[0];
       const startRoom = project.rooms.find((room) => room.id === project.view.walkStartRoomId && room.floorId === floor?.id)
@@ -594,12 +609,21 @@ export default function ModelView({
 
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
+    let selectionPointerStart: { x: number; y: number } | undefined;
+    const handleSelectionPointerDown = (event: PointerEvent) => {
+      selectionPointerStart = event.button === 0 ? { x: event.clientX, y: event.clientY } : undefined;
+    };
     const handleClick = (event: MouseEvent) => {
       if (navigationMode === "walk") {
         canvas.focus();
         void canvas.requestPointerLock();
         return;
       }
+      const pointerTravel = selectionPointerStart
+        ? Math.hypot(event.clientX - selectionPointerStart.x, event.clientY - selectionPointerStart.y)
+        : 0;
+      selectionPointerStart = undefined;
+      if (pointerTravel > 4) return;
       const rect = canvas.getBoundingClientRect();
       pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -607,6 +631,7 @@ export default function ModelView({
       const hit = raycaster.intersectObjects(selectable, false)[0];
       onSelect(hit?.object.userData.elementId);
     };
+    canvas.addEventListener("pointerdown", handleSelectionPointerDown);
     canvas.addEventListener("click", handleClick);
 
     const activeFloor = project.floors.find((floor) => floor.id === project.view.activeFloorId) ?? project.floors[0];
@@ -811,8 +836,16 @@ export default function ModelView({
     animate();
 
     return () => {
+      if (navigationMode === "orbit") {
+        orbitPoseRef.current = {
+          viewKey: orbitViewKey,
+          position: camera.position.toArray() as [number, number, number],
+          target: controls.target.toArray() as [number, number, number],
+        };
+      }
       cancelAnimationFrame(frame);
       observer.disconnect();
+      canvas.removeEventListener("pointerdown", handleSelectionPointerDown);
       canvas.removeEventListener("click", handleClick);
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
