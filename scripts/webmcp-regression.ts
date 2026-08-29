@@ -90,6 +90,30 @@ await createRoom.execute({
 assert.equal(project.rooms.length, 1, "create_room should mutate the shared canonical project");
 assert.equal(project.rooms[0].name, "WebMCP Test Room");
 
+const exteriorWall = project.walls.find((wall) => wall.exterior && wall.roomIds.includes(project.rooms[0].id))!;
+const addWindow = tools.find((tool) => tool.name === "add_window")!;
+const addedWindow = await addWindow.execute({
+  wallId: exteriorWall.id,
+  offset: 5,
+  width: 4,
+  glazing: "clear",
+}) as { opening: { id: string } };
+const setWindowProperties = tools.find((tool) => tool.name === "set_window_properties")!;
+const lowEWindow = await setWindowProperties.execute({
+  openingId: addedWindow.opening.id,
+  glazing: "low-e",
+}) as { opening: { glazing: string; solarHeatGainCoefficient: number; visibleTransmittance: number; uFactor: number } };
+assert.deepEqual(
+  {
+    glazing: lowEWindow.opening.glazing,
+    solarHeatGainCoefficient: lowEWindow.opening.solarHeatGainCoefficient,
+    visibleTransmittance: lowEWindow.opening.visibleTransmittance,
+    uFactor: lowEWindow.opening.uFactor,
+  },
+  { glazing: "low-e", solarHeatGainCoefficient: 0.35, visibleTransmittance: 0.62, uFactor: 0.3 },
+  "selecting the low-e preset should apply its performance defaults",
+);
+
 const snapshotBeforeFailure = JSON.stringify(project);
 assert.throws(
   () => createRoom.execute({

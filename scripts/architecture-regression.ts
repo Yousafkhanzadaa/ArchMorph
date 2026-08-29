@@ -91,9 +91,11 @@ assert.ok(graph.disconnectedRoomIds.includes(dining.id), "rehosting a circulatio
 assert.ok(validateLayout(project).issues.some((issue) => issue.code === "DISCONNECTED_CIRCULATION"));
 
 const window = project.openings.find((opening) => opening.kind === "window")!;
-perform({ type: "update_opening", openingId: window.id, windowType: "casement", operable: true, glazing: "privacy", solarHeatGainCoefficient: 0.4, visibleTransmittance: 0.35, uFactor: 0.45 });
+perform({ type: "update_opening", openingId: window.id, windowType: "casement", operable: true, glazing: "privacy" });
 assert.equal(project.openings.find((opening) => opening.id === window.id)?.glazing, "privacy");
+assert.equal(project.openings.find((opening) => opening.id === window.id)?.solarHeatGainCoefficient, 0.4);
 assert.equal(project.openings.find((opening) => opening.id === window.id)?.visibleTransmittance, 0.35);
+assert.equal(project.openings.find((opening) => opening.id === window.id)?.uFactor, 0.45);
 
 const metrics = projectMetrics(project);
 assert.ok(metrics.grossCoveredArea > metrics.totalNetFloorArea, "gross area should include canonical wall footprints");

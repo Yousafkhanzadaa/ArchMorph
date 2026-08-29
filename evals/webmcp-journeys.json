@@ -38,8 +38,8 @@
       "id": "sequence-floor-and-stair",
       "layer": "full-journey",
       "prompt": "Create a second floor and a connected straight stair. Verify the stair and room circulation, switch to 3D, and focus the stair.",
-      "expectedTools": ["inspect_project", "create_floor", "inspect_floor", "add_stairs", "inspect_circulation", "validate_layout", "switch_view", "focus_element"],
-      "assertions": ["Stair identifies source and target floors", "Rise/riser/tread evidence is returned", "3D view shows the same stair"]
+      "expectedTools": ["inspect_project", "create_floor", "inspect_floor", "create_room", "add_stairs", "inspect_circulation", "validate_layout", "switch_view", "focus_element"],
+      "assertions": ["An aligned room or landing exists on both connected floors", "Stair identifies source and target floors", "Rise/riser/tread evidence is returned", "3D view shows the same stair"]
     },
     {
       "id": "collaboration-human-edit",

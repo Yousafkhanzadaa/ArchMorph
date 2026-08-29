@@ -1525,6 +1525,10 @@ export function applyOperation(
       const previous = project.openings[index];
       const wall = project.walls.find((item) => item.id === previous.wallId);
       if (!wall) throw new Error(`Wall ${previous.wallId} does not exist.`);
+      const glazing = operation.glazing ?? previous.glazing;
+      const glazingDefaults = previous.kind === "window" && operation.glazing
+        ? glazingPerformanceDefaults[operation.glazing]
+        : undefined;
       const opening: Opening = {
         ...previous,
         offset: round(operation.offset ?? previous.offset),
@@ -1537,10 +1541,10 @@ export function applyOperation(
         state: operation.state ?? previous.state,
         windowType: operation.windowType ?? previous.windowType,
         operable: operation.operable ?? previous.operable,
-        glazing: operation.glazing ?? previous.glazing,
-        solarHeatGainCoefficient: operation.solarHeatGainCoefficient ?? operation.solarTransmittance ?? previous.solarHeatGainCoefficient,
-        visibleTransmittance: operation.visibleTransmittance ?? previous.visibleTransmittance,
-        uFactor: operation.uFactor ?? previous.uFactor,
+        glazing,
+        solarHeatGainCoefficient: operation.solarHeatGainCoefficient ?? operation.solarTransmittance ?? glazingDefaults?.solarHeatGainCoefficient ?? previous.solarHeatGainCoefficient,
+        visibleTransmittance: operation.visibleTransmittance ?? glazingDefaults?.visibleTransmittance ?? previous.visibleTransmittance,
+        uFactor: operation.uFactor ?? glazingDefaults?.uFactor ?? previous.uFactor,
         solarTransmittance: previous.solarTransmittance,
       };
       const length = wallLength(wall);
