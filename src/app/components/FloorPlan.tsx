@@ -10,7 +10,12 @@ import {
   type Wall,
   round,
   roomArea,
+  roomBounds,
+  roomCentroid,
+  roomVertices,
   stairConnection,
+  stairFootprint,
+  stairPlanPoint,
   wallLength,
 } from "@/lib/architecture";
 
@@ -19,7 +24,8 @@ export type CanvasTool = "select" | "room" | "wall" | "door" | "window" | "stair
 type Point = { x: number; y: number };
 type DragState =
   | { kind: "move-room"; id: string; start: Point; origin: Point; room: Room }
-  | { kind: "resize-room"; id: string; start: Point; room: Room }
+  | { kind: "resize-room"; id: string; room: Room }
+  | { kind: "edit-room-vertex"; id: string; vertexIndex: number; room: Room }
   | { kind: "move-wall"; id: string; start: Point; origin: Wall; wall: Wall }
   | { kind: "move-stair"; id: string; start: Point; origin: Stair; stair: Stair }
   | { kind: "draw-wall"; start: Point; current: Point }
@@ -35,6 +41,7 @@ type FloorPlanProps = {
   onCreateRoom: (point: Point, type: RoomType) => void;
   onMoveRoom: (id: string, point: Point) => void;
   onResizeRoom: (id: string, width: number, length: number) => void;
+  onUpdateRoomVertices: (id: string, vertices: Point[]) => void;
   onAddWall: (start: Point, end: Point) => void;
   onMoveWall: (id: string, dx: number, dy: number) => void;
   onAddOpening: (kind: "door" | "window", wallId: string, offset: number) => void;
@@ -70,6 +77,7 @@ export default function FloorPlan({
   onCreateRoom,
   onMoveRoom,
   onResizeRoom,
+  onUpdateRoomVertices,
   onAddWall,
   onMoveWall,
   onAddOpening,
@@ -115,6 +123,7 @@ export default function FloorPlan({
   const roomForRender = (room: Room) => {
     if (drag?.kind === "move-room" && drag.id === room.id) return drag.room;
     if (drag?.kind === "resize-room" && drag.id === room.id) return drag.room;
+    if (drag?.kind === "edit-room-vertex" && drag.id === room.id) return drag.room;
     return room;
   };
 
@@ -137,7 +146,9 @@ export default function FloorPlan({
     if (xMatches[0]) { x += xMatches[0].delta; vertical = xMatches[0].edge; }
     if (yMatches[0]) { y += yMatches[0].delta; horizontal = yMatches[0].edge; }
     setAlignmentGuides({ vertical, horizontal });
-    return { ...room, x: snap(x), y: snap(y) };
+    const dx = snap(x) - room.x;
+    const dy = snap(y) - room.y;
+    return { ...room, x: snap(x), y: snap(y), vertices: room.vertices?.map((point) => ({ x: point.x + dx, y: point.y + dy })) };
   };
 
   const alignWallPoint = (point: Point, start: Point) => {
@@ -188,7 +199,7 @@ export default function FloorPlan({
     setDrag({ kind: "move-stair", id: stair.id, start: toPoint(event), origin: stair, stair });
   };
 
-  const handleRoomPointerDown = (event: ReactPointerEvent<SVGRectElement>, room: Room) => {
+  const handleRoomPointerDown = (event: ReactPointerEvent<SVGElement>, room: Room) => {
     if (tool === "stair") {
       event.stopPropagation();
       onSelect(undefined);
@@ -206,7 +217,13 @@ export default function FloorPlan({
   const handleResizePointerDown = (event: ReactPointerEvent<SVGCircleElement>, room: Room) => {
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
-    setDrag({ kind: "resize-room", id: room.id, start: toPoint(event), room });
+    setDrag({ kind: "resize-room", id: room.id, room });
+  };
+
+  const handleVertexPointerDown = (event: ReactPointerEvent<SVGCircleElement>, room: Room, vertexIndex: number) => {
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDrag({ kind: "edit-room-vertex", id: room.id, vertexIndex, room });
   };
 
   const handleWallPointerDown = (event: ReactPointerEvent<SVGLineElement>, wall: Wall) => {
@@ -238,7 +255,8 @@ export default function FloorPlan({
       const dy = point.y - drag.start.y;
       const x = Math.max(0, Math.min(project.plot.width - drag.room.width, snap(drag.origin.x + dx)));
       const y = Math.max(0, Math.min(project.plot.length - drag.room.length, snap(drag.origin.y + dy)));
-      setDrag({ ...drag, room: alignRoom({ ...drag.room, x, y }) });
+      const translated = { ...drag.room, x, y, vertices: drag.room.vertices?.map((vertex) => ({ x: vertex.x + x - drag.room.x, y: vertex.y + y - drag.room.y })) };
+      setDrag({ ...drag, room: alignRoom(translated) });
     } else if (drag.kind === "resize-room") {
       let width = Math.max(3, Math.min(project.plot.width - drag.room.x, snap(point.x - drag.room.x)));
       let length = Math.max(3, Math.min(project.plot.length - drag.room.y, snap(point.y - drag.room.y)));
@@ -249,6 +267,20 @@ export default function FloorPlan({
       if (horizontal) length = snap(length + horizontal.delta);
       setAlignmentGuides({ vertical: vertical?.edge, horizontal: horizontal?.edge });
       setDrag({ ...drag, room: { ...drag.room, width, length } });
+    } else if (drag.kind === "edit-room-vertex") {
+      const vertices = roomVertices(drag.room);
+      const index = drag.vertexIndex;
+      const previousIndex = (index - 1 + vertices.length) % vertices.length;
+      const nextIndex = (index + 1) % vertices.length;
+      const previous = vertices[previousIndex];
+      const current = vertices[index];
+      const next = vertices[nextIndex];
+      const moved = { x: Math.max(0, Math.min(project.plot.width, point.x)), y: Math.max(0, Math.min(project.plot.length, point.y)) };
+      vertices[index] = moved;
+      vertices[previousIndex] = Math.abs(previous.y - current.y) < 0.01 ? { ...previous, y: moved.y } : { ...previous, x: moved.x };
+      vertices[nextIndex] = Math.abs(next.y - current.y) < 0.01 ? { ...next, y: moved.y } : { ...next, x: moved.x };
+      const bounds = roomBounds({ ...drag.room, vertices });
+      setDrag({ ...drag, room: { ...drag.room, ...bounds, shape: "custom", vertices } });
     } else if (drag.kind === "draw-wall" || drag.kind === "measure") {
       setDrag({ ...drag, current: drag.kind === "draw-wall" ? alignWallPoint(point, drag.start) : point });
     } else if (drag.kind === "move-wall") {
@@ -262,8 +294,9 @@ export default function FloorPlan({
     } else if (drag.kind === "move-stair") {
       const dx = point.x - drag.start.x;
       const dy = point.y - drag.start.y;
-      const x = Math.max(0, Math.min(project.plot.width - drag.stair.width, snap(drag.origin.x + dx)));
-      const y = Math.max(0, Math.min(project.plot.length - drag.stair.length, snap(drag.origin.y + dy)));
+      const footprint = stairFootprint(drag.stair);
+      const x = Math.max(0, Math.min(project.plot.width - footprint.width, snap(drag.origin.x + dx)));
+      const y = Math.max(0, Math.min(project.plot.length - footprint.length, snap(drag.origin.y + dy)));
       setDrag({ ...drag, stair: { ...drag.origin, x, y } });
     }
   };
@@ -276,6 +309,7 @@ export default function FloorPlan({
     if (drag.kind === "resize-room" && (drag.room.width !== project.rooms.find((room) => room.id === drag.id)?.width || drag.room.length !== project.rooms.find((room) => room.id === drag.id)?.length)) {
       onResizeRoom(drag.id, drag.room.width, drag.room.length);
     }
+    if (drag.kind === "edit-room-vertex") onUpdateRoomVertices(drag.id, roomVertices(drag.room));
     if (drag.kind === "draw-wall" && Math.hypot(drag.current.x - drag.start.x, drag.current.y - drag.start.y) >= 1) {
       onAddWall(drag.start, drag.current);
     }
@@ -370,14 +404,16 @@ export default function FloorPlan({
         const selected = room.id === selectedId;
         const focused = room.id === project.view.focusElementId;
         const area = roomArea(room);
+        const vertices = roomVertices(room);
+        const centroid = roomCentroid(room);
         const compactLabel = !selected && (room.width < 7 || room.length < 6 || area < 55);
         const mediumLabel = !selected && !compactLabel && (room.width < 10 || room.length < 8 || area < 90);
         const visibleName = roomLabel(room).length > 18 && !selected ? `${roomLabel(room).slice(0, 16)}…` : roomLabel(room);
         return (
           <g key={room.id} className={`room-group ${selected ? "is-selected" : ""}`}>
             <title>{room.name} · {area} sq ft · {room.width} × {room.length} ft</title>
-            <rect
-              x={room.x} y={room.y} width={room.width} height={room.length}
+            <polygon
+              points={vertices.map((point) => `${point.x},${point.y}`).join(" ")}
               fill={room.color} fillOpacity={room.type === "Courtyard" ? 0.34 : 0.72}
               stroke={selected ? "#d65b32" : "#35423a"} strokeWidth={selected ? 0.28 : 0.08}
               strokeDasharray={room.type === "Courtyard" ? "0.7 0.4" : undefined}
@@ -386,19 +422,14 @@ export default function FloorPlan({
               onPointerDown={(event) => handleRoomPointerDown(event, room)}
             />
             <g pointerEvents="none" className="room-label">
-              <text x={room.x + room.width / 2} y={room.y + room.length / 2 + (compactLabel ? 0.3 : -0.35)} textAnchor="middle" className={`room-name ${compactLabel ? "is-compact" : ""}`}>{visibleName}</text>
-              {!compactLabel && <text x={room.x + room.width / 2} y={room.y + room.length / 2 + 1.05} textAnchor="middle" className="room-area">{area} sq ft</text>}
+              <text x={centroid.x} y={centroid.y + (compactLabel ? 0.3 : -0.35)} textAnchor="middle" className={`room-name ${compactLabel ? "is-compact" : ""}`}>{visibleName}</text>
+              {!compactLabel && <text x={centroid.x} y={centroid.y + 1.05} textAnchor="middle" className="room-area">{area} sq ft</text>}
               {!compactLabel && !mediumLabel && <text x={room.x + room.width / 2} y={room.y + room.length - 0.65} textAnchor="middle" className="room-size">{room.width}&apos; × {room.length}&apos;</text>}
             </g>
             {selected && (
               <>
                 <line x1={room.x} y1={room.y - 0.65} x2={room.x + room.width} y2={room.y - 0.65} className="selection-dimension" pointerEvents="none" />
                 <text x={room.x + room.width / 2} y={room.y - 1} textAnchor="middle" className="selection-dimension-text" pointerEvents="none">{room.width}&apos;–0&quot;</text>
-                <circle
-                  cx={room.x + room.width} cy={room.y + room.length} r="0.52"
-                  className="resize-handle"
-                  onPointerDown={(event) => handleResizePointerDown(event, room)}
-                />
               </>
             )}
           </g>
@@ -485,9 +516,14 @@ export default function FloorPlan({
         const stair = drag?.kind === "move-stair" && drag.id === rawStair.id ? drag.stair : rawStair;
         const connection = stairConnection(project, stair);
         const arrowUp = linked ? stair.direction === "down" : stair.direction === "up";
-        const startY = arrowUp ? stair.y + stair.length - 0.7 : stair.y + 0.7;
-        const endY = arrowUp ? stair.y + 0.8 : stair.y + stair.length - 0.8;
-        const headY = arrowUp ? stair.y + 0.5 : stair.y + stair.length - 0.5;
+        const corners = [stairPlanPoint(stair, 0, 0), stairPlanPoint(stair, stair.width, 0), stairPlanPoint(stair, stair.width, stair.length), stairPlanPoint(stair, 0, stair.length)];
+        const start = stairPlanPoint(stair, stair.width / 2, arrowUp ? stair.length - 0.7 : 0.7);
+        const end = stairPlanPoint(stair, stair.width / 2, arrowUp ? 0.8 : stair.length - 0.8);
+        const head = stairPlanPoint(stair, stair.width / 2, arrowUp ? 0.5 : stair.length - 0.5);
+        const angle = stair.rotation * Math.PI / 180;
+        const left = { x: head.x - Math.cos(angle) * 0.4, y: head.y + Math.sin(angle) * 0.4 };
+        const right = { x: head.x + Math.cos(angle) * 0.4, y: head.y - Math.sin(angle) * 0.4 };
+        const center = stairPlanPoint(stair, stair.width / 2, stair.length / 2);
         return (
           <g
             key={`${stair.id}:${linked ? "linked" : "owned"}`}
@@ -495,17 +531,13 @@ export default function FloorPlan({
             onPointerDown={(event) => handleStairPointerDown(event, stair, linked)}
           >
             <title>{linked ? "Linked stair landing" : "Straight stair"} · {connection?.lowerFloor.name ?? "Unconnected"} to {connection?.upperFloor.name ?? "adjacent floor"}</title>
-            <rect x={stair.x} y={stair.y} width={stair.width} height={stair.length} />
+            <polygon points={corners.map((point) => `${point.x},${point.y}`).join(" ")} />
             {Array.from({ length: Math.min(14, Math.max(8, connection?.treadCount ?? 8)) }).map((_, index, items) => (
-              <line key={index} x1={stair.x} y1={stair.y + (index + 1) * stair.length / (items.length + 1)} x2={stair.x + stair.width} y2={stair.y + (index + 1) * stair.length / (items.length + 1)} />
+              (() => { const a = stairPlanPoint(stair, 0, (index + 1) * stair.length / (items.length + 1)); const b = stairPlanPoint(stair, stair.width, (index + 1) * stair.length / (items.length + 1)); return <line key={index} x1={a.x} y1={a.y} x2={b.x} y2={b.y} />; })()
             ))}
-            <line x1={stair.x + stair.width / 2} y1={startY} x2={stair.x + stair.width / 2} y2={endY} className="stair-arrow" />
-            <path d={arrowUp
-              ? `M ${stair.x + stair.width / 2} ${headY} l -0.4 0.8 h 0.8 z`
-              : `M ${stair.x + stair.width / 2} ${headY} l -0.4 -0.8 h 0.8 z`}
-              fill="#45534b"
-            />
-            <text x={stair.x + stair.width / 2} y={stair.y + stair.length / 2 + 0.25} textAnchor="middle" className="stair-label">{arrowUp ? "UP" : "DN"}</text>
+            <line x1={start.x} y1={start.y} x2={end.x} y2={end.y} className="stair-arrow" />
+            <path d={`M ${head.x} ${head.y} L ${left.x} ${left.y} L ${right.x} ${right.y} Z`} fill="#45534b" />
+            <text x={center.x} y={center.y + 0.25} textAnchor="middle" className="stair-label">{arrowUp ? "UP" : "DN"}</text>
           </g>
         );
       })}
@@ -538,6 +570,23 @@ export default function FloorPlan({
           <text x={project.plot.width / 2} y={project.plot.length / 2 + 3.4} textAnchor="middle" className="empty-subtitle">Choose a room type, then click inside the site</text>
         </g>
       )}
+
+      {selectedRoom && (() => {
+        const room = roomForRender(selectedRoom);
+        const vertices = roomVertices(room);
+        return (
+          <g className="room-edit-handles">
+            <circle
+              cx={room.x + room.width} cy={room.y + room.length} r="0.52"
+              className="resize-handle"
+              onPointerDown={(event) => handleResizePointerDown(event, room)}
+            />
+            {(room.shape ?? "rectangle") !== "rectangle" && vertices.map((point, index) => (
+              <circle key={`${room.id}-vertex-${index}`} cx={point.x} cy={point.y} r="0.42" className="resize-handle room-vertex-handle" onPointerDown={(event) => handleVertexPointerDown(event, room, index)} />
+            ))}
+          </g>
+        );
+      })()}
 
       {selectedRoom && (
         <text x="0" y={project.plot.length + 6.5} className="selection-footer">

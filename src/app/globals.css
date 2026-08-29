@@ -143,6 +143,7 @@ code, kbd, pre { font-family: var(--font-geist-mono), monospace; }
 .selection-dimension { stroke: var(--accent); stroke-width: .09; }
 .selection-dimension-text { font-size: .65px; fill: var(--accent); font-weight: 700; }
 .resize-handle { fill: var(--accent); stroke: white; stroke-width: .15; cursor: nwse-resize; }
+.room-vertex-handle { cursor: move; }
 .opening { cursor: pointer; }
 .stair rect, .stair line { fill: #aeb5ae33; stroke: #45534b; stroke-width: .08; }
 .stair-arrow { stroke-width: .14 !important; }

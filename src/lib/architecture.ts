@@ -25,6 +25,24 @@ export const roomTypes = [
 
 export type RoomType = (typeof roomTypes)[number];
 export type WallSide = "north" | "east" | "south" | "west";
+export type PlanPoint = { x: number; y: number };
+export type RoomShape = "rectangle" | "l-shape" | "t-shape" | "u-shape" | "custom";
+export type StairRotation = 0 | 90 | 180 | 270;
+export type ExteriorFinishId = "stucco" | "brick" | "concrete" | "timber" | "metal";
+
+export const exteriorFinishPresets: Record<ExteriorFinishId, {
+  label: string;
+  description: string;
+  color: string;
+  roughness: number;
+  metalness: number;
+}> = {
+  stucco: { label: "Mineral stucco", description: "Light, matte rendered exterior finish.", color: "#ddd5c7", roughness: 0.92, metalness: 0 },
+  brick: { label: "Brick masonry", description: "Warm red-brown masonry finish.", color: "#9f6653", roughness: 0.9, metalness: 0 },
+  concrete: { label: "Exposed concrete", description: "Neutral architectural concrete finish.", color: "#aaa79f", roughness: 0.82, metalness: 0 },
+  timber: { label: "Timber cladding", description: "Warm natural timber rainscreen finish.", color: "#9a7150", roughness: 0.76, metalness: 0 },
+  metal: { label: "Metal panel", description: "Muted standing-seam style metal finish.", color: "#69756f", roughness: 0.48, metalness: 0.58 },
+};
 
 export type Plot = {
   width: number;
@@ -52,6 +70,9 @@ export type Room = {
   length: number;
   color: string;
   wallIds: string[];
+  shape?: RoomShape;
+  /** Ordered orthogonal boundary vertices. Rectangles omit this for compact compatibility. */
+  vertices?: PlanPoint[];
 };
 
 export type WallRoomSide = { roomId: string; side: WallSide };
@@ -141,6 +162,7 @@ export type Stair = {
   width: number;
   length: number;
   direction: "up" | "down";
+  rotation: StairRotation;
 };
 
 export type StairConnection = {
@@ -177,6 +199,7 @@ export type Project = {
   walls: Wall[];
   openings: Opening[];
   stairs: Stair[];
+  exteriorFinish: ExteriorFinishId;
   view: {
     mode: ViewMode;
     navigationMode: NavigationMode;
@@ -241,6 +264,12 @@ export type CirculationGraph = {
   disconnectedRoomIds: string[];
   invalidDoorIds: string[];
   invalidStairIds: string[];
+  routesFromMainEntrance: Array<{
+    roomId: string;
+    roomName: string;
+    nodePath: string[];
+    elementPath: string[];
+  }>;
 };
 
 export type ValidationReport = {
@@ -271,9 +300,18 @@ export type ArchitectureOperation =
       y: number;
       width: number;
       length: number;
+      shape?: Exclude<RoomShape, "custom">;
+    }
+  | {
+      type: "create_polygon_room";
+      floorId: string;
+      name: string;
+      roomType: RoomType;
+      vertices: PlanPoint[];
     }
   | { type: "move_room"; roomId: string; x: number; y: number }
   | { type: "resize_room"; roomId: string; width: number; length: number }
+  | { type: "update_room_vertices"; roomId: string; vertices: PlanPoint[] }
   | { type: "update_room"; roomId: string; name?: string; roomType?: RoomType }
   | { type: "delete_room"; roomId: string }
   | {
@@ -343,6 +381,7 @@ export type ArchitectureOperation =
       width: number;
       length: number;
       direction?: "up" | "down";
+      rotation?: StairRotation;
     }
   | {
       type: "update_stairs";
@@ -352,7 +391,9 @@ export type ArchitectureOperation =
       width?: number;
       length?: number;
       direction?: "up" | "down";
+      rotation?: StairRotation;
     }
+  | { type: "set_exterior_finish"; finish: ExteriorFinishId }
   | { type: "create_floor"; name?: string; height?: number }
   | { type: "set_active_floor"; floorId: string }
   | { type: "delete_element"; elementId: string }
@@ -398,7 +439,7 @@ export function createInitialProject(): Project {
   };
 
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     id: "project-archmorph-home",
     name: "Untitled Residence",
     unit: "ft",
@@ -413,6 +454,7 @@ export function createInitialProject(): Project {
     walls: [],
     openings: [],
     stairs: [],
+    exteriorFinish: "stucco",
     view: {
       mode: "2d",
       navigationMode: "orbit",
@@ -436,11 +478,102 @@ export function createInitialProject(): Project {
 
 export function round(value: number, places = 2) {
   const factor = 10 ** places;
-  return Math.round(value * factor) / factor;
+  const scaled = value * factor;
+  // Stabilize decimal half values such as 67.725 that binary floating point stores just below the tie.
+  return Math.round(scaled + Math.sign(scaled) * 1e-9) / factor;
+}
+
+export function roomVertices(room: Room): PlanPoint[] {
+  if (room.vertices?.length) return room.vertices.map((point) => ({ ...point }));
+  return [
+    { x: room.x, y: room.y },
+    { x: room.x + room.width, y: room.y },
+    { x: room.x + room.width, y: room.y + room.length },
+    { x: room.x, y: room.y + room.length },
+  ];
+}
+
+export function roomBounds(room: Pick<Room, "x" | "y" | "width" | "length" | "vertices">) {
+  const vertices = room.vertices?.length ? room.vertices : [
+    { x: room.x, y: room.y },
+    { x: room.x + room.width, y: room.y + room.length },
+  ];
+  const xs = vertices.map((point) => point.x);
+  const ys = vertices.map((point) => point.y);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  return { x, y, width: Math.max(...xs) - x, length: Math.max(...ys) - y };
+}
+
+export function roomCentroid(room: Room) {
+  const vertices = roomVertices(room);
+  let twiceArea = 0;
+  let x = 0;
+  let y = 0;
+  vertices.forEach((point, index) => {
+    const next = vertices[(index + 1) % vertices.length];
+    const cross = point.x * next.y - next.x * point.y;
+    twiceArea += cross;
+    x += (point.x + next.x) * cross;
+    y += (point.y + next.y) * cross;
+  });
+  if (Math.abs(twiceArea) < 0.001) {
+    const bounds = roomBounds(room);
+    return { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.length / 2 };
+  }
+  return { x: x / (3 * twiceArea), y: y / (3 * twiceArea) };
 }
 
 export function roomArea(room: Room) {
-  return round(room.width * room.length);
+  const vertices = roomVertices(room);
+  const twiceArea = vertices.reduce((sum, point, index) => {
+    const next = vertices[(index + 1) % vertices.length];
+    return sum + point.x * next.y - next.x * point.y;
+  }, 0);
+  return round(Math.abs(twiceArea) / 2);
+}
+
+export function roomPerimeter(room: Room) {
+  const vertices = roomVertices(room);
+  return round(vertices.reduce((sum, point, index) => {
+    const next = vertices[(index + 1) % vertices.length];
+    return sum + Math.hypot(next.x - point.x, next.y - point.y);
+  }, 0));
+}
+
+export function roomContainsPoint(room: Room, point: PlanPoint) {
+  const vertices = roomVertices(room);
+  let inside = false;
+  for (let index = 0, previous = vertices.length - 1; index < vertices.length; previous = index, index += 1) {
+    const a = vertices[index];
+    const b = vertices[previous];
+    const onEdge = Math.abs((point.x - a.x) * (b.y - a.y) - (point.y - a.y) * (b.x - a.x)) < 0.01
+      && point.x >= Math.min(a.x, b.x) - 0.01 && point.x <= Math.max(a.x, b.x) + 0.01
+      && point.y >= Math.min(a.y, b.y) - 0.01 && point.y <= Math.max(a.y, b.y) + 0.01;
+    if (onEdge) return true;
+    if ((a.y > point.y) !== (b.y > point.y) && point.x < (b.x - a.x) * (point.y - a.y) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
+export function stairFootprint(stair: Pick<Stair, "x" | "y" | "width" | "length" | "rotation">) {
+  const rotated = stair.rotation === 90 || stair.rotation === 270;
+  return { x: stair.x, y: stair.y, width: rotated ? stair.length : stair.width, length: rotated ? stair.width : stair.length };
+}
+
+/** Maps width/run-local stair coordinates into plan coordinates. Local v=0 is the upper landing. */
+export function stairPlanPoint(stair: Pick<Stair, "x" | "y" | "width" | "length" | "rotation">, u: number, v: number): PlanPoint {
+  if (stair.rotation === 90) return { x: stair.x + v, y: stair.y + stair.width - u };
+  if (stair.rotation === 180) return { x: stair.x + stair.width - u, y: stair.y + stair.length - v };
+  if (stair.rotation === 270) return { x: stair.x + stair.length - v, y: stair.y + u };
+  return { x: stair.x + u, y: stair.y + v };
+}
+
+export function stairLocalPoint(stair: Pick<Stair, "x" | "y" | "width" | "length" | "rotation">, point: PlanPoint) {
+  if (stair.rotation === 90) return { u: stair.y + stair.width - point.y, v: point.x - stair.x };
+  if (stair.rotation === 180) return { u: stair.x + stair.width - point.x, v: stair.y + stair.length - point.y };
+  if (stair.rotation === 270) return { u: point.y - stair.y, v: stair.x + stair.length - point.x };
+  return { u: point.x - stair.x, v: point.y - stair.y };
 }
 
 export function wallLength(wall: Wall) {
@@ -483,7 +616,7 @@ export function recommendedStairRun(
   floorId: string,
   direction: "up" | "down",
 ) {
-  const placeholder: Stair = { id: "stair-preview", floorId, x: 0, y: 0, width: 3, length: 6, direction };
+  const placeholder: Stair = { id: "stair-preview", floorId, x: 0, y: 0, width: 3, length: 6, direction, rotation: 0 };
   return stairConnection(project, placeholder)?.recommendedRun ?? 10;
 }
 
@@ -580,15 +713,40 @@ function assertAllOpeningsValid(project: Project) {
   project.openings.forEach((opening) => assertOpeningPlacement(project, opening, opening.id));
 }
 
+function polygonIntervalsAtX(vertices: PlanPoint[], x: number) {
+  const ys = vertices.flatMap((point, index) => {
+    const next = vertices[(index + 1) % vertices.length];
+    if (Math.abs(point.y - next.y) > 0.01) return [];
+    const left = Math.min(point.x, next.x);
+    const right = Math.max(point.x, next.x);
+    return x > left + 0.001 && x < right - 0.001 ? [point.y] : [];
+  }).sort((a, b) => a - b);
+  const intervals: Array<readonly [number, number]> = [];
+  for (let index = 0; index + 1 < ys.length; index += 2) intervals.push([ys[index], ys[index + 1]]);
+  return intervals;
+}
+
+function mergedIntervalLength(intervals: Array<readonly [number, number]>) {
+  if (!intervals.length) return 0;
+  const sorted = [...intervals].sort((a, b) => a[0] - b[0]);
+  let start = sorted[0][0];
+  let end = sorted[0][1];
+  let covered = 0;
+  for (let index = 1; index < sorted.length; index += 1) {
+    const [nextStart, nextEnd] = sorted[index];
+    if (nextStart <= end) end = Math.max(end, nextEnd);
+    else { covered += end - start; start = nextStart; end = nextEnd; }
+  }
+  return covered + end - start;
+}
+
 function floorCoveredArea(project: Project, floorId: string) {
   const rooms = project.rooms.filter(
     (room) => room.floorId === floorId && room.type !== "Courtyard",
   );
   if (!rooms.length) return 0;
 
-  const xs = Array.from(
-    new Set(rooms.flatMap((room) => [room.x, room.x + room.width])),
-  ).sort((a, b) => a - b);
+  const xs = Array.from(new Set(rooms.flatMap((room) => roomVertices(room).map((point) => point.x)))).sort((a, b) => a - b);
   let area = 0;
 
   for (let i = 0; i < xs.length - 1; i += 1) {
@@ -597,25 +755,8 @@ function floorCoveredArea(project: Project, floorId: string) {
     const width = right - left;
     if (width <= 0) continue;
 
-    const intervals = rooms
-      .filter((room) => room.x < right && room.x + room.width > left)
-      .map((room) => [room.y, room.y + room.length] as const)
-      .sort((a, b) => a[0] - b[0]);
-
-    let coveredY = 0;
-    let start = intervals[0]?.[0] ?? 0;
-    let end = intervals[0]?.[1] ?? 0;
-    for (let j = 1; j < intervals.length; j += 1) {
-      const [nextStart, nextEnd] = intervals[j];
-      if (nextStart <= end) end = Math.max(end, nextEnd);
-      else {
-        coveredY += end - start;
-        start = nextStart;
-        end = nextEnd;
-      }
-    }
-    if (intervals.length) coveredY += end - start;
-    area += width * coveredY;
+    const intervals = rooms.flatMap((room) => polygonIntervalsAtX(roomVertices(room), (left + right) / 2));
+    area += width * mergedIntervalLength(intervals);
   }
   return round(area);
 }
@@ -667,7 +808,11 @@ function wallFootprint(wall: Wall): AreaRectangle | undefined {
 function floorGrossCoveredArea(project: Project, floorId: string) {
   const roomRectangles = project.rooms
     .filter((room) => room.floorId === floorId && room.type !== "Courtyard")
-    .map((room) => ({ left: room.x, top: room.y, right: room.x + room.width, bottom: room.y + room.length }));
+    .flatMap((room) => {
+      const vertices = roomVertices(room);
+      const xs = Array.from(new Set(vertices.map((point) => point.x))).sort((a, b) => a - b);
+      return xs.slice(0, -1).flatMap((left, index) => polygonIntervalsAtX(vertices, (left + xs[index + 1]) / 2).map(([top, bottom]) => ({ left, top, right: xs[index + 1], bottom })));
+    });
   const wallRectangles = project.walls
     .filter((wall) => wall.floorId === floorId && wall.roomIds.length > 0)
     .map(wallFootprint)
@@ -714,7 +859,7 @@ export function projectMetrics(project: Project, floorId = project.view.activeFl
     totalGrossCoveredArea,
     openSiteArea: round(Math.max(0, plotArea - groundGrossArea)),
     measurementDefinitions: {
-      netRoomArea: "Usable internal rectangular room area, excluding wall thickness.",
+      netRoomArea: "Usable internal room-polygon area, excluding wall thickness.",
       totalNetFloorArea: "Sum of usable internal room areas on the selected floor, excluding courtyards.",
       grossCoveredArea: "Union of room footprints and canonical wall footprints on the selected floor.",
       openSiteArea: "Plot area remaining outside the gross ground-floor building footprint.",
@@ -746,12 +891,23 @@ type TopologyEdge = {
 };
 
 function roomEdges(room: Room): TopologyEdge[] {
-  return [
-    { floorId: room.floorId, orientation: "horizontal", coordinate: room.y, start: room.x, end: room.x + room.width, roomId: room.id, side: "north" },
-    { floorId: room.floorId, orientation: "vertical", coordinate: room.x + room.width, start: room.y, end: room.y + room.length, roomId: room.id, side: "east" },
-    { floorId: room.floorId, orientation: "horizontal", coordinate: room.y + room.length, start: room.x, end: room.x + room.width, roomId: room.id, side: "south" },
-    { floorId: room.floorId, orientation: "vertical", coordinate: room.x, start: room.y, end: room.y + room.length, roomId: room.id, side: "west" },
-  ];
+  const vertices = roomVertices(room);
+  return vertices.map((point, index) => {
+    const next = vertices[(index + 1) % vertices.length];
+    const horizontal = Math.abs(point.y - next.y) < 0.01;
+    const side: WallSide = horizontal
+      ? (next.x > point.x ? "north" : "south")
+      : (next.y > point.y ? "east" : "west");
+    return {
+      floorId: room.floorId,
+      orientation: horizontal ? "horizontal" : "vertical",
+      coordinate: horizontal ? point.y : point.x,
+      start: horizontal ? Math.min(point.x, next.x) : Math.min(point.y, next.y),
+      end: horizontal ? Math.max(point.x, next.x) : Math.max(point.y, next.y),
+      roomId: room.id,
+      side,
+    };
+  });
 }
 
 function coordinateToken(value: number) {
@@ -880,22 +1036,104 @@ function roomOpeningTargets(project: Project, room: Room, nextRoom: Room) {
   project.openings.forEach((opening) => {
     const wall = project.walls.find((item) => item.id === opening.wallId);
     if (!wall || wall.roomIds.length !== 1 || wall.roomIds[0] !== room.id) return;
-    const side = wall.roomSides.find((item) => item.roomId === room.id)?.side;
-    if (!side) return;
     const center = openingCenter(wall, opening);
-    const fraction = side === "north" || side === "south" ? (center.x - room.x) / room.width : (center.y - room.y) / room.length;
-    if (side === "north") targets.set(opening.id, { x: nextRoom.x + nextRoom.width * fraction, y: nextRoom.y });
-    if (side === "south") targets.set(opening.id, { x: nextRoom.x + nextRoom.width * fraction, y: nextRoom.y + nextRoom.length });
-    if (side === "west") targets.set(opening.id, { x: nextRoom.x, y: nextRoom.y + nextRoom.length * fraction });
-    if (side === "east") targets.set(opening.id, { x: nextRoom.x + nextRoom.width, y: nextRoom.y + nextRoom.length * fraction });
+    targets.set(opening.id, {
+      x: nextRoom.x + (center.x - room.x) / room.width * nextRoom.width,
+      y: nextRoom.y + (center.y - room.y) / room.length * nextRoom.length,
+    });
   });
   return targets;
 }
 
+function shapeVertices(shape: Exclude<RoomShape, "custom">, x: number, y: number, width: number, length: number) {
+  if (shape === "rectangle") return undefined;
+  if (shape === "l-shape") return [
+    { x, y }, { x: x + width, y }, { x: x + width, y: y + length },
+    { x: x + width * 0.55, y: y + length }, { x: x + width * 0.55, y: y + length * 0.55 },
+    { x, y: y + length * 0.55 },
+  ];
+  if (shape === "t-shape") return [
+    { x, y }, { x: x + width, y }, { x: x + width, y: y + length * 0.4 },
+    { x: x + width * 0.65, y: y + length * 0.4 }, { x: x + width * 0.65, y: y + length },
+    { x: x + width * 0.35, y: y + length }, { x: x + width * 0.35, y: y + length * 0.4 },
+    { x, y: y + length * 0.4 },
+  ];
+  return [
+    { x, y }, { x: x + width, y }, { x: x + width, y: y + length },
+    { x: x + width * 0.65, y: y + length }, { x: x + width * 0.65, y: y + length * 0.45 },
+    { x: x + width * 0.35, y: y + length * 0.45 }, { x: x + width * 0.35, y: y + length },
+    { x, y: y + length },
+  ];
+}
+
+function signedPolygonArea(vertices: PlanPoint[]) {
+  return vertices.reduce((sum, point, index) => {
+    const next = vertices[(index + 1) % vertices.length];
+    return sum + point.x * next.y - next.x * point.y;
+  }, 0) / 2;
+}
+
+function normalizedRoomVertices(vertices: PlanPoint[]) {
+  const rounded = vertices.map((point) => ({ x: round(point.x), y: round(point.y) }));
+  if (rounded.length > 1 && Math.hypot(rounded[0].x - rounded.at(-1)!.x, rounded[0].y - rounded.at(-1)!.y) < 0.01) rounded.pop();
+  return signedPolygonArea(rounded) < 0 ? rounded.reverse() : rounded;
+}
+
+function segmentsIntersect(a: PlanPoint, b: PlanPoint, c: PlanPoint, d: PlanPoint) {
+  const cross = (p: PlanPoint, q: PlanPoint, r: PlanPoint) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+  const onSegment = (p: PlanPoint, q: PlanPoint, r: PlanPoint) => Math.abs(cross(p, q, r)) < 0.001
+    && r.x >= Math.min(p.x, q.x) - 0.001 && r.x <= Math.max(p.x, q.x) + 0.001
+    && r.y >= Math.min(p.y, q.y) - 0.001 && r.y <= Math.max(p.y, q.y) + 0.001;
+  const abC = cross(a, b, c);
+  const abD = cross(a, b, d);
+  const cdA = cross(c, d, a);
+  const cdB = cross(c, d, b);
+  if (((abC > 0 && abD < 0) || (abC < 0 && abD > 0)) && ((cdA > 0 && cdB < 0) || (cdA < 0 && cdB > 0))) return true;
+  return onSegment(a, b, c) || onSegment(a, b, d) || onSegment(c, d, a) || onSegment(c, d, b);
+}
+
+function assertRoomVertices(project: Project, vertices: PlanPoint[]) {
+  if (vertices.length < 4 || vertices.length > 12) throw new Error("Room polygons require 4–12 boundary vertices.");
+  vertices.forEach((point, index) => {
+    const previous = vertices[(index - 1 + vertices.length) % vertices.length];
+    const next = vertices[(index + 1) % vertices.length];
+    const horizontal = Math.abs(point.y - next.y) < 0.01;
+    const vertical = Math.abs(point.x - next.x) < 0.01;
+    if (!horizontal && !vertical) throw new Error("Room polygon edges must remain orthogonal (horizontal or vertical).");
+    if (Math.hypot(next.x - point.x, next.y - point.y) < 1) throw new Error("Each room boundary segment must be at least 1 ft.");
+    if ((Math.abs(previous.x - point.x) < 0.01 && Math.abs(point.x - next.x) < 0.01)
+      || (Math.abs(previous.y - point.y) < 0.01 && Math.abs(point.y - next.y) < 0.01)) {
+      throw new Error("Room polygon vertices cannot create redundant or reversing collinear edges.");
+    }
+  });
+  vertices.forEach((a, firstIndex) => {
+    const b = vertices[(firstIndex + 1) % vertices.length];
+    vertices.forEach((c, secondIndex) => {
+      if (secondIndex <= firstIndex + 1 || (firstIndex === 0 && secondIndex === vertices.length - 1)) return;
+      const d = vertices[(secondIndex + 1) % vertices.length];
+      if (segmentsIntersect(a, b, c, d)) throw new Error("Room polygon edges cannot cross, touch, or overlap outside adjacent corners.");
+    });
+  });
+  const bounds = roomBounds({ x: 0, y: 0, width: 0, length: 0, vertices });
+  if (bounds.width < 3 || bounds.length < 3 || Math.abs(signedPolygonArea(vertices)) < 9) throw new Error("Room polygons must span at least 3 × 3 ft and contain at least 9 sq ft.");
+  if (bounds.x < 0 || bounds.y < 0 || bounds.x + bounds.width > project.plot.width || bounds.y + bounds.length > project.plot.length) throw new Error("The room must remain inside the plot boundary.");
+}
+
+function roomFromVertices(room: Room, vertices: PlanPoint[], shape: RoomShape = "custom") {
+  const normalized = normalizedRoomVertices(vertices);
+  const bounds = roomBounds({ ...room, vertices: normalized });
+  return { ...room, ...bounds, shape, vertices: normalized };
+}
+
 export function migrateProject(input: Project): Project {
   const project = cloneProject(input);
-  project.schemaVersion = 3;
-  project.rooms = (project.rooms ?? []).map((room) => ({ ...room, wallIds: room.wallIds ?? [] }));
+  project.schemaVersion = 4;
+  project.exteriorFinish = exteriorFinishPresets[project.exteriorFinish] ? project.exteriorFinish : "stucco";
+  project.rooms = (project.rooms ?? []).map((room) => {
+    if (!room.vertices?.length) return { ...room, shape: room.shape ?? "rectangle", wallIds: room.wallIds ?? [] };
+    const normalized = normalizedRoomVertices(room.vertices);
+    return { ...room, ...roomBounds({ ...room, vertices: normalized }), shape: room.shape ?? "custom", vertices: normalized, wallIds: room.wallIds ?? [] };
+  });
   project.walls = (project.walls ?? []).map((wall) => ({
     ...wall,
     roomIds: wall.roomIds ?? (wall.roomId ? [wall.roomId] : []),
@@ -921,6 +1159,7 @@ export function migrateProject(input: Project): Project {
     };
   });
   project.floors = (project.floors ?? []).map((floor, index) => ({ ...floor, level: floor.level ?? index, elevation: floor.elevation ?? index * (floor.height ?? 9), height: floor.height ?? 9 }));
+  project.stairs = (project.stairs ?? []).map((stair) => ({ ...stair, rotation: stair.rotation ?? 0 }));
   if (!project.view || !project.floors.some((floor) => floor.id === project.view.activeFloorId)) {
     project.view = { mode: "2d", navigationMode: "orbit", activeFloorId: project.floors[0]?.id ?? "floor-ground", cameraPreset: "front-right" };
   }
@@ -944,7 +1183,11 @@ export function migrateProject(input: Project): Project {
   return project;
 }
 
-function assertRoomInsidePlot(project: Project, room: Pick<Room, "x" | "y" | "width" | "length">) {
+function assertRoomInsidePlot(project: Project, room: Pick<Room, "x" | "y" | "width" | "length"> & Partial<Pick<Room, "vertices">>) {
+  if (room.vertices?.length) {
+    assertRoomVertices(project, room.vertices);
+    return;
+  }
   if (room.width < 3 || room.length < 3) {
     throw new Error("Rooms must be at least 3 × 3 ft.");
   }
@@ -958,12 +1201,13 @@ function assertRoomInsidePlot(project: Project, room: Pick<Room, "x" | "y" | "wi
   }
 }
 
-function assertStairInsidePlot(project: Project, stair: Pick<Stair, "x" | "y" | "width" | "length">) {
+function assertStairInsidePlot(project: Project, stair: Pick<Stair, "x" | "y" | "width" | "length" | "rotation">) {
   if (stair.width < 3 || stair.length < 6) throw new Error("Straight stairs must be at least 3 × 6 ft.");
+  const footprint = stairFootprint(stair);
   if (
-    stair.x < 0 || stair.y < 0 ||
-    stair.x + stair.width > project.plot.width ||
-    stair.y + stair.length > project.plot.length
+    footprint.x < 0 || footprint.y < 0 ||
+    footprint.x + footprint.width > project.plot.width ||
+    footprint.y + footprint.length > project.plot.length
   ) throw new Error("The staircase must remain inside the plot.");
 }
 
@@ -1062,7 +1306,7 @@ export function applyOperation(
       if (!project.floors.some((floor) => floor.id === operation.floorId)) {
         throw new Error(`Floor ${operation.floorId} does not exist.`);
       }
-      const room: Room = {
+      let room: Room = {
         id: createId("room"),
         floorId: operation.floorId,
         name: operation.name.trim() || operation.roomType,
@@ -1073,7 +1317,10 @@ export function applyOperation(
         length: round(operation.length),
         color: roomPalette[operation.roomType],
         wallIds: [],
+        shape: operation.shape ?? "rectangle",
       };
+      const vertices = shapeVertices(operation.shape ?? "rectangle", room.x, room.y, room.width, room.length);
+      if (vertices) room = roomFromVertices(room, vertices, operation.shape);
       assertRoomInsidePlot(project, room);
       project.rooms.push(room);
       rebuildCanonicalTopology(project);
@@ -1083,11 +1330,30 @@ export function applyOperation(
       result = { room: createdRoom, area: roomArea(room), wallIds: createdRoom.wallIds };
       break;
     }
+    case "create_polygon_room": {
+      if (!project.floors.some((floor) => floor.id === operation.floorId)) throw new Error(`Floor ${operation.floorId} does not exist.`);
+      const normalized = normalizedRoomVertices(operation.vertices);
+      assertRoomVertices(project, normalized);
+      const bounds = roomBounds({ x: 0, y: 0, width: 0, length: 0, vertices: normalized });
+      const room = roomFromVertices({
+        id: createId("room"), floorId: operation.floorId, name: operation.name.trim() || operation.roomType,
+        type: operation.roomType, ...bounds, color: roomPalette[operation.roomType], wallIds: [], shape: "custom",
+      }, normalized);
+      project.rooms.push(room);
+      rebuildCanonicalTopology(project);
+      project.view.focusElementId = room.id;
+      description = `${who} added polygonal ${room.name} · ${roomArea(room)} sq ft`;
+      result = { room: project.rooms.find((item) => item.id === room.id), area: roomArea(room) };
+      break;
+    }
     case "move_room": {
       const index = project.rooms.findIndex((room) => room.id === operation.roomId);
       if (index < 0) throw new Error(`Room ${operation.roomId} does not exist.`);
       const previousRoom = project.rooms[index];
-      const room = { ...previousRoom, x: round(operation.x), y: round(operation.y) };
+      const dx = round(operation.x) - previousRoom.x;
+      const dy = round(operation.y) - previousRoom.y;
+      const movedVertices = previousRoom.vertices?.map((point) => ({ x: round(point.x + dx), y: round(point.y + dy) }));
+      const room = { ...previousRoom, x: round(operation.x), y: round(operation.y), vertices: movedVertices };
       assertRoomInsidePlot(project, room);
       const targets = roomOpeningTargets(project, previousRoom, room);
       project.rooms[index] = room;
@@ -1102,10 +1368,17 @@ export function applyOperation(
       const index = project.rooms.findIndex((room) => room.id === operation.roomId);
       if (index < 0) throw new Error(`Room ${operation.roomId} does not exist.`);
       const previousRoom = project.rooms[index];
+      const nextWidth = round(operation.width);
+      const nextLength = round(operation.length);
+      const resizedVertices = previousRoom.vertices?.map((point) => ({
+        x: round(previousRoom.x + (point.x - previousRoom.x) * nextWidth / previousRoom.width),
+        y: round(previousRoom.y + (point.y - previousRoom.y) * nextLength / previousRoom.length),
+      }));
       const room = {
         ...previousRoom,
-        width: round(operation.width),
-        length: round(operation.length),
+        width: nextWidth,
+        length: nextLength,
+        vertices: resizedVertices,
       };
       assertRoomInsidePlot(project, room);
       const targets = roomOpeningTargets(project, previousRoom, room);
@@ -1115,6 +1388,21 @@ export function applyOperation(
       project.view.focusElementId = room.id;
       description = `${who} resized ${room.name} to ${room.width} × ${room.length} ft`;
       result = { room, area: roomArea(room), metrics: projectMetrics(project, room.floorId) };
+      break;
+    }
+    case "update_room_vertices": {
+      const index = project.rooms.findIndex((room) => room.id === operation.roomId);
+      if (index < 0) throw new Error(`Room ${operation.roomId} does not exist.`);
+      const normalized = normalizedRoomVertices(operation.vertices);
+      assertRoomVertices(project, normalized);
+      const previousRoom = project.rooms[index];
+      const room = roomFromVertices(previousRoom, normalized);
+      project.rooms[index] = room;
+      rebuildCanonicalTopology(project);
+      assertAllOpeningsValid(project);
+      project.view.focusElementId = room.id;
+      description = `${who} updated the polygon boundary of ${room.name}`;
+      result = { room, area: roomArea(room), perimeter: roomPerimeter(room) };
       break;
     }
     case "update_room": {
@@ -1290,6 +1578,7 @@ export function applyOperation(
         width: round(operation.width),
         length: round(operation.length),
         direction: operation.direction ?? "up",
+        rotation: operation.rotation ?? 0,
       };
       assertStairInsidePlot(project, stair);
       project.stairs.push(stair);
@@ -1309,12 +1598,21 @@ export function applyOperation(
         width: round(operation.width ?? previous.width),
         length: round(operation.length ?? previous.length),
         direction: operation.direction ?? previous.direction,
+        rotation: operation.rotation ?? previous.rotation,
       };
       assertStairInsidePlot(project, stair);
       project.stairs[index] = stair;
       project.view.focusElementId = stair.id;
       description = `${who} updated a staircase`;
       result = { stair, connection: stairConnection(project, stair) ?? null };
+      break;
+    }
+    case "set_exterior_finish": {
+      if (!exteriorFinishPresets[operation.finish]) throw new Error(`Exterior finish ${operation.finish} is not supported.`);
+      project.exteriorFinish = operation.finish;
+      const finish = exteriorFinishPresets[operation.finish];
+      description = `${who} set the exterior finish to ${finish.label}`;
+      result = { exteriorFinish: operation.finish, finish };
       break;
     }
     case "create_floor": {
@@ -1406,16 +1704,21 @@ export function applyOperation(
 }
 
 function rectanglesOverlap(a: Room, b: Room) {
-  const overlapWidth = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
-  const overlapLength = Math.min(a.y + a.length, b.y + b.length) - Math.max(a.y, b.y);
-  return {
-    overlaps: overlapWidth > 0.01 && overlapLength > 0.01,
-    area: round(Math.max(0, overlapWidth) * Math.max(0, overlapLength)),
-  };
-}
-
-function roomContainsPoint(room: Room, point: { x: number; y: number }) {
-  return point.x >= room.x - 0.01 && point.x <= room.x + room.width + 0.01 && point.y >= room.y - 0.01 && point.y <= room.y + room.length + 0.01;
+  const first = roomVertices(a);
+  const second = roomVertices(b);
+  const xs = Array.from(new Set([...first, ...second].map((point) => point.x))).sort((x, y) => x - y);
+  let area = 0;
+  for (let index = 0; index < xs.length - 1; index += 1) {
+    const left = xs[index];
+    const right = xs[index + 1];
+    const firstIntervals = polygonIntervalsAtX(first, (left + right) / 2);
+    const secondIntervals = polygonIntervalsAtX(second, (left + right) / 2);
+    const overlapLength = firstIntervals.reduce((sum, [aStart, aEnd]) => sum + secondIntervals.reduce(
+      (inner, [bStart, bEnd]) => inner + Math.max(0, Math.min(aEnd, bEnd) - Math.max(aStart, bStart)), 0,
+    ), 0);
+    area += (right - left) * overlapLength;
+  }
+  return { overlaps: area > 0.01, area: round(area) };
 }
 
 export function buildCirculationGraph(project: Project): CirculationGraph {
@@ -1449,7 +1752,8 @@ export function buildCirculationGraph(project: Project): CirculationGraph {
   project.stairs.forEach((stair) => {
     const floorIndex = floors.findIndex((floor) => floor.id === stair.floorId);
     const targetFloor = stair.direction === "down" ? floors[floorIndex - 1] : floors[floorIndex + 1];
-    const point = { x: stair.x + stair.width / 2, y: stair.y + stair.length / 2 };
+    const footprint = stairFootprint(stair);
+    const point = { x: footprint.x + footprint.width / 2, y: footprint.y + footprint.length / 2 };
     const sourceRoom = project.rooms.find((room) => room.floorId === stair.floorId && roomContainsPoint(room, point));
     const targetRoom = targetFloor && project.rooms.find((room) => room.floorId === targetFloor.id && roomContainsPoint(room, point));
     if (!sourceRoom || !targetRoom) {
@@ -1467,16 +1771,35 @@ export function buildCirculationGraph(project: Project): CirculationGraph {
     adjacency.set(edge.to, new Set([...(adjacency.get(edge.to) ?? []), edge.from]));
   });
   const reachable = new Set<string>();
+  const previousNode = new Map<string, { nodeId: string; edgeId: string }>();
   const queue = primaryEntryRoomId ? [primaryEntryRoomId] : [];
   while (queue.length) {
     const roomId = queue.shift()!;
     if (reachable.has(roomId)) continue;
     reachable.add(roomId);
     (adjacency.get(roomId) ?? []).forEach((next) => {
-      if (!reachable.has(next)) queue.push(next);
+      if (!reachable.has(next) && !queue.includes(next)) {
+        const edge = edges.find((item) => (item.from === roomId && item.to === next) || (item.to === roomId && item.from === next));
+        if (edge) previousNode.set(next, { nodeId: roomId, edgeId: edge.openingId ?? edge.stairId ?? edge.id });
+        queue.push(next);
+      }
     });
   }
   const relevantRooms = project.rooms.filter((room) => room.type !== "Courtyard");
+  const routesFromMainEntrance = relevantRooms.filter((room) => reachable.has(room.id)).map((room) => {
+    const nodePath = [room.id];
+    const elementPath: string[] = [];
+    let cursor = room.id;
+    while (previousNode.has(cursor)) {
+      const previous = previousNode.get(cursor)!;
+      nodePath.unshift(previous.nodeId);
+      elementPath.unshift(previous.edgeId);
+      cursor = previous.nodeId;
+    }
+    if (mainEntrance) elementPath.unshift(mainEntrance.opening.id);
+    nodePath.unshift(exteriorId);
+    return { roomId: room.id, roomName: room.name, nodePath, elementPath };
+  });
   return {
     nodes,
     edges,
@@ -1487,6 +1810,7 @@ export function buildCirculationGraph(project: Project): CirculationGraph {
     disconnectedRoomIds: primaryEntryRoomId ? relevantRooms.filter((room) => !reachable.has(room.id)).map((room) => room.id) : relevantRooms.map((room) => room.id),
     invalidDoorIds,
     invalidStairIds,
+    routesFromMainEntrance,
   };
 }
 
@@ -1723,26 +2047,17 @@ export function inspectRoom(project: Project, roomId: string) {
   if (!room) throw new Error(`Room ${roomId} does not exist.`);
   const walls = project.walls.filter((wall) => wall.roomIds.includes(room.id));
   const openings = project.openings.filter((opening) => walls.some((wall) => openingTouchesWall(project, opening, wall)));
-  const adjacentRooms = project.rooms
-    .filter((other) => other.id !== room.id && other.floorId === room.floorId)
-    .filter((other) => {
-      const touchesX = Math.abs(room.x + room.width - other.x) < 0.05 ||
-        Math.abs(other.x + other.width - room.x) < 0.05;
-      const overlapsY = Math.min(room.y + room.length, other.y + other.length) - Math.max(room.y, other.y) > 0;
-      const touchesY = Math.abs(room.y + room.length - other.y) < 0.05 ||
-        Math.abs(other.y + other.length - room.y) < 0.05;
-      const overlapsX = Math.min(room.x + room.width, other.x + other.width) - Math.max(room.x, other.x) > 0;
-      return (touchesX && overlapsY) || (touchesY && overlapsX);
-    })
-    .map((other) => ({ id: other.id, name: other.name }));
+  const adjacentRoomIds = new Set(walls.flatMap((wall) => wall.roomIds).filter((roomId) => roomId !== room.id));
+  const adjacentRooms = project.rooms.filter((other) => adjacentRoomIds.has(other.id)).map((other) => ({ id: other.id, name: other.name }));
 
   const circulation = buildCirculationGraph(project);
   return {
     room,
     netRoomArea: roomArea(room),
     area: roomArea(room),
-    areaDefinition: "Usable internal rectangular room area, excluding wall thickness.",
-    perimeter: round(2 * (room.width + room.length)),
+    areaDefinition: "Usable internal room-polygon area, excluding wall thickness.",
+    perimeter: roomPerimeter(room),
+    vertices: roomVertices(room),
     walls,
     openings,
     adjacentRooms,
@@ -1766,6 +2081,7 @@ export function inspectWall(project: Project, wallId: string) {
     }),
     openings: project.openings.filter((opening) => opening.wallId === wall.id),
     connectedWallIds: wall.connectedWallIds,
+    exteriorFinish: wall.exterior ? { id: project.exteriorFinish, ...exteriorFinishPresets[project.exteriorFinish] } : null,
   };
 }
 
@@ -1805,7 +2121,7 @@ function elementPoint(project: Project, ref: PointRef) {
   if ("x" in ref) return { x: ref.x, y: ref.y };
   if (ref.elementId === "plot") return { x: project.plot.width / 2, y: project.plot.length / 2 };
   const room = project.rooms.find((item) => item.id === ref.elementId);
-  if (room) return { x: room.x + room.width / 2, y: room.y + room.length / 2 };
+  if (room) return roomCentroid(room);
   const wall = project.walls.find((item) => item.id === ref.elementId);
   if (wall) {
     if (ref.anchor === "start") return { x: wall.x1, y: wall.y1 };
@@ -1813,7 +2129,10 @@ function elementPoint(project: Project, ref: PointRef) {
     return { x: (wall.x1 + wall.x2) / 2, y: (wall.y1 + wall.y2) / 2 };
   }
   const stair = project.stairs.find((item) => item.id === ref.elementId);
-  if (stair) return { x: stair.x + stair.width / 2, y: stair.y + stair.length / 2 };
+  if (stair) {
+    const footprint = stairFootprint(stair);
+    return { x: footprint.x + footprint.width / 2, y: footprint.y + footprint.length / 2 };
+  }
   const opening = project.openings.find((item) => item.id === ref.elementId);
   if (opening) {
     const openingWall = project.walls.find((item) => item.id === opening.wallId);
@@ -1855,6 +2174,7 @@ export function projectInspection(project: Project) {
       updatedAt: project.updatedAt,
     },
     plot: project.plot,
+    exteriorFinish: { id: project.exteriorFinish, ...exteriorFinishPresets[project.exteriorFinish] },
     floors: project.floors,
     counts: {
       floors: project.floors.length,

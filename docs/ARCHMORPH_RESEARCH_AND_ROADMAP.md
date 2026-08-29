@@ -27,7 +27,7 @@ ArchMorph is a strong fit for the WebMCP Challenge because spatial design is dif
 5. The human adjusts the design directly.
 6. The agent re-inspects, explains tradeoffs, and refines the live model.
 
-The current product already contains a meaningful architectural domain model, 2D and 3D synchronization, browser persistence, Walk Mode, multi-storey stairs, glazing properties, validation, and 37 WebMCP tools. The most urgent remaining work is submission readiness: public deployment, public source synchronization, a real project README, an open-source license, native WebMCP smoke tests, evaluation evidence, and a concise demo video.
+The current product already contains a meaningful architectural domain model, 2D and 3D synchronization, browser persistence, Walk Mode, multi-storey stairs, orthogonal irregular rooms, a lightweight exterior-finish palette, glazing properties, validation, and 40 WebMCP tools. The most urgent remaining work is submission readiness: public deployment, public source synchronization, a real project README, an open-source license, native WebMCP smoke tests, evaluation evidence, and a concise demo video.
 
 ## 2. Product purpose and boundaries
 
@@ -160,10 +160,11 @@ The project schema currently contains:
 
 - Plot dimensions, orientation, and four setbacks.
 - Floors with stable IDs, level numbers, elevations, and heights.
-- Rectangular rooms with stable IDs, floor ownership, type, position, dimensions, color, and boundary-wall references.
+- Rectangular, L-, T-, U-, and custom orthogonal polygon rooms with stable IDs, floor ownership, ordered vertices, derived bounds, color, and boundary-wall references.
 - Canonical walls with endpoints, thickness, height, adjacent room sides, exterior status, and connectivity.
 - Hosted doors and windows with offsets, dimensions, configuration, and glazing properties.
-- Straight stairs with source floor, position, direction, width, length, and derived connection geometry.
+- Straight stairs with source floor, position, direction, width, length, four 90-degree rotations, and derived connection geometry.
+- A project-wide lightweight exterior finish preset used by the 3D facade.
 - Current view/navigation state.
 - Activity entries, project version, and update time.
 
@@ -196,7 +197,8 @@ Future work should preserve this contract. Geometry should not be added directly
 
 ### 5.2 Spaces, walls, and openings
 
-- Create, move, resize, select, inspect, and delete rectangular rooms.
+- Create, move, resize, select, inspect, vertex-edit, and delete rectangular or orthogonal polygon rooms.
+- L-, T-, and U-shaped human placement presets plus custom 4–12 vertex room creation/editing through WebMCP.
 - Canonical room-boundary walls and independent walls.
 - Wall movement, thickness/height data, adjacency, connection data, and exterior/interior classification.
 - Hosted doors and windows with wall-relative offsets.
@@ -206,8 +208,9 @@ Future work should preserve this contract. Geometry should not be added directly
 
 ### 5.3 Circulation and multi-storey navigation
 
-- Room-to-room and room-to-exterior circulation graph derived from doors.
+- Room-to-room and room-to-exterior circulation graph derived from doors, including explicit main-entrance-to-room paths and element evidence.
 - Straight stairs connected between adjacent levels.
+- Four plan rotations at 0°, 90°, 180°, and 270° shared by plan, 3D, slab voids, collision, and Walk Mode.
 - Derived rise, riser count, riser height, tread count, tread depth, and recommended run.
 - Stairwell voids in upper floor slabs.
 - Floor-to-floor movement in Walk Mode.
@@ -335,12 +338,12 @@ Good: `rehost_window({ openingId, wallId, offset })`.
 
 Weak: `click_canvas({ x, y })`.
 
-### 6.7 Current 37-tool surface
+### 6.7 Current 40-tool surface
 
 | Category | Count | Tools |
 | --- | ---: | --- |
 | Inspect | 7 | `inspect_project`, `inspect_plot`, `inspect_floor`, `inspect_room`, `inspect_wall`, `inspect_opening`, `inspect_circulation` |
-| Edit | 19 | `set_plot_orientation`, `create_room`, `move_room`, `resize_room`, `delete_room`, `add_wall`, `move_wall`, `add_door`, `add_window`, `update_opening`, `set_door_properties`, `rehost_door`, `set_window_properties`, `rehost_window`, `set_exact_dimension`, `delete_opening`, `add_stairs`, `update_stairs`, `create_floor` |
+| Edit | 22 | `set_plot_orientation`, `create_room`, `create_polygon_room`, `move_room`, `resize_room`, `update_room_vertices`, `delete_room`, `add_wall`, `move_wall`, `add_door`, `add_window`, `update_opening`, `set_door_properties`, `rehost_door`, `set_window_properties`, `rehost_window`, `set_exact_dimension`, `delete_opening`, `add_stairs`, `update_stairs`, `set_exterior_finish`, `create_floor` |
 | Calculate/validate | 5 | `calculate_room_area`, `calculate_total_area`, `calculate_open_area`, `measure_distance`, `validate_layout` |
 | Present | 6 | `switch_view`, `set_camera`, `set_navigation_mode`, `focus_element`, `take_snapshot`, `export_plan` |
 
@@ -602,10 +605,14 @@ The current refinement pass preserved the product’s interaction model and visu
 - Current signal-based WebMCP registration lifecycle.
 - 45-degree snapping guidance for independent walls.
 - Persistence migration and architectural regression coverage for the changed model.
+- Lightweight project-wide stucco, brick, concrete, timber, and metal facade finishes.
+- L-, T-, U-, and custom orthogonal room polygons with exact area/perimeter, vertex editing, canonical wall derivation, persistence, and polygonal 3D slabs/ceilings.
+- Straight-stair quarter-turn rotation across 2D, 3D, collision, slab openings, persistence, and Walk Mode.
+- Explicit entrance-to-room circulation paths with door/stair evidence.
 
 Door opening/closing remains available but was intentionally not heavily polished because it is secondary to spatial correctness and circulation.
 
-## 11. Future roadmap: not yet added
+## 11. Roadmap and deliberately deferred work
 
 The roadmap is ordered by architectural and competition value, not novelty. Priority labels are directional; each item still requires dependency inspection and a small implementation plan before code changes.
 
@@ -624,17 +631,16 @@ The roadmap is ordered by architectural and competition value, not novelty. Prio
 
 ### P1 — highest-value architectural additions
 
+The focused hackathon P1 slice is now implemented: a lightweight global exterior palette, L/T/U and custom orthogonal rooms, polygon editing/rendering, explicit entrance route evidence, and four straight-stair rotations. The table below records the larger systems intentionally deferred because they do not justify their complexity before submission.
+
 | Capability | Architectural value | Dependencies and “done” condition |
 | --- | --- | --- |
-| Exterior material and facade system | Communicates envelope intent and supports later performance reasoning | Start with global assemblies plus per-wall/roof overrides; preserve stable IDs through topology changes, persistence, export, 2D indication, and 3D rendering |
 | Common roof forms | Building form is incomplete without roofs | Flat, shed, gable, and hip first; roof pitch, bearing/eave line, overhang, drainage direction, openings, selection, dimensions, save/load, plan, section, and 3D support |
-| Orthogonal L/T/U spaces | Common plans need more than rectangles | Robust area/perimeter, adjacency, snapping, dimensions, hosted openings, transformations, migration, and extrusion without rewriting unrelated systems |
-| General polygon spaces | Enables irregular sites and plans | Ordered vertices, winding/intersection validation, edge identity, offset behavior, selection, vertex editing, and deterministic topology tests |
 | L- and U-shaped stairs with landings | Common multi-storey circulation | Explicit flights/landings, stairwell opening, source/target levels, Walk Mode path, width/riser/tread/landing/headroom checks, and synchronized editing |
 | Sections and elevations | Essential for vertical understanding | Derived from canonical model; floor lines, openings, stairs, roofs, dimensions, clipping, export, and stable update after edits |
 | Structural grid and basic elements | Adds architectural credibility and coordination | Grids, columns, beams, and load-bearing/non-load-bearing wall classification with snapping, selection, schedules, 2D/3D, save/load, and export |
 | Door and window schedules | Makes openings inspectable as architecture | Stable marks, type, size, host, level, orientation/handing, glazing properties, validation, and export |
-| Circulation and egress graph improvements | Converts geometry into usable spatial analysis | Multiple entrances/exits, travel-distance concepts, dead ends, stair paths, inaccessible routes, explicit assumptions, and evidence—not code certification |
+| Advanced circulation and egress concepts | Converts geometry into usable spatial analysis | Multiple exits, travel-distance concepts, dead ends, inaccessible routes, explicit assumptions, and evidence—not code certification |
 
 Spiral stairs are intentionally not an early priority. They are less common, have more complex safety and code constraints, and offer less value than robust straight/L/U stairs.
 
@@ -741,7 +747,7 @@ A focused under-three-minute demonstration could follow this sequence:
 7. Switch to 3D Walk Mode, enter the building, ascend the stair, and arrive on the upper level.
 8. Focus the final element or capture a snapshot while showing the validation summary.
 
-This proves page-state sharing, multi-tool reasoning, human-agent turn-taking, architectural value, and visible execution. Avoid spending demo time listing all 37 tools or showing the debug console.
+This proves page-state sharing, multi-tool reasoning, human-agent turn-taking, architectural value, and visible execution. Avoid spending demo time listing all 40 tools or showing the debug console.
 
 ## 15. Immediate recommended sequence
 
@@ -754,7 +760,7 @@ This proves page-state sharing, multi-tool reasoning, human-agent turn-taking, a
 7. Capture final screenshots and record the under-three-minute video.
 8. Prepare submission copy that maps evidence directly to the four judging criteria.
 9. Recheck the official rules, dates, eligibility, URLs, repository visibility, license recognition, and video audio immediately before submitting.
-10. Add P1 architecture features only if all submission-critical items are complete and stable.
+10. Freeze the implemented focused P1 slice; do not add another architectural subsystem before submission unless it fixes a demonstrated judging-path failure.
 
 ## 16. Primary research sources
 

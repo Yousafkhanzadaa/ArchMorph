@@ -25,6 +25,7 @@ import {
   PanelTop,
   Plus,
   Redo2,
+  RotateCw,
   Ruler,
   Scan,
   Save,
@@ -49,11 +50,14 @@ import {
   createId,
   createInitialProject,
   glazingPerformanceDefaults,
+  exteriorFinishPresets,
   projectMetrics,
   recommendedStairRun,
   roomArea,
+  roomContainsPoint,
   roomTypes,
   stairConnection,
+  stairFootprint,
   validateLayout,
   wallCardinalFacing,
   wallLength,
@@ -63,6 +67,9 @@ import {
   type OperationOutcome,
   type Project,
   type RoomType,
+  type RoomShape,
+  type StairRotation,
+  type ExteriorFinishId,
   type ValidationReport,
 } from "@/lib/architecture";
 import {
@@ -286,6 +293,7 @@ export default function Studio() {
   const [selectedId, setSelectedId] = useState<string>();
   const [tool, setTool] = useState<CanvasTool>("select");
   const [roomType, setRoomType] = useState<RoomType>("Living Room");
+  const [roomShape, setRoomShape] = useState<Exclude<RoomShape, "custom">>("rectangle");
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("properties");
   const [validation, setValidation] = useState<ValidationReport>(() => validateLayout(project));
   const [debugMode, setDebugMode] = useState(false);
@@ -600,12 +608,10 @@ export default function Studio() {
   const selectedOpening = project.openings.find((item) => item.id === selectedId);
   const selectedStair = project.stairs.find((item) => item.id === selectedId);
   const selectedStairConnection = selectedStair ? stairConnection(project, selectedStair) : undefined;
-  const selectedStairRoom = selectedStair ? project.rooms.find((room) => (
+  const selectedStairFootprint = selectedStair ? stairFootprint(selectedStair) : undefined;
+  const selectedStairRoom = selectedStair && selectedStairFootprint ? project.rooms.find((room) => (
     room.floorId === selectedStair.floorId
-    && selectedStair.x + selectedStair.width / 2 >= room.x
-    && selectedStair.x + selectedStair.width / 2 <= room.x + room.width
-    && selectedStair.y + selectedStair.length / 2 >= room.y
-    && selectedStair.y + selectedStair.length / 2 <= room.y + room.length
+    && roomContainsPoint(room, { x: selectedStairFootprint.x + selectedStairFootprint.width / 2, y: selectedStairFootprint.y + selectedStairFootprint.length / 2 })
   )) : undefined;
   const selectedOpeningWall = selectedOpening ? project.walls.find((item) => item.id === selectedOpening.wallId) : undefined;
   const selectedFacadeFacing = selectedOpeningWall ? wallCardinalFacing(project, selectedOpeningWall) : undefined;
@@ -648,6 +654,7 @@ export default function Studio() {
         y: Math.round(y * 2) / 2,
         width,
         length,
+        shape: roomShape,
       });
       const room = outcome.result.room as { id?: string } | undefined;
       if (room?.id) setSelectedId(room.id);
@@ -844,7 +851,13 @@ export default function Studio() {
               <div className="site-line"><span>Front faces</span><b>{project.plot.orientation}</b></div>
             </Section>
 
+            <Section title="Exterior finish">
+              <label className="field field-full"><span>Façade palette</span><select value={project.exteriorFinish} onChange={(event) => safeCommit({ type: "set_exterior_finish", finish: event.target.value as ExteriorFinishId })}>{Object.entries(exteriorFinishPresets).map(([id, finish]) => <option key={id} value={id}>{finish.label}</option>)}</select></label>
+              <p className="technical-note">One lightweight visual finish across exterior walls; no heavy assembly simulation.</p>
+            </Section>
+
             <Section title="Rooms" action={<span className="section-hint">CLICK TO PLACE</span>}>
+              <label className="field field-full"><span>Footprint shape</span><select value={roomShape} onChange={(event) => setRoomShape(event.target.value as Exclude<RoomShape, "custom">)}><option value="rectangle">Rectangle</option><option value="l-shape">L-shaped</option><option value="t-shape">T-shaped</option><option value="u-shape">U-shaped</option></select></label>
               <div className="room-library">
                 {roomTypes.map((type) => (
                   <button
@@ -924,6 +937,7 @@ export default function Studio() {
                 onCreateRoom={createRoomAt}
                 onMoveRoom={(roomId, point) => safeCommit({ type: "move_room", roomId, ...point })}
                 onResizeRoom={(roomId, width, length) => safeCommit({ type: "resize_room", roomId, width, length })}
+                onUpdateRoomVertices={(roomId, vertices) => safeCommit({ type: "update_room_vertices", roomId, vertices })}
                 onAddWall={(start, end) => safeCommit({ type: "add_wall", floorId: project.view.activeFloorId, x1: start.x, y1: start.y, x2: end.x, y2: end.y })}
                 onMoveWall={(wallId, dx, dy) => safeCommit({ type: "move_wall", wallId, dx, dy })}
                 onAddOpening={(kind, wallId, offset) => safeCommit({ type: "add_opening", kind, wallId, offset })}
@@ -989,13 +1003,13 @@ export default function Studio() {
                       <div className="area-result"><span>Net room area</span><b>{roomArea(selectedRoom).toLocaleString()} sq ft</b></div>
                     </Section>
                     <Section title="Element">
-                      <div className="detail-list"><span>Floor <b>{project.floors.find((floor) => floor.id === selectedRoom.floorId)?.name}</b></span><span>Boundary segments <b>{selectedRoom.wallIds.length}</b></span></div>
+                      <div className="detail-list"><span>Footprint <b>{(selectedRoom.shape ?? "rectangle").replace("-", " ")}</b></span><span>Floor <b>{project.floors.find((floor) => floor.id === selectedRoom.floorId)?.name}</b></span><span>Boundary segments <b>{selectedRoom.wallIds.length}</b></span></div>
                       <button type="button" className="walk-inside-button" onClick={() => safeCommit({ type: "set_navigation_mode", mode: "walk", roomId: selectedRoom.id })}><Footprints size={15} /> Walk inside {selectedRoom.name}</button>
                     </Section>
                   </>
                 ) : selectedWall ? (
                   <>
-                    <Section title="Geometry"><div className="detail-list"><span>Length <b>{wallLength(selectedWall).toFixed(2)} ft</b></span><span>Thickness <b>{selectedWall.thickness} ft</b></span><span>Height <b>{selectedWall.height} ft</b></span><span>Topology <b>{selectedWall.exterior ? "Exterior" : selectedWall.roomIds.length > 1 ? "Shared interior" : "Independent"}</b></span><span>Adjacent spaces <b>{selectedWall.roomIds.map((roomId) => project.rooms.find((room) => room.id === roomId)?.name ?? roomId).join(" / ") || "None"}</b></span></div></Section>
+                    <Section title="Geometry"><div className="detail-list"><span>Length <b>{wallLength(selectedWall).toFixed(2)} ft</b></span><span>Thickness <b>{selectedWall.thickness} ft</b></span><span>Height <b>{selectedWall.height} ft</b></span><span>Topology <b>{selectedWall.exterior ? "Exterior" : selectedWall.roomIds.length > 1 ? "Shared interior" : "Independent"}</b></span>{selectedWall.exterior && <span>Finish <b>{exteriorFinishPresets[project.exteriorFinish].label}</b></span>}<span>Adjacent spaces <b>{selectedWall.roomIds.map((roomId) => project.rooms.find((room) => room.id === roomId)?.name ?? roomId).join(" / ") || "None"}</b></span></div></Section>
                     <Section title="Openings"><div className="detail-list"><span>Doors <b>{project.openings.filter((item) => item.wallId === selectedWall.id && item.kind === "door").length}</b></span><span>Windows <b>{project.openings.filter((item) => item.wallId === selectedWall.id && item.kind === "window").length}</b></span></div></Section>
                   </>
                 ) : selectedOpening ? (
@@ -1045,6 +1059,8 @@ export default function Studio() {
                         <NumberField label="Y position" value={selectedStair.y} min={0} onCommit={(y) => safeCommit({ type: "update_stairs", stairId: selectedStair.id, y })} />
                       </div>
                       <label className="field field-full stair-direction-field"><span>Connection direction</span><select value={selectedStair.direction} onChange={(event) => safeCommit({ type: "update_stairs", stairId: selectedStair.id, direction: event.target.value as "up" | "down" })}><option value="up">Up to next floor</option><option value="down">Down to previous floor</option></select></label>
+                      <label className="field field-full stair-direction-field"><span>Plan rotation</span><select value={selectedStair.rotation} onChange={(event) => safeCommit({ type: "update_stairs", stairId: selectedStair.id, rotation: Number(event.target.value) as StairRotation })}><option value={0}>0°</option><option value={90}>90°</option><option value={180}>180°</option><option value={270}>270°</option></select></label>
+                      <button type="button" className="walk-inside-button" onClick={() => safeCommit({ type: "update_stairs", stairId: selectedStair.id, rotation: ((selectedStair.rotation + 90) % 360) as StairRotation })}><RotateCw size={15} /> Rotate 90°</button>
                     </Section>
                     <Section title="Vertical connection">
                       {selectedStairConnection ? (
@@ -1065,6 +1081,10 @@ export default function Studio() {
                     </Section>
                     <Section title="Site orientation">
                       <label className="field field-full"><span>Front / access edge faces</span><select value={project.plot.orientation} onChange={(event) => safeCommit({ type: "set_plot_orientation", orientation: event.target.value as Project["plot"]["orientation"] })}>{(["North", "East", "South", "West"] as const).map((orientation) => <option key={orientation}>{orientation}</option>)}</select></label>
+                    </Section>
+                    <Section title="Exterior finish">
+                      <label className="field field-full"><span>Façade palette</span><select value={project.exteriorFinish} onChange={(event) => safeCommit({ type: "set_exterior_finish", finish: event.target.value as ExteriorFinishId })}>{Object.entries(exteriorFinishPresets).map(([id, finish]) => <option key={id} value={id}>{finish.label}</option>)}</select></label>
+                      <p className="technical-note">{exteriorFinishPresets[project.exteriorFinish].description}</p>
                     </Section>
                     <Section title="Setbacks">
                       <div className="field-grid">

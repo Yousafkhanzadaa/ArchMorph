@@ -5,6 +5,9 @@ import {
   type PointRef,
   type Project,
   type RoomType,
+  type RoomShape,
+  type StairRotation,
+  type ExteriorFinishId,
   type ValidationReport,
   buildCirculationGraph,
   inspectFloor,
@@ -205,7 +208,7 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
       name: "create_room",
       category: "edit",
       description:
-        "Create one rectangular residential room on a floor using real dimensions in feet. The room and its four boundary walls appear immediately in the shared editor.",
+        "Create one rectangular, L-, T-, or U-shaped residential room on a floor using real dimensions in feet. Its canonical boundary walls appear immediately in the shared editor.",
       inputSchema: {
         type: "object",
         properties: {
@@ -219,6 +222,7 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
           y: { type: "number", description: "Position in feet from the front plot boundary." },
           width: { type: "number", minimum: 3, description: "Room width in feet." },
           length: { type: "number", minimum: 3, description: "Room length in feet." },
+          shape: { type: "string", enum: ["rectangle", "l-shape", "t-shape", "u-shape"], default: "rectangle", description: "Lightweight orthogonal footprint preset." },
         },
         required: ["floorId", "name", "roomType", "x", "y", "width", "length"],
         additionalProperties: false,
@@ -232,7 +236,33 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
         y: requiredNumber(input, "y"),
         width: requiredNumber(input, "width"),
         length: requiredNumber(input, "length"),
+        shape: optionalString(input, "shape") as Exclude<RoomShape, "custom"> | undefined,
       }).result,
+    },
+    {
+      name: "create_polygon_room",
+      category: "edit",
+      description: "Create a custom orthogonal room from 4–12 ordered plan vertices. Edges must be horizontal or vertical and cannot cross.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          floorId,
+          name: { type: "string" },
+          roomType: { type: "string", enum: ["Living Room", "Kitchen", "Bedroom", "Bathroom", "Garage", "Office", "Dining Room", "Storage", "Courtyard", "Custom"] },
+          vertices: { type: "array", minItems: 4, maxItems: 12, items: { type: "object", properties: { x: { type: "number" }, y: { type: "number" } }, required: ["x", "y"], additionalProperties: false } },
+        },
+        required: ["floorId", "name", "roomType", "vertices"],
+        additionalProperties: false,
+      },
+      execute: (input) => {
+        if (!Array.isArray(input.vertices)) throw new Error("vertices must be an array.");
+        const vertices = input.vertices.map((item) => {
+          if (!item || typeof item !== "object") throw new Error("Each vertex requires x and y coordinates.");
+          const point = item as Record<string, unknown>;
+          return { x: requiredNumber(point, "x"), y: requiredNumber(point, "y") };
+        });
+        return runtime.perform({ type: "create_polygon_room", floorId: requiredString(input, "floorId"), name: requiredString(input, "name"), roomType: requiredString(input, "roomType") as RoomType, vertices }).result;
+      },
     },
     {
       name: "move_room",
@@ -277,6 +307,29 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
         width: requiredNumber(input, "width"),
         length: requiredNumber(input, "length"),
       }).result,
+    },
+    {
+      name: "update_room_vertices",
+      category: "edit",
+      description: "Replace a room boundary with 4–12 ordered orthogonal vertices. Use this for precise irregular-plan edits; invalid or crossing boundaries are rejected atomically.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          roomId,
+          vertices: { type: "array", minItems: 4, maxItems: 12, items: { type: "object", properties: { x: { type: "number" }, y: { type: "number" } }, required: ["x", "y"], additionalProperties: false } },
+        },
+        required: ["roomId", "vertices"],
+        additionalProperties: false,
+      },
+      execute: (input) => {
+        if (!Array.isArray(input.vertices)) throw new Error("vertices must be an array.");
+        const vertices = input.vertices.map((item) => {
+          if (!item || typeof item !== "object") throw new Error("Each vertex requires x and y coordinates.");
+          const point = item as Record<string, unknown>;
+          return { x: requiredNumber(point, "x"), y: requiredNumber(point, "y") };
+        });
+        return runtime.perform({ type: "update_room_vertices", roomId: requiredString(input, "roomId"), vertices }).result;
+      },
     },
     {
       name: "delete_room",
@@ -619,6 +672,7 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
           x: { type: "number" }, y: { type: "number" },
           width: { type: "number", minimum: 3 }, length: { type: "number", minimum: 6 },
           direction: { type: "string", enum: ["up", "down"], default: "up" },
+          rotation: { type: "number", enum: [0, 90, 180, 270], default: 0, description: "Quarter-turn plan rotation in degrees." },
         },
         required: ["floorId", "x", "y", "width", "length"],
         additionalProperties: false,
@@ -629,12 +683,13 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
         x: requiredNumber(input, "x"), y: requiredNumber(input, "y"),
         width: requiredNumber(input, "width"), length: requiredNumber(input, "length"),
         direction: input.direction as "up" | "down" | undefined,
+        rotation: optionalNumber(input, "rotation") as StairRotation | undefined,
       }).result,
     },
     {
       name: "update_stairs",
       category: "edit",
-      description: "Move or resize an existing straight stair flight, or reverse which adjacent floor it connects to.",
+      description: "Move, resize, quarter-turn rotate, or reverse an existing straight stair flight.",
       inputSchema: {
         type: "object",
         properties: {
@@ -642,6 +697,7 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
           x: { type: "number" }, y: { type: "number" },
           width: { type: "number", minimum: 3 }, length: { type: "number", minimum: 6 },
           direction: { type: "string", enum: ["up", "down"] },
+          rotation: { type: "number", enum: [0, 90, 180, 270], description: "Plan rotation in 90-degree increments." },
         },
         required: ["stairId"],
         additionalProperties: false,
@@ -652,7 +708,15 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
         x: optionalNumber(input, "x"), y: optionalNumber(input, "y"),
         width: optionalNumber(input, "width"), length: optionalNumber(input, "length"),
         direction: optionalString(input, "direction") as "up" | "down" | undefined,
+        rotation: optionalNumber(input, "rotation") as StairRotation | undefined,
       }).result,
+    },
+    {
+      name: "set_exterior_finish",
+      category: "edit",
+      description: "Set one lightweight, project-wide exterior facade finish. This changes 3D exterior wall appearance without adding heavy assembly simulation.",
+      inputSchema: { type: "object", properties: { finish: { type: "string", enum: ["stucco", "brick", "concrete", "timber", "metal"] } }, required: ["finish"], additionalProperties: false },
+      execute: (input) => runtime.perform({ type: "set_exterior_finish", finish: requiredString(input, "finish") as ExteriorFinishId }).result,
     },
     {
       name: "create_floor",
@@ -676,13 +740,13 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
     {
       name: "calculate_room_area",
       category: "calculate",
-      description: "Calculate the exact rectangular area and dimensions of one room from the live project model.",
+      description: "Calculate the exact polygon area and bounding dimensions of one room from the live project model.",
       inputSchema: { type: "object", properties: { roomId }, required: ["roomId"], additionalProperties: false },
       annotations: readOnly,
       execute: (input) => {
         const room = runtime.getProject().rooms.find((item) => item.id === requiredString(input, "roomId"));
         if (!room) throw new Error("Room does not exist.");
-        return { roomId: room.id, name: room.name, width: room.width, length: room.length, netRoomArea: roomArea(room), area: roomArea(room), areaDefinition: "Usable internal rectangular area excluding wall thickness. The area alias is retained for compatibility.", unit: "sq ft" };
+        return { roomId: room.id, name: room.name, shape: room.shape ?? "rectangle", vertices: room.vertices, width: room.width, length: room.length, netRoomArea: roomArea(room), area: roomArea(room), areaDefinition: "Usable internal room-polygon area excluding wall thickness. The area alias is retained for compatibility.", unit: "sq ft" };
       },
     },
     {
