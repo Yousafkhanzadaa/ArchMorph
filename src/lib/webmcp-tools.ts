@@ -24,8 +24,8 @@ import {
 export type ToolRuntime = {
   getProject: () => Project;
   perform: (operation: ArchitectureOperation) => OperationOutcome;
-  captureSnapshot: (options?: { download?: boolean }) => Promise<Record<string, unknown>>;
-  exportPlan: (format: "json" | "svg", download?: boolean) => Record<string, unknown>;
+  captureSnapshot: (options?: { download?: boolean; signal?: AbortSignal }) => Promise<Record<string, unknown>>;
+  exportPlan: (format: "json" | "svg", download?: boolean, signal?: AbortSignal) => Record<string, unknown>;
   noteActivity: (description: string, operation: string) => void;
 };
 
@@ -893,7 +893,10 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
         properties: { download: { type: "boolean", default: false, description: "Also download the PNG in the human's browser." } },
         additionalProperties: false,
       },
-      execute: (input) => runtime.captureSnapshot({ download: input.download === true }),
+      execute: (input, options) => runtime.captureSnapshot({
+        download: input.download === true,
+        signal: options?.signal,
+      }),
     },
     {
       name: "export_plan",
@@ -908,7 +911,11 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
         },
         additionalProperties: false,
       },
-      execute: (input) => runtime.exportPlan(input.format === "svg" ? "svg" : "json", input.download === true),
+      execute: (input, options) => runtime.exportPlan(
+        input.format === "svg" ? "svg" : "json",
+        input.download === true,
+        options?.signal,
+      ),
     },
   ];
 }

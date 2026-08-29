@@ -57,9 +57,35 @@ For each fixture, record:
 | --- | --- | --- | --- | --- |
 | 2026-08-29 | Local vinext build and debug harness | Catalog plus deterministic domain/tool execution | Pass | `test:architecture`, `test:webmcp`, lint, and production build completed successfully |
 | 2026-08-29 | Codex in-app browser, localhost | UI load, fixture import, plan/3D/validation/debug views | Pass for UI; native discovery not claimed | Local page displayed 40-tool harness; native browser API availability must be checked on deployed origin |
-| 2026-08-29 | Codex in-app browser, public deployment | Public access, production UI, metadata, debug isolation | Pass for deployment; native discovery unavailable | App and `/og.png` returned HTTP 200; production metadata resolved correctly; this Codex browser did not expose `document.modelContext` |
+| 2026-08-29 | ChatGPT desktop 26.814.41407 (build 6720), Codex in-app browser, public deployment | Public access, production UI, metadata, native prerequisite check | Blocked before N01; native discovery unavailable | The normal URL loaded without `?debug=1`, but `"modelContext" in document` was `false` and `typeof document.modelContext` was `"undefined"`; no Chrome browser was connected |
 | — | ChatGPT in-app browser, public deployment | N01–N10 | Pending | Record exact client/model and outcomes before submission |
 | — | Chrome WebMCP configuration, public deployment | N01–N10 | Pending | Optional second-client evidence |
+
+## Native verification attempt — 2026-08-29
+
+- **Public URL:** `https://archmorph-studio.musfk.chatgpt.site/` (no query string and no debug harness)
+- **Host application:** ChatGPT desktop 26.814.41407, build 6720
+- **Browser surface reported by the client:** Codex In-app Browser
+- **Native prerequisite:** unavailable — `"modelContext" in document === false` and `typeof document.modelContext === "undefined"`
+- **Alternate permitted environment:** unavailable — the browser runtime reported `Browser is not available: chrome`, so Chrome 149+ with the WebMCP testing flag could not be selected
+- **Discovered ArchMorph tool count and names:** unavailable; the client exposed no native page-tool discovery surface. The deterministic catalog still contains 40 tools, but that result is not native-discovery evidence.
+- **Project protection:** the already-open project was observed only. No destructive native sequence began, so no disposable project was created and the user's project was not changed.
+- **Visible production result:** the saved multi-floor project rendered normally in the plan editor. Screenshot: [`assets/webmcp-native-production-2026-08-29.jpg`](assets/webmcp-native-production-2026-08-29.jpg).
+
+| ID | Prompt | Selected native tool / sequence | Arguments and returned result | Version before / after | Visible result | Outcome |
+| --- | --- | --- | --- | --- | --- | --- |
+| N01 | Inspect this project and summarize its plot, floors, area metrics, and current validation issues. | None available | Not supplied; native discovery unavailable | Not read / unchanged | Production editor loaded | Blocked — prerequisite absent; not executed |
+| N02 | Inspect the active floor and analyze its entrance-to-room circulation. | None available | Not supplied; native discovery unavailable | Not read / unchanged | No test mutation | Blocked — prerequisite absent; not executed |
+| N03 | Add a 12 by 14 ft living room inside the buildable envelope, validate the design, and focus the new room. | None available | Not supplied; native discovery unavailable | Not read / unchanged | No test mutation | Blocked — prerequisite absent; not executed |
+| N04 | Add a correctly hosted exterior window to the new room and set it to the low-e glazing preset. | None available | Not supplied; native discovery unavailable | Not read / unchanged | No test mutation | Blocked — prerequisite absent; not executed |
+| N05 | Create an upper floor, connect it with a valid straight stair, inspect circulation, and validate the layout. | None available | Not supplied; native discovery unavailable | Not read / unchanged | No test mutation | Blocked — prerequisite absent; not executed |
+| N06 | Switch to 3D, focus the stair, and capture a snapshot. | None available | Not supplied; native discovery unavailable | Not read / unchanged | No test mutation | Blocked — prerequisite absent; not executed |
+| N07 | Use a deliberately nonexistent wall ID with an opening command. | None available | Not supplied; native discovery unavailable | Not read / unchanged | No test mutation | Blocked natively; deterministic invalid-host regression passes without mutation |
+| N08 | Start a snapshot or export operation and cancel it if the client exposes cancellation. | None available | Not supplied; the client exposed neither native tools nor cancellation | Not read / unchanged | No test mutation | Blocked, not N/A — native discovery itself was unavailable |
+| N09 | Make a small direct human edit, then ask: “What changed in the current project?” | None available | Not supplied; destructive setup was not started | Not read / unchanged | Existing project preserved | Blocked — prerequisite absent; not executed |
+| N10 | Record the discovered tools, navigate away or close the page, and check whether its page-scoped tools remain available. | None available | No discovered tools to test for cleanup | Not read / unchanged | Production tab retained for evidence | Blocked — prerequisite absent; not executed |
+
+Source review during this attempt found that the registration adapter did not forward the native execution context to tool implementations. Snapshot and export now receive the client's `AbortSignal`, stop before output/download work when already aborted, and re-check cancellation after asynchronous plan rendering. Automated coverage also asserts that a nonexistent window host leaves the complete project and version unchanged. These are deterministic regression results only; they do not convert the blocked native matrix into passes.
 
 ## Failure discipline
 

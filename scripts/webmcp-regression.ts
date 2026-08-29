@@ -11,6 +11,8 @@ import {
 } from "../src/lib/webmcp-tools.ts";
 
 let project = createInitialProject();
+let snapshotCalls = 0;
+let exportCalls = 0;
 
 const runtime: ToolRuntime = {
   getProject: () => project,
@@ -19,8 +21,16 @@ const runtime: ToolRuntime = {
     project = outcome.project;
     return outcome;
   },
-  captureSnapshot: async () => ({ format: "png", projectVersion: project.version }),
-  exportPlan: (format, download) => ({ format, download: download === true, projectVersion: project.version }),
+  captureSnapshot: async (options) => {
+    options?.signal?.throwIfAborted();
+    snapshotCalls += 1;
+    return { format: "png", projectVersion: project.version };
+  },
+  exportPlan: (format, download, signal) => {
+    signal?.throwIfAborted();
+    exportCalls += 1;
+    return { format, download: download === true, projectVersion: project.version };
+  },
   noteActivity: () => undefined,
 };
 
@@ -95,6 +105,44 @@ assert.throws(
   "invalid arguments should fail with an actionable error",
 );
 assert.equal(JSON.stringify(project), snapshotBeforeFailure, "a rejected tool call must not mutate the project");
+
+const invalidHostSnapshot = JSON.stringify(project);
+const invalidHostVersion = project.version;
+assert.throws(
+  () => tools.find((tool) => tool.name === "add_window")!.execute({
+    wallId: "wall-does-not-exist",
+    offset: 4,
+    width: 3,
+  }),
+  /wall-does-not-exist.*does not exist/i,
+  "a nonexistent window host should return a specific error",
+);
+assert.equal(project.version, invalidHostVersion, "an invalid window host must not change the project version");
+assert.equal(JSON.stringify(project), invalidHostSnapshot, "an invalid window host must not mutate the project");
+
+const cancelledSnapshot = new AbortController();
+cancelledSnapshot.abort(new DOMException("Native snapshot cancelled", "AbortError"));
+await assert.rejects(
+  tools.find((tool) => tool.name === "take_snapshot")!.execute(
+    { download: false },
+    { signal: cancelledSnapshot.signal },
+  ),
+  /Native snapshot cancelled/,
+  "take_snapshot should forward a native cancellation signal",
+);
+assert.equal(snapshotCalls, 0, "a cancelled snapshot must stop before capture begins");
+
+const cancelledExport = new AbortController();
+cancelledExport.abort(new DOMException("Native export cancelled", "AbortError"));
+assert.throws(
+  () => tools.find((tool) => tool.name === "export_plan")!.execute(
+    { format: "json", download: false },
+    { signal: cancelledExport.signal },
+  ),
+  /Native export cancelled/,
+  "export_plan should forward a native cancellation signal",
+);
+assert.equal(exportCalls, 0, "a cancelled export must stop before serialization begins");
 
 const exported = await tools.find((tool) => tool.name === "export_plan")!.execute({ format: "json", download: false }) as { projectVersion: number };
 assert.equal(exported.projectVersion, project.version, "exports should identify the current project version");

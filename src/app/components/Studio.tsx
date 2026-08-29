@@ -409,7 +409,8 @@ export default function Studio() {
     setSavedVersion(next.version);
   }, []);
 
-  const captureSnapshot = useCallback(async (options?: { download?: boolean }) => {
+  const captureSnapshot = useCallback(async (options?: { download?: boolean; signal?: AbortSignal }) => {
+    options?.signal?.throwIfAborted();
     const current = projectRef.current;
     let dataUrl: string;
     if (current.view.mode === "3d") {
@@ -420,6 +421,7 @@ export default function Studio() {
       if (!svgRef.current) throw new Error("The floor plan is not ready.");
       dataUrl = await svgToPng(svgRef.current);
     }
+    options?.signal?.throwIfAborted();
     const viewLabel = current.view.mode === "2d" ? "2d" : `3d-${current.view.navigationMode ?? "orbit"}`;
     const filename = `archmorph-${viewLabel}-v${current.version}.png`;
     if (options?.download) downloadUrl(dataUrl, filename);
@@ -434,7 +436,8 @@ export default function Studio() {
     };
   }, [notify]);
 
-  const exportPlan = useCallback((format: "json" | "svg", download = false) => {
+  const exportPlan = useCallback((format: "json" | "svg", download = false, signal?: AbortSignal) => {
+    signal?.throwIfAborted();
     const current = projectRef.current;
     if (format === "svg") {
       if (!svgRef.current) throw new Error("Switch to the 2D floor plan before exporting SVG.");
@@ -463,7 +466,11 @@ export default function Studio() {
     [captureSnapshot, commit, exportPlan, noteActivity],
   );
 
-  const invokeTool = useCallback(async (name: string, input: Record<string, unknown> = {}) => {
+  const invokeTool = useCallback(async (
+    name: string,
+    input: Record<string, unknown> = {},
+    options?: { signal: AbortSignal },
+  ) => {
     const definition = webTools.find((item) => item.name === name);
     if (!definition) throw new Error(`Unknown ArchMorph tool: ${name}`);
     const callId = createId("call");
@@ -474,7 +481,7 @@ export default function Studio() {
       ...calls,
     ].slice(0, 30));
     try {
-      const output = await definition.execute(input);
+      const output = await definition.execute(input, options);
       const modified = projectRef.current !== before;
       setToolCalls((calls) =>
         calls.map((call) =>
@@ -514,7 +521,7 @@ export default function Studio() {
           description: toolDefinition.description,
           inputSchema: toolDefinition.inputSchema,
           annotations: toolDefinition.annotations,
-          execute: (input) => invokeTool(toolDefinition.name, input),
+          execute: (input, options) => invokeTool(toolDefinition.name, input, options),
         }, { signal: registration.signal });
       }
       if (!disposed) setToolStatus("native");
