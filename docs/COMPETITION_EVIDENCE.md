@@ -38,6 +38,8 @@ Run `git log --reverse --date=iso-strict --format='%h %ad %s'` to inspect the so
 - `scripts/webmcp-regression.ts`: deterministic catalog and representative execution checks.
 - `evals/webmcp-journeys.json`: repeatable agent-selection and end-to-end journey fixtures.
 - `docs/WEBMCP_TESTING.md`: native-client smoke procedure and result log.
+- `docs/assets/webmcp-native-final-n06-2026-08-29.png`: native version-matched 3D snapshot from the completed N06 run.
+- `docs/assets/webmcp-native-final-n06-ui-2026-08-29.jpg`: visible ChatGPT in-app browser evidence for the completed 3D/stair state.
 
 ## Product evidence paths
 

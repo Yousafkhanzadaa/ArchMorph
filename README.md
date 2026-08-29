@@ -93,7 +93,7 @@ npm run build
 
 `test:architecture` covers canonical geometry, topology, openings, circulation, stairs, polygonal rooms, persistence, migrations, and spatial collision data. `test:webmcp` checks the 40-tool catalog, schema boundaries, annotations, unique names, and representative inspection/mutation failures.
 
-Native WebMCP still needs a compatible client: use ChatGPT's in-app browser or the Chrome configuration specified by the current challenge instructions. Follow [`docs/WEBMCP_TESTING.md`](docs/WEBMCP_TESTING.md) and record the exact client version and results.
+Native WebMCP discovery and the N01–N10 production suite were verified with ChatGPT desktop 26.825.41651 (build 7345): exactly 40 tools were discovered, N01–N07 and N09–N10 passed, and N08 was N/A because that client exposes no cancellation mechanism. See [`docs/WEBMCP_TESTING.md`](docs/WEBMCP_TESTING.md) for the exact IDs, arguments, versions, results, and screenshots.
 
 The under-three-minute recording plan and narration are ready in [`docs/DEMO_VIDEO_SCRIPT.md`](docs/DEMO_VIDEO_SCRIPT.md).
 
