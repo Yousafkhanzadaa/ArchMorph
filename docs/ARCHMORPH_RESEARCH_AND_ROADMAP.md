@@ -568,9 +568,9 @@ Judges may rely heavily on the written materials and video rather than exploring
 
 ## 9. Current hackathon readiness audit
 
-This table reflects the local repository and deployment state on August 27, 2026.
+This table reflects the repository and deployment state on August 29, 2026.
 
-Repository snapshot: [Yousafkhanzadaa/ArchMorph](https://github.com/Yousafkhanzadaa/ArchMorph). A deployment currently exists at [archmorph-studio.musfk.chatgpt.site](https://archmorph-studio.musfk.chatgpt.site), but it was owner-only/private at the time of this audit and is not yet a valid judge-facing URL.
+Repository snapshot: [Yousafkhanzadaa/ArchMorph](https://github.com/Yousafkhanzadaa/ArchMorph). The public judge-facing build is deployed at [archmorph-studio.musfk.chatgpt.site](https://archmorph-studio.musfk.chatgpt.site).
 
 | Item | Status | Evidence / action |
 | --- | --- | --- |
@@ -579,17 +579,17 @@ Repository snapshot: [Yousafkhanzadaa/ArchMorph](https://github.com/Yousafkhanza
 | Meaningful competition-period extension | Evidence exists | Preserve commits and clearly document prior versus new behavior |
 | Production UI free of developer clutter | Implemented | Developer console and internal values require explicit debug mode |
 | Deterministic domain verification | Implemented | Architecture regression script, lint, and production build have passed |
-| Public source up to date | **Blocked** | Local `main` is one commit ahead of `origin/main`; push the current work and this document |
-| Submission-quality README | **Blocked** | Current README is still the create-next-app template |
-| Open-source license | **Blocked** | No `LICENSE` file is present |
-| Public judge-accessible deployment | **Blocked** | Current Sites deployment is owner-only/private; deploy a public build and test signed-out access |
+| Public source up to date | Implemented | Public `main` contains the competition evidence, tests, documentation, screenshots, and deployed source |
+| Submission-quality README | Implemented | README covers purpose, live demo, screenshots, WebMCP journeys, setup, tests, architecture, scope, and license |
+| Open-source license | Implemented | Root MIT license is detected in repository metadata |
+| Public judge-accessible deployment | Implemented | Public build and social image return HTTP 200 without an auth credential |
 | Native WebMCP client verification | **Needs evidence** | Run end-to-end tests in an eligible ChatGPT in-app browser and/or current Chrome WebMCP configuration |
-| WebMCP evaluation matrix/results | **Needs work** | Add repeatable prompts, expected tools/arguments/order, and recorded outcomes |
+| WebMCP evaluation matrix/results | Implemented; native run pending | Ten repeatable journeys and deterministic tool checks are recorded; add native-client outcomes before submission |
 | Public demo video under three minutes | **Blocked** | Record after the public build and native WebMCP journey are stable |
-| Submission copy and screenshots | **Needs work** | Prepare from the final public build, not a local/debug environment |
-| Public repo discoverability | **Needs work** | Add project description, website, topics, setup steps, architecture overview, and demo instructions |
+| Submission copy and screenshots | Partially implemented | Screenshots and a timed demo script are ready; submission copy is gated on rules acknowledgment and final native evidence |
+| Public repo discoverability | Implemented | Description, website, topics, setup steps, architecture overview, and demo instructions are public |
 
-These blockers are more important to the hackathon result than adding another modeling primitive.
+The remaining evidence and submission tasks are more important to the hackathon result than adding another modeling primitive.
 
 ## 10. Recently implemented refinement work
 

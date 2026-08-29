@@ -57,6 +57,7 @@ For each fixture, record:
 | --- | --- | --- | --- | --- |
 | 2026-08-29 | Local vinext build and debug harness | Catalog plus deterministic domain/tool execution | Pass | `test:architecture`, `test:webmcp`, lint, and production build completed successfully |
 | 2026-08-29 | Codex in-app browser, localhost | UI load, fixture import, plan/3D/validation/debug views | Pass for UI; native discovery not claimed | Local page displayed 40-tool harness; native browser API availability must be checked on deployed origin |
+| 2026-08-29 | Codex in-app browser, public deployment | Public access, production UI, metadata, debug isolation | Pass for deployment; native discovery unavailable | App and `/og.png` returned HTTP 200; production metadata resolved correctly; this Codex browser did not expose `document.modelContext` |
 | — | ChatGPT in-app browser, public deployment | N01–N10 | Pending | Record exact client/model and outcomes before submission |
 | — | Chrome WebMCP configuration, public deployment | N01–N10 | Pending | Optional second-client evidence |
 
