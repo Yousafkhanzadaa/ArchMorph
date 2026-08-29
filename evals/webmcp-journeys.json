@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "project": "ArchMorph",
+  "purpose": "Repeatable WebMCP tool-selection and end-to-end journey fixtures",
+  "placeholderPolicy": "Values in angle brackets must be resolved from earlier inspection results.",
+  "fixtures": [
+    {
+      "id": "purpose-inspect-circulation",
+      "layer": "purpose",
+      "prompt": "Which ArchMorph tool tells me whether every room can be reached from the main entrance?",
+      "expectedTools": ["inspect_circulation"],
+      "mustNotSelect": ["validate_layout", "switch_view"]
+    },
+    {
+      "id": "selection-room-area",
+      "layer": "selection",
+      "prompt": "What is the exact area of Bedroom 2? Do not edit anything.",
+      "expectedTools": ["inspect_project", "inspect_floor", "calculate_room_area"],
+      "expectedArguments": { "calculate_room_area": { "roomId": "<bedroom-2-id>" } },
+      "assertions": ["No project version change", "Result includes square feet and stable room ID"]
+    },
+    {
+      "id": "arguments-exact-dimension",
+      "layer": "arguments",
+      "prompt": "Make Bedroom 2 exactly 12 feet wide, keeping its current length.",
+      "expectedTools": ["inspect_project", "inspect_floor", "set_exact_dimension", "inspect_room"],
+      "expectedArguments": { "set_exact_dimension": { "elementId": "<bedroom-2-id>", "dimension": "width", "value": 12 } },
+      "assertions": ["Correct room resolved by ID", "Final width is 12", "Length is unchanged"]
+    },
+    {
+      "id": "sequence-polygon-room",
+      "layer": "sequence",
+      "prompt": "Add an L-shaped office inside the buildable envelope, validate it, and focus the result.",
+      "expectedTools": ["inspect_project", "inspect_floor", "create_polygon_room", "validate_layout", "focus_element"],
+      "assertions": ["Vertices are orthogonal", "Room has a stable ID", "Area and validation evidence are returned", "Visible focus matches created room"]
+    },
+    {
+      "id": "sequence-floor-and-stair",
+      "layer": "full-journey",
+      "prompt": "Create a second floor and a connected straight stair. Verify the stair and room circulation, switch to 3D, and focus the stair.",
+      "expectedTools": ["inspect_project", "create_floor", "inspect_floor", "add_stairs", "inspect_circulation", "validate_layout", "switch_view", "focus_element"],
+      "assertions": ["Stair identifies source and target floors", "Rise/riser/tread evidence is returned", "3D view shows the same stair"]
+    },
+    {
+      "id": "collaboration-human-edit",
+      "layer": "collaboration",
+      "prompt": "After the human moves the living room, inspect the latest project and explain the resulting circulation or setback changes.",
+      "expectedTools": ["inspect_project", "inspect_room", "inspect_circulation", "validate_layout"],
+      "assertions": ["Inspection observes the human edit", "No stale coordinates are reused", "Evidence refers to current stable IDs"]
+    },
+    {
+      "id": "failure-invalid-host",
+      "layer": "failure",
+      "prompt": "Add a window to wall ID wall-does-not-exist.",
+      "expectedTools": ["add_window"],
+      "expectedArguments": { "add_window": { "wallId": "wall-does-not-exist", "offset": 4, "width": 3 } },
+      "assertions": ["Specific invalid-host error", "No opening is created", "Project version is unchanged"]
+    },
+    {
+      "id": "failure-overlapping-opening",
+      "layer": "failure",
+      "prompt": "Place a second door where it overlaps an existing door on the same wall.",
+      "expectedTools": ["inspect_wall", "add_door"],
+      "assertions": ["Specific overlap error or validation finding", "No silent rehosting", "Existing opening remains unchanged"]
+    },
+    {
+      "id": "presentation-final",
+      "layer": "result-quality",
+      "prompt": "Present the current design from a useful 3D angle and capture it without downloading a file.",
+      "expectedTools": ["switch_view", "set_camera", "focus_element", "take_snapshot"],
+      "expectedArguments": { "take_snapshot": { "download": false } },
+      "assertions": ["Snapshot corresponds to current project version", "Visible UI matches returned view state"]
+    },
+    {
+      "id": "export-structured-project",
+      "layer": "result-quality",
+      "prompt": "Export the current ArchMorph project as structured JSON without triggering a browser download.",
+      "expectedTools": ["export_plan"],
+      "expectedArguments": { "export_plan": { "format": "json", "download": false } },
+      "assertions": ["Result identifies schema and project version", "Canonical element IDs are preserved"]
+    }
+  ]
+}

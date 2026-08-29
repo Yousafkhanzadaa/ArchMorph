@@ -19,7 +19,7 @@ import {
   projectMetrics,
   roomArea,
   validateLayout,
-} from "./architecture";
+} from "./architecture.ts";
 
 export type ToolRuntime = {
   getProject: () => Project;

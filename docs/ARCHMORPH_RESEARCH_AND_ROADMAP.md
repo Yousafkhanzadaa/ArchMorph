@@ -150,7 +150,7 @@ The central principle is one canonical project model and one mutation pipeline. 
 | `src/lib/spatial3d.ts` | Derived wall/opening geometry and collision data used by 3D navigation |
 | `src/app/components/ModelView.tsx` | Three.js model, camera/navigation modes, level presentation, openings, stairs, and Walk Mode |
 | `src/lib/persistence.ts` | Local project library, save/load, import/export, and schema migration |
-| `src/lib/webmcp-tools.ts` | 37 typed tools mapped to inspections, operations, calculations, validation, and presentation actions |
+| `src/lib/webmcp-tools.ts` | 40 typed tools mapped to inspections, operations, calculations, validation, and presentation actions |
 | `src/types/webmcp.d.ts` | Local types for the current WebMCP imperative API |
 | `scripts/architecture-regression.ts` | Deterministic architectural-domain regression coverage |
 
@@ -575,7 +575,7 @@ Repository snapshot: [Yousafkhanzadaa/ArchMorph](https://github.com/Yousafkhanza
 | Item | Status | Evidence / action |
 | --- | --- | --- |
 | Architecture-first product direction | Strong | Domain model, plan/3D synchronization, circulation, validation, stairs, and glazing are implemented |
-| Non-trivial WebMCP implementation | Strong foundation | 37 tools share the same operation pipeline as the human UI |
+| Non-trivial WebMCP implementation | Strong foundation | 40 tools share the same operation pipeline as the human UI |
 | Meaningful competition-period extension | Evidence exists | Preserve commits and clearly document prior versus new behavior |
 | Production UI free of developer clutter | Implemented | Developer console and internal values require explicit debug mode |
 | Deterministic domain verification | Implemented | Architecture regression script, lint, and production build have passed |
