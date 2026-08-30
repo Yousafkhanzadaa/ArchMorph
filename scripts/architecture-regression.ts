@@ -12,8 +12,11 @@ import {
   roomPerimeter,
   roomVertices,
   stairFootprint,
+  stairEntryPoint,
+  stairLayout,
   stairLocalPoint,
   stairPlanPoint,
+  stairProgressAt,
   stairConnection,
   validateLayout,
   wallLength,
@@ -21,7 +24,7 @@ import {
   type ExteriorFinishId,
   type Project,
 } from "../src/lib/architecture.ts";
-import { buildSpatialModel, type SpatialModel } from "../src/lib/spatial3d.ts";
+import { buildSpatialModel, orientedSlopeFrame, type SpatialModel } from "../src/lib/spatial3d.ts";
 
 const memory = new Map<string, string>();
 Object.assign(globalThis, {
@@ -40,6 +43,34 @@ Object.assign(globalThis, {
 const persistence = await import("../src/lib/persistence.ts");
 assert.equal(round(67.725), 67.73, "decimal half values should round predictably despite binary floating-point representation");
 assert.equal(round(-67.725), -67.73, "negative decimal half values should round symmetrically");
+
+const dot3 = (first: { x: number; y: number; z: number }, second: { x: number; y: number; z: number }) => (
+  first.x * second.x + first.y * second.y + first.z * second.z
+);
+for (const end of [
+  { x: 8, y: 4, z: 0 },
+  { x: -8, y: 4, z: 0 },
+  { x: 0, y: 4, z: 8 },
+  { x: 0, y: 4, z: -8 },
+]) {
+  const frame = orientedSlopeFrame({ x: 0, y: 0, z: 0 }, end)!;
+  const expectedLength = Math.hypot(end.x, end.y, end.z);
+  assert.ok(Math.abs(frame.length - expectedLength) < 0.001, "a sloped support frame should preserve its full 3D length");
+  assert.ok(Math.abs(frame.zAxis.x - end.x / expectedLength) < 0.001
+    && Math.abs(frame.zAxis.y - end.y / expectedLength) < 0.001
+    && Math.abs(frame.zAxis.z - end.z / expectedLength) < 0.001,
+  "a sloped support's local length axis should follow its flight in every plan direction");
+  assert.ok(Math.abs(dot3(frame.xAxis, frame.yAxis)) < 0.001
+    && Math.abs(dot3(frame.xAxis, frame.zAxis)) < 0.001
+    && Math.abs(dot3(frame.yAxis, frame.zAxis)) < 0.001,
+  "a sloped support frame should remain orthogonal after a stair turns");
+  const handedness = {
+    x: frame.xAxis.y * frame.yAxis.z - frame.xAxis.z * frame.yAxis.y,
+    y: frame.xAxis.z * frame.yAxis.x - frame.xAxis.x * frame.yAxis.z,
+    z: frame.xAxis.x * frame.yAxis.y - frame.xAxis.y * frame.yAxis.x,
+  };
+  assert.ok(dot3(handedness, frame.zAxis) > 0.999, "a sloped support frame should remain right-handed");
+}
 
 function assertOperationRejectedWithoutMutation(
   source: Project,
@@ -104,7 +135,7 @@ assert.equal(metrics.openSiteArea, metrics.plotArea - projectMetrics(project).gr
 persistence.saveProjectLocally(project);
 const restored = persistence.loadLatestProject()!;
 assert.equal(restored.id, project.id);
-assert.equal(restored.schemaVersion, 5);
+assert.equal(restored.schemaVersion, 7);
 assert.equal(restored.walls.length, project.walls.length);
 assert.equal(restored.openings.length, project.openings.length);
 assert.equal(restored.view.focusElementId, undefined, "temporary focus state should not be persisted");
@@ -125,12 +156,12 @@ let multiFloor = createInitialProject();
 const performMultiFloor = (operation: ArchitectureOperation) => {
   multiFloor = applyOperation(multiFloor, operation, "agent").project;
 };
-performMultiFloor({ type: "create_room", floorId: "floor-ground", name: "Ground Hall", roomType: "Custom", x: 3, y: 10, width: 12, length: 12 });
+performMultiFloor({ type: "create_room", floorId: "floor-ground", name: "Ground Hall", roomType: "Custom", x: 2, y: 4, width: 24, length: 24 });
 performMultiFloor({ type: "create_floor", name: "First Floor", height: 9 });
 const firstFloor = multiFloor.floors.find((floor) => floor.level === 1)!;
-performMultiFloor({ type: "create_room", floorId: firstFloor.id, name: "Upper Hall", roomType: "Custom", x: 3, y: 10, width: 12, length: 12 });
+performMultiFloor({ type: "create_room", floorId: firstFloor.id, name: "Upper Hall", roomType: "Custom", x: 2, y: 4, width: 24, length: 24 });
 const stairRun = recommendedStairRun(multiFloor, "floor-ground", "up");
-performMultiFloor({ type: "add_stairs", floorId: "floor-ground", x: 5, y: 10, width: 3.5, length: stairRun, direction: "up" });
+performMultiFloor({ type: "add_stairs", floorId: "floor-ground", x: 4, y: 10, width: 3.5, length: stairRun, direction: "up" });
 const floorGraph = buildCirculationGraph(multiFloor);
 assert.ok(floorGraph.edges.some((edge) => edge.type === "stair"), "aligned rooms on consecutive floors should create a circulation stair edge");
 assert.equal(firstFloor.elevation, 9, "upper-floor elevation should derive from the floor below");
@@ -142,7 +173,7 @@ assert.ok(connection.treadDepth * 12 >= 10, "concept stair treads should be at l
 assert.ok(!validateLayout(multiFloor).issues.some((issue) => issue.code === "INVALID_STAIR_GEOMETRY"));
 performMultiFloor({ type: "update_stairs", stairId: stair.id, rotation: 90 });
 const rotatedStair = multiFloor.stairs[0];
-assert.deepEqual(stairFootprint(rotatedStair), { x: 5, y: 10, width: stairRun, length: 3.5 }, "90-degree stair rotation should swap its plan footprint dimensions");
+assert.deepEqual(stairFootprint(rotatedStair), { x: 4, y: 10, width: stairRun, length: 3.5 }, "90-degree stair rotation should swap its plan footprint dimensions");
 for (const rotation of [0, 90, 180, 270] as const) {
   performMultiFloor({ type: "update_stairs", stairId: stair.id, rotation });
   const currentStair = multiFloor.stairs[0];
@@ -162,6 +193,89 @@ for (const rotation of [0, 90, 180, 270] as const) {
 }
 performMultiFloor({ type: "update_stairs", stairId: stair.id, length: 6 });
 assert.ok(validateLayout(multiFloor).issues.some((issue) => issue.code === "INVALID_STAIR_GEOMETRY"), "short straight stair runs should be flagged");
+
+let uStairProject = createInitialProject();
+const performUStair = (operation: ArchitectureOperation) => { uStairProject = applyOperation(uStairProject, operation, "agent").project; };
+performUStair({ type: "create_room", floorId: "floor-ground", name: "Ground U Stair Hall", roomType: "Custom", x: 2, y: 4, width: 24, length: 24 });
+performUStair({ type: "create_floor", name: "U Stair Upper", height: 9 });
+const uUpperFloor = uStairProject.floors.find((floor) => floor.level === 1)!;
+performUStair({ type: "create_room", floorId: uUpperFloor.id, name: "Upper U Stair Hall", roomType: "Custom", x: 2, y: 4, width: 24, length: 24 });
+const uFlightRun = recommendedStairRun(uStairProject, "floor-ground", "up", "u-shaped");
+performUStair({ type: "add_stairs", floorId: "floor-ground", x: 5, y: 11, width: 3.5, length: uFlightRun, direction: "up", stairType: "u-shaped", landingDepth: 3.5, wellWidth: 0.5, turnSide: "left" });
+const uStair = uStairProject.stairs[0];
+const uLayout = stairLayout(uStair);
+const uConnection = stairConnection(uStairProject, uStair)!;
+assert.equal(uConnection.flightCount, 2, "a U-shaped stair should expose two connected flights");
+assert.deepEqual(uConnection.risersPerFlight, [uConnection.riserCount / 2, uConnection.riserCount / 2], "a U-shaped stair should divide rise evenly across both flights");
+assert.deepEqual(stairFootprint(uStair), { x: 5, y: 11, width: 7.5, length: uFlightRun + 3.5 }, "U-shaped stair footprint should include two flights, the center well, and half landing");
+assert.equal(stairProgressAt(uStair, stairEntryPoint(uStair, "lower", -0.1))! < 0.05, true, "lower U-shaped entry should begin near zero vertical progress");
+assert.equal(stairProgressAt(uStair, stairPlanPoint(uStair, uLayout.localWidth / 2, uStair.landingDepth / 2)), 0.5, "half landing should sit at half the floor-to-floor rise");
+assert.equal(stairProgressAt(uStair, stairEntryPoint(uStair, "upper", -0.1))! > 0.95, true, "upper U-shaped entry should finish near full vertical progress");
+assert.equal(stairProgressAt(uStair, stairPlanPoint(uStair, uStair.width + uStair.wellWidth / 2, uStair.landingDepth + 1)), undefined, "the center well must not be treated as a walkable U-stair surface");
+assert.ok(buildCirculationGraph(uStairProject).edges.some((edge) => edge.stairId === uStair.id), "one U-shaped stair should create one semantic circulation edge");
+assert.ok(!validateLayout(uStairProject).issues.some((issue) => issue.code.startsWith("STAIR_") || issue.code === "INVALID_STAIR_CONNECTION" || issue.code === "INVALID_STAIR_GEOMETRY"), "a correctly sized and placed U-shaped stair should validate its geometry, approaches, walls, and connection");
+for (const rotation of [0, 90, 180, 270] as const) {
+  performUStair({ type: "update_stairs", stairId: uStair.id, rotation });
+  const rotatedUStair = uStairProject.stairs[0];
+  const rotatedLayout = stairLayout(rotatedUStair);
+  const lowerFlight = rotatedLayout.flights[0];
+  const localPoint = { u: (lowerFlight.start.u + lowerFlight.end.u) / 2, v: (lowerFlight.start.v + lowerFlight.end.v) / 2 };
+  const worldPoint = stairPlanPoint(rotatedUStair, localPoint.u, localPoint.v);
+  const restoredLocalPoint = stairLocalPoint(rotatedUStair, worldPoint);
+  assert.ok(Math.abs(restoredLocalPoint.u - localPoint.u) < 0.001 && Math.abs(restoredLocalPoint.v - localPoint.v) < 0.001, `U-shaped stair transforms should remain inverse at ${rotation} degrees`);
+  assert.ok(buildCirculationGraph(uStairProject).edges.some((edge) => edge.stairId === uStair.id), `U-shaped stair should preserve one circulation edge at ${rotation} degrees`);
+}
+performUStair({ type: "update_stairs", stairId: uStair.id, rotation: 0 });
+const lowerEntryBeforeTurn = stairEntryPoint(uStair, "lower", -0.1);
+performUStair({ type: "update_stairs", stairId: uStair.id, turnSide: "right" });
+assert.notDeepEqual(stairEntryPoint(uStairProject.stairs[0], "lower", -0.1), lowerEntryBeforeTurn, "changing the return side should swap the lower flight without replacing the stair");
+assertOperationRejectedWithoutMutation(uStairProject, { type: "update_stairs", stairId: uStair.id, landingDepth: 3 }, /landing must be at least as deep/i);
+performUStair({ type: "update_stairs", stairId: uStair.id, length: 3 });
+assert.ok(validateLayout(uStairProject).issues.some((issue) => issue.code === "INVALID_STAIR_GEOMETRY"), "short U-shaped flights should be flagged against the per-flight recommended run");
+
+let lStairProject = createInitialProject();
+const performLStair = (operation: ArchitectureOperation) => { lStairProject = applyOperation(lStairProject, operation, "agent").project; };
+performLStair({ type: "create_room", floorId: "floor-ground", name: "Ground L Stair Hall", roomType: "Custom", x: 2, y: 4, width: 26, length: 25 });
+performLStair({ type: "create_floor", name: "L Stair Upper", height: 9 });
+const lUpperFloor = lStairProject.floors.find((floor) => floor.level === 1)!;
+performLStair({ type: "create_room", floorId: lUpperFloor.id, name: "Upper L Stair Hall", roomType: "Custom", x: 2, y: 4, width: 26, length: 25 });
+const lFlightRun = recommendedStairRun(lStairProject, "floor-ground", "up", "l-shaped");
+performLStair({ type: "add_stairs", floorId: "floor-ground", x: 6, y: 9, width: 3.5, length: lFlightRun, upperFlightLength: lFlightRun + 1, direction: "up", stairType: "l-shaped", landingDepth: 3.5, turnSide: "left" });
+const lStair = lStairProject.stairs[0];
+const lLayout = stairLayout(lStair);
+const lConnection = stairConnection(lStairProject, lStair)!;
+assert.equal(lConnection.flightCount, 2, "an L-shaped stair should expose two connected flights");
+assert.equal(lLayout.outline.length, 6, "a square-landing L stair should have a true six-corner stairwell outline");
+const lLower = lLayout.flights[0];
+const lUpper = lLayout.flights[1];
+const lowerVector = { u: lLower.end.u - lLower.start.u, v: lLower.end.v - lLower.start.v };
+const upperVector = { u: lUpper.end.u - lUpper.start.u, v: lUpper.end.v - lUpper.start.v };
+assert.ok(Math.abs(lowerVector.u * upperVector.u + lowerVector.v * upperVector.v) < 0.001, "L-shaped stair flights should be perpendicular");
+assert.equal(stairProgressAt(lStair, stairEntryPoint(lStair, "lower", -0.1))! < 0.05, true, "lower L-shaped entry should begin near zero progress");
+assert.equal(stairProgressAt(lStair, stairEntryPoint(lStair, "upper", -0.1))! > 0.95, true, "upper L-shaped entry should finish near full progress");
+assert.equal(stairProgressAt(lStair, stairPlanPoint(lStair, 1, lStair.landingDepth + 1)), undefined, "the inside corner of an L stair's bounding box must remain void, not walkable stair");
+assert.ok(buildCirculationGraph(lStairProject).edges.some((edge) => edge.stairId === lStair.id), "one L-shaped stair should create one semantic circulation edge");
+assert.ok(!validateLayout(lStairProject).issues.some((issue) => issue.code.startsWith("STAIR_") || issue.code === "INVALID_STAIR_CONNECTION" || issue.code === "INVALID_STAIR_GEOMETRY"), "a correctly placed L-shaped stair should have valid flights, approaches, walls, and circulation");
+for (const rotation of [0, 90, 180, 270] as const) {
+  performLStair({ type: "update_stairs", stairId: lStair.id, rotation });
+  const rotatedL = lStairProject.stairs[0];
+  const rotatedLayout = stairLayout(rotatedL);
+  const point = rotatedLayout.route[2];
+  const world = stairPlanPoint(rotatedL, point.u, point.v);
+  const restored = stairLocalPoint(rotatedL, world);
+  assert.ok(Math.abs(restored.u - point.u) < 0.001 && Math.abs(restored.v - point.v) < 0.001, `L-shaped stair transforms should remain inverse at ${rotation} degrees`);
+}
+performLStair({ type: "update_stairs", stairId: lStair.id, rotation: 0 });
+const lUpperEntryBeforeTurn = stairEntryPoint(lStairProject.stairs[0], "upper", 0.5);
+performLStair({ type: "update_stairs", stairId: lStair.id, turnSide: "right" });
+assert.notDeepEqual(stairEntryPoint(lStairProject.stairs[0], "upper", 0.5), lUpperEntryBeforeTurn, "changing an L stair's turn side should move its perpendicular upper exit");
+performLStair({ type: "update_stairs", stairId: lStair.id, upperFlightLength: 3 });
+assert.ok(validateLayout(lStairProject).issues.some((issue) => issue.code === "INVALID_STAIR_GEOMETRY"), "an undersized L upper flight should be identified independently");
+performLStair({ type: "update_stairs", stairId: lStair.id, upperFlightLength: lFlightRun + 1, turnSide: "left", x: 3 });
+assert.ok(validateLayout(lStairProject).issues.some((issue) => issue.code === "STAIR_ACCESS_CLEARANCE"), "a stair exit without a full-width upper-floor approach should be rejected as unusable");
+performLStair({ type: "update_stairs", stairId: lStair.id, x: 6 });
+performLStair({ type: "add_wall", floorId: "floor-ground", x1: 4, y1: 12, x2: 18, y2: 12 });
+assert.ok(validateLayout(lStairProject).issues.some((issue) => issue.code === "STAIR_WALL_CLASH"), "a wall crossing the stairwell must remain a real architectural clash");
 
 let edgeStairProject = createInitialProject();
 edgeStairProject = applyOperation(edgeStairProject, { type: "create_floor", name: "Upper" }, "agent").project;
@@ -275,7 +389,7 @@ assert.equal(exteriorProject.facadeFeatures.length, 1, "hosted façade features 
 assert.ok(exteriorProject.walls.some((wall) => wall.exterior && wall.finish === "brick"), "per-wall finish overrides should survive room-controlled topology movement");
 assertOperationRejectedWithoutMutation(exteriorProject, { type: "update_balcony", balconyId: exteriorProject.balconies[0].id, width: 80 }, /inside the plot/);
 const exteriorRoundTrip = persistence.importProjectDocument(persistence.exportProjectDocument(exteriorProject));
-assert.equal(exteriorRoundTrip.schemaVersion, 5);
+assert.equal(exteriorRoundTrip.schemaVersion, 7);
 assert.equal(exteriorRoundTrip.balconies.length, 1);
 assert.equal(exteriorRoundTrip.facadeFeatures.length, 1);
 assert.equal(exteriorRoundTrip.siteBoundary.enabled, true);
@@ -293,11 +407,19 @@ delete legacyDocument.balconies;
 delete legacyDocument.facadeFeatures;
 delete (legacyDocument.rooms as Array<Record<string, unknown>>)[0].shape;
 delete (legacyDocument.stairs as Array<Record<string, unknown>>)[0].rotation;
+delete (legacyDocument.stairs as Array<Record<string, unknown>>)[0].stairType;
+delete (legacyDocument.stairs as Array<Record<string, unknown>>)[0].upperFlightLength;
+delete (legacyDocument.stairs as Array<Record<string, unknown>>)[0].landingDepth;
+delete (legacyDocument.stairs as Array<Record<string, unknown>>)[0].wellWidth;
+delete (legacyDocument.stairs as Array<Record<string, unknown>>)[0].turnSide;
 const migratedLegacy = migrateProject(legacyDocument as unknown as Project);
-assert.equal(migratedLegacy.schemaVersion, 5, "legacy projects should migrate to schema v5");
+assert.equal(migratedLegacy.schemaVersion, 7, "legacy projects should migrate to schema v7");
 assert.equal(migratedLegacy.exteriorFinish, "stucco", "legacy projects should receive a stable default facade finish");
 assert.equal(migratedLegacy.rooms[0].shape, "rectangle", "legacy rooms should migrate as rectangles");
 assert.equal(migratedLegacy.stairs[0].rotation, 0, "legacy stairs should migrate to zero rotation");
+assert.equal(migratedLegacy.stairs[0].stairType, "straight", "legacy stairs should migrate as straight flights");
+assert.equal(migratedLegacy.stairs[0].upperFlightLength, migratedLegacy.stairs[0].length, "legacy stairs should gain a reversible upper-flight run");
+assert.equal(migratedLegacy.stairs[0].landingDepth, migratedLegacy.stairs[0].width, "legacy stairs should gain a reversible default landing depth");
 assert.equal(migratedLegacy.roof.type, "flat", "legacy projects should gain the lightweight flat-roof model");
 assert.equal(migratedLegacy.siteBoundary.enabled, false, "legacy projects should not unexpectedly show a boundary wall");
 assert.deepEqual(migratedLegacy.balconies, []);

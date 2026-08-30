@@ -14,7 +14,11 @@ import {
   roomCentroid,
   roomVertices,
   stairConnection,
+  stairAccessPolygon,
   stairFootprint,
+  stairLayout,
+  stairPlanFlightCorners,
+  stairPlanOutline,
   stairPlanPoint,
   wallLength,
 } from "@/lib/architecture";
@@ -574,27 +578,60 @@ export default function FloorPlan({
       {[...stairs.map((stair) => ({ stair, linked: false })), ...linkedStairs.map((stair) => ({ stair, linked: true }))].map(({ stair: rawStair, linked }) => {
         const stair = drag?.kind === "move-stair" && drag.id === rawStair.id ? drag.stair : rawStair;
         const connection = stairConnection(project, stair);
-        const arrowUp = linked ? stair.direction === "down" : stair.direction === "up";
-        const corners = [stairPlanPoint(stair, 0, 0), stairPlanPoint(stair, stair.width, 0), stairPlanPoint(stair, stair.width, stair.length), stairPlanPoint(stair, 0, stair.length)];
-        const start = stairPlanPoint(stair, stair.width / 2, arrowUp ? stair.length - 0.7 : 0.7);
-        const end = stairPlanPoint(stair, stair.width / 2, arrowUp ? 0.8 : stair.length - 0.8);
-        const head = stairPlanPoint(stair, stair.width / 2, arrowUp ? 0.5 : stair.length - 0.5);
-        const angle = stair.rotation * Math.PI / 180;
-        const left = { x: head.x - Math.cos(angle) * 0.4, y: head.y + Math.sin(angle) * 0.4 };
-        const right = { x: head.x + Math.cos(angle) * 0.4, y: head.y - Math.sin(angle) * 0.4 };
-        const center = stairPlanPoint(stair, stair.width / 2, stair.length / 2);
+        const atLowerFloor = connection ? connection.lowerFloor.id === floorId : stair.direction === "up";
+        const arrowUp = atLowerFloor;
+        const layout = stairLayout(stair);
+        const outline = stairPlanOutline(stair);
+        const localPath = arrowUp ? layout.route : [...layout.route].reverse();
+        const path = localPath.map((point) => stairPlanPoint(stair, point.u, point.v));
+        const head = path[path.length - 1];
+        const previousHead = path[path.length - 2];
+        const headLength = Math.max(0.001, Math.hypot(head.x - previousHead.x, head.y - previousHead.y));
+        const hx = (head.x - previousHead.x) / headLength;
+        const hy = (head.y - previousHead.y) / headLength;
+        const left = { x: head.x - hx * 0.45 - hy * 0.32, y: head.y - hy * 0.45 + hx * 0.32 };
+        const right = { x: head.x - hx * 0.45 + hy * 0.32, y: head.y - hy * 0.45 - hx * 0.32 };
+        const labelRoutePoint = localPath[Math.min(1, localPath.length - 1)];
+        const center = stairPlanPoint(stair, labelRoutePoint.u, labelRoutePoint.v);
+        const access = stairAccessPolygon(stair, atLowerFloor ? "lower" : "upper");
+        const currentFlightId = atLowerFloor ? layout.flights[0].id : layout.flights[layout.flights.length - 1].id;
+        const stairName = stair.stairType === "u-shaped" ? "U-shaped half-turn stair" : stair.stairType === "l-shaped" ? "L-shaped quarter-turn stair" : "Straight stair";
         return (
           <g
             key={`${stair.id}:${linked ? "linked" : "owned"}`}
-            className={`stair ${linked ? "is-linked" : ""} ${selectedId === stair.id ? "is-selected" : ""}`}
+            className={`stair ${linked ? "is-linked" : ""} ${atLowerFloor ? "is-lower-plan" : "is-upper-plan"} ${selectedId === stair.id ? "is-selected" : ""}`}
             onPointerDown={(event) => handleStairPointerDown(event, stair, linked)}
           >
-            <title>{linked ? "Linked stair landing" : "Straight stair"} · {connection?.lowerFloor.name ?? "Unconnected"} to {connection?.upperFloor.name ?? "adjacent floor"}</title>
-            <polygon points={corners.map((point) => `${point.x},${point.y}`).join(" ")} />
-            {Array.from({ length: Math.min(14, Math.max(8, connection?.treadCount ?? 8)) }).map((_, index, items) => (
-              (() => { const a = stairPlanPoint(stair, 0, (index + 1) * stair.length / (items.length + 1)); const b = stairPlanPoint(stair, stair.width, (index + 1) * stair.length / (items.length + 1)); return <line key={index} x1={a.x} y1={a.y} x2={b.x} y2={b.y} />; })()
-            ))}
-            <line x1={start.x} y1={start.y} x2={end.x} y2={end.y} className="stair-arrow" />
+            <title>{stairName} · {atLowerFloor ? "lower-floor UP plan" : "upper-floor DN plan"} · {connection?.lowerFloor.name ?? "Unconnected"} to {connection?.upperFloor.name ?? "adjacent floor"}</title>
+            <polygon className="stair-access-zone" points={access.map((point) => `${point.x},${point.y}`).join(" ")} />
+            <polygon className="stair-footprint" points={outline.map((point) => `${point.x},${point.y}`).join(" ")} />
+            {layout.landing && <polygon className="stair-landing" points={layout.landing.vertices.map((point) => stairPlanPoint(stair, point.u, point.v)).map((point) => `${point.x},${point.y}`).join(" ")} />}
+            {layout.flights.map((flight, flightIndex) => {
+              const corners = stairPlanFlightCorners(stair, flight);
+              const treadCount = Math.min(14, Math.max(5, connection?.treadsPerFlight[flightIndex] ?? 7));
+              const current = flight.id === currentFlightId;
+              const crossSection = (ratio: number) => ({
+                a: { x: corners[0].x + (corners[1].x - corners[0].x) * ratio, y: corners[0].y + (corners[1].y - corners[0].y) * ratio },
+                b: { x: corners[3].x + (corners[2].x - corners[3].x) * ratio, y: corners[3].y + (corners[2].y - corners[3].y) * ratio },
+              });
+              const cutBase = atLowerFloor ? 0.55 : 0.39;
+              const cutA = crossSection(cutBase);
+              const cutB = crossSection(cutBase + 0.05);
+              const cutC = crossSection(cutBase + 0.09);
+              const cutD = crossSection(cutBase + 0.14);
+              return <g key={flight.id} className={`stair-flight ${current ? "is-current" : "is-beyond-cut"}`}>
+                <polygon points={corners.map((point) => `${point.x},${point.y}`).join(" ")} />
+                {Array.from({ length: treadCount }).map((_, index) => {
+                  const line = crossSection((index + 1) / (treadCount + 1));
+                  return <line key={index} x1={line.a.x} y1={line.a.y} x2={line.b.x} y2={line.b.y} />;
+                })}
+                {current && <g className="stair-cut-line">
+                  <line x1={cutA.a.x} y1={cutA.a.y} x2={cutB.b.x} y2={cutB.b.y} />
+                  <line x1={cutC.a.x} y1={cutC.a.y} x2={cutD.b.x} y2={cutD.b.y} />
+                </g>}
+              </g>;
+            })}
+            <polyline points={path.map((point) => `${point.x},${point.y}`).join(" ")} className="stair-arrow" />
             <path d={`M ${head.x} ${head.y} L ${left.x} ${left.y} L ${right.x} ${right.y} Z`} fill="#45534b" />
             <text x={center.x} y={center.y + 0.25} textAnchor="middle" className="stair-label">{arrowUp ? "UP" : "DN"}</text>
           </g>

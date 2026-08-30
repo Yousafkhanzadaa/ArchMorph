@@ -145,11 +145,16 @@ code, kbd, pre { font-family: var(--font-geist-mono), monospace; }
 .resize-handle { fill: var(--accent); stroke: white; stroke-width: .15; cursor: nwse-resize; }
 .room-vertex-handle { cursor: move; }
 .opening { cursor: pointer; }
-.stair rect, .stair line { fill: #aeb5ae33; stroke: #45534b; stroke-width: .08; }
+.stair polygon, .stair rect, .stair line, .stair polyline { fill: #aeb5ae33; stroke: #45534b; stroke-width: .08; }
+.stair .stair-access-zone { fill: rgb(211 127 82 / 7%); stroke: #b56d47; stroke-dasharray: .3 .22; }
+.stair .stair-landing { fill: rgb(69 83 75 / 18%); }
+.stair-flight polygon { fill: rgb(174 181 174 / 14%); }
+.stair-flight.is-beyond-cut { opacity: .34; stroke-dasharray: .24 .18; }
+.stair-flight.is-current { opacity: 1; }
+.stair .stair-cut-line line { stroke: #29352e; stroke-width: .2; }
 .stair-arrow { stroke-width: .14 !important; }
-.stair.is-linked { opacity: .56; }
-.stair.is-linked rect { stroke-dasharray: .45 .3; }
-.stair.is-selected rect { stroke: var(--accent); stroke-width: .2; }
+.stair.is-upper-plan .stair-footprint { stroke-dasharray: .45 .3; }
+.stair.is-selected .stair-footprint { stroke: var(--accent); stroke-width: .2; }
 .stair-label { fill: #45534b; font-size: .55px; font-weight: 800; letter-spacing: .12em; paint-order: stroke; stroke: #f5f4ef; stroke-width: .22px; }
 .preview-wall { stroke: var(--accent); stroke-width: .55; stroke-dasharray: .5 .25; }
 .measurement line { stroke: #d15d37; stroke-width: .1; stroke-dasharray: .35 .2; }

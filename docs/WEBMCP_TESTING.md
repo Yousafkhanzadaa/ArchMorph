@@ -11,7 +11,7 @@ npm run test:architecture
 npm run test:webmcp
 ```
 
-The architecture suite covers canonical geometry, topology, hosted openings, circulation, multi-floor stairs, polygon rooms, persistence, migration, and spatial collision data. The WebMCP suite checks catalog count and categories, unique/spec-compatible names, bounded top-level schemas, concise definitions, annotations, successful inspection and mutation, and non-destructive argument failure.
+The architecture suite covers canonical geometry, topology, hosted openings, circulation, multi-floor straight/L/U stairs, stair approaches and wall clashes, polygon rooms, persistence, migration, and spatial collision data. The WebMCP suite checks catalog count and categories, unique/spec-compatible names, bounded top-level schemas, concise definitions, annotations, successful inspection and mutation, and non-destructive argument failure.
 
 ## Native client prerequisites
 
@@ -31,7 +31,7 @@ Start from a new project unless the case says otherwise. Stable IDs must come fr
 | N02 | “Inspect the active floor and its circulation.” | `inspect_floor` → `inspect_circulation` | Stable room/wall/opening IDs plus reachable/disconnected rooms |
 | N03 | “Add a 12 by 14 ft living room inside the buildable envelope, then validate.” | Inspect first → `create_room` → `validate_layout` → `focus_element` | Created room ID/dimensions, new version, visible room, validation result |
 | N04 | “Add a correctly hosted exterior window and set it to low-e glazing.” | Inspect room/walls → `add_window` → `set_window_properties` | Host wall ID, opening ID, SHGC/VT/U-factor, visible plan and 3D update |
-| N05 | “Create an upper floor and a connected stair, then verify circulation.” | `create_floor` → inspect → create an aligned upper room/landing → `add_stairs` → `inspect_circulation` → `validate_layout` | Source/target floor IDs, derived stair geometry, stair route evidence |
+| N05 | “Create an upper floor and a connected straight, quarter-turn L-shaped, or half-turn U-shaped stair, then verify circulation.” | `create_floor` → inspect → create aligned stair halls → `add_stairs` with `stairType` → `inspect_floor` → `inspect_circulation` → `validate_layout` | Source/target floor IDs, lower/upper entry roles, explicit flight/landing/route geometry, full-width approach evidence |
 | N06 | “Show the result in 3D, focus the stair, and capture a snapshot.” | `switch_view` → `set_camera` or `focus_element` → `take_snapshot` | UI visibly changes; snapshot metadata identifies current project version |
 | N07 | Supply a nonexistent wall ID to an opening command. | Opening tool fails without a mutation | Specific error; unchanged project version and element counts |
 | N08 | Start a capture/export and cancel it if the client exposes cancellation. | Execution observes the abort signal where supported | Safe cancellation; no partial model mutation |

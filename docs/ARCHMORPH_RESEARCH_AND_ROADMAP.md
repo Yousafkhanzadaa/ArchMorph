@@ -163,7 +163,7 @@ The project schema currently contains:
 - Rectangular, L-, T-, U-, and custom orthogonal polygon rooms with stable IDs, floor ownership, ordered vertices, derived bounds, color, and boundary-wall references.
 - Canonical walls with endpoints, thickness, height, adjacent room sides, exterior status, and connectivity.
 - Hosted doors and windows with offsets, dimensions, configuration, and glazing properties.
-- Straight stairs with source floor, position, direction, width, length, four 90-degree rotations, and derived connection geometry.
+- Straight, quarter-turn L-shaped, and half-turn U-shaped stairs with source floor, position, direction, clear flight width, explicit flight runs, four 90-degree plan rotations, and derived connection geometry. L stairs use perpendicular flights and a true L-shaped stairwell; U stairs use parallel return flights, a half landing, and an optional center well.
 - A project-wide lightweight exterior finish preset used by the 3D facade.
 - Current view/navigation state.
 - Activity entries, project version, and update time.
@@ -209,12 +209,12 @@ Future work should preserve this contract. Geometry should not be added directly
 ### 5.3 Circulation and multi-storey navigation
 
 - Room-to-room and room-to-exterior circulation graph derived from doors, including explicit main-entrance-to-room paths and element evidence.
-- Straight stairs connected between adjacent levels.
+- Straight, quarter-turn L-shaped, and half-turn U-shaped stairs connected between adjacent levels as one semantic circulation element.
 - Four plan rotations at 0°, 90°, 180°, and 270° shared by plan, 3D, slab voids, collision, and Walk Mode.
 - Derived rise, riser count, riser height, tread count, tread depth, and recommended run.
-- Stairwell voids in upper floor slabs.
+- True stairwell voids in upper floor slabs, including an L-shaped opening for quarter-turn stairs rather than a rectangular bounding-box cut.
 - Floor-to-floor movement in Walk Mode.
-- Validation for invalid stair connections and concept-level stair geometry.
+- Validation for invalid stair connections, concept-level flight/landing geometry, full-width lower/upper approaches, and walls crossing a stairwell.
 
 The stair checks are design guidance, not a building-code approval. The current thresholds use residential concepts comparable to the [2021 International Residential Code stair provisions](https://codes.iccsafe.org/content/IRC2021P1/chapter-3-building-planning), but the applicable jurisdiction, occupancy, accessibility rules, and adopted code always govern.
 
@@ -402,7 +402,7 @@ Both are required. A door may look correct geometrically but be invalid if it la
 
 Storeys must have explicit elevation and height. Vertical elements must identify source/target levels, occupy space on both, create the appropriate slab opening, and participate in the circulation graph. Editing a level height should recompute stair rise and geometry rather than leaving a visual approximation.
 
-For later stair types, represent flights and landings explicitly. Straight, L-shaped, and U-shaped stairs are more architecturally valuable than decorative spiral variants. Checks should ultimately cover:
+Stair types are represented through explicit flight centerlines, landing polygons, stairwell outlines, access vectors, and continuous routes. Straight, quarter-turn L-shaped, and half-turn U-shaped stairs are implemented. Checks should ultimately cover:
 
 - Clear width.
 - Total rise and run.
@@ -595,7 +595,7 @@ The remaining evidence and submission tasks are more important to the hackathon 
 
 The current refinement pass preserved the product’s interaction model and visual identity while adding or strengthening:
 
-- Connected straight stairs across adjacent floors.
+- Connected straight, quarter-turn L-shaped, and half-turn U-shaped stairs across adjacent floors.
 - Derived riser/tread geometry and concept-level validation.
 - Stairwell voids and consistent 2D/3D representation.
 - Floor-to-floor transitions in Walk Mode.
@@ -607,7 +607,7 @@ The current refinement pass preserved the product’s interaction model and visu
 - Persistence migration and architectural regression coverage for the changed model.
 - Lightweight project-wide stucco, brick, concrete, timber, and metal facade finishes.
 - L-, T-, U-, and custom orthogonal room polygons with exact area/perimeter, vertex editing, canonical wall derivation, persistence, and polygonal 3D slabs/ceilings.
-- Straight-stair quarter-turn rotation across 2D, 3D, collision, slab openings, persistence, and Walk Mode.
+- Straight/L/U stair layouts across 2D, 3D, stairwell openings, persistence, floor inspection, circulation, and Walk Mode, including four plan rotations, independent L-flight runs, landings, wells, return sides, and clear lower/upper approach zones.
 - Explicit entrance-to-room circulation paths with door/stair evidence.
 
 Door opening/closing remains available but was intentionally not heavily polished because it is secondary to spatial correctness and circulation.
@@ -631,18 +631,17 @@ The roadmap is ordered by architectural and competition value, not novelty. Prio
 
 ### P1 — highest-value architectural additions
 
-The focused hackathon P1 slice is now implemented: a lightweight global exterior palette, L/T/U and custom orthogonal rooms, polygon editing/rendering, explicit entrance route evidence, and four straight-stair rotations. The table below records the larger systems intentionally deferred because they do not justify their complexity before submission.
+The focused hackathon P1 slice is now implemented: a lightweight global exterior palette, L/T/U and custom orthogonal rooms, polygon editing/rendering, explicit entrance route evidence, and straight/L/U stairs with four plan rotations. The table below records the larger systems intentionally deferred because they do not justify their complexity before submission.
 
 | Capability | Architectural value | Dependencies and “done” condition |
 | --- | --- | --- |
 | Common roof forms | Building form is incomplete without roofs | Flat, shed, gable, and hip first; roof pitch, bearing/eave line, overhang, drainage direction, openings, selection, dimensions, save/load, plan, section, and 3D support |
-| L- and U-shaped stairs with landings | Common multi-storey circulation | Explicit flights/landings, stairwell opening, source/target levels, Walk Mode path, width/riser/tread/landing/headroom checks, and synchronized editing |
 | Sections and elevations | Essential for vertical understanding | Derived from canonical model; floor lines, openings, stairs, roofs, dimensions, clipping, export, and stable update after edits |
 | Structural grid and basic elements | Adds architectural credibility and coordination | Grids, columns, beams, and load-bearing/non-load-bearing wall classification with snapping, selection, schedules, 2D/3D, save/load, and export |
 | Door and window schedules | Makes openings inspectable as architecture | Stable marks, type, size, host, level, orientation/handing, glazing properties, validation, and export |
 | Advanced circulation and egress concepts | Converts geometry into usable spatial analysis | Multiple exits, travel-distance concepts, dead ends, inaccessible routes, explicit assumptions, and evidence—not code certification |
 
-Spiral stairs are intentionally not an early priority. They are less common, have more complex safety and code constraints, and offer less value than robust straight/L/U stairs.
+Spiral and winder stairs are intentionally not an early priority. They have more complex safety and code constraints and offer less value than robust straight/L/U stairs.
 
 ### P2 — environmental analysis and interoperability
 

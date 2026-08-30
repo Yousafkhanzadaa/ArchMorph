@@ -37,7 +37,7 @@ A representative collaboration loop is:
 - Rectangular, L-, T-, U-, and custom orthogonal polygon rooms.
 - Canonical walls with connectivity, adjacency, and exterior/interior classification.
 - Hosted doors and windows with handing, operation, and glazing-performance properties.
-- Connected straight stairs with four plan rotations, slab openings, and Walk Mode transitions.
+- Connected straight, 90° quarter-turn L-shaped, and 180° half-turn U-shaped stairs with explicit flights, landings, entry/exit approaches, true stairwell openings, four plan rotations, and Walk Mode transitions.
 - Exact dimensions, direct manipulation, snapping, selection, and measurement.
 - Circulation graphs with entrance-to-room route evidence.
 - Validation for overlap, plot/setback violations, opening hosts, circulation, and stairs.
@@ -93,7 +93,7 @@ npm run lint
 npm run build
 ```
 
-`test:architecture` covers canonical geometry, topology, openings, circulation, stairs, polygonal rooms, exterior systems, per-project sites, persistence, migrations, and spatial collision data. `test:webmcp` checks the 51-tool catalog, schema boundaries, annotations, unique names, and representative inspection/mutation failures.
+`test:architecture` covers canonical geometry, topology, openings, circulation, straight/L/U stairs, polygonal rooms, exterior systems, per-project sites, persistence, migrations, and spatial collision data. `test:webmcp` checks the 51-tool catalog, schema boundaries, annotations, unique names, and representative inspection/mutation failures.
 
 The N01–N10 production baseline was verified with ChatGPT desktop 26.825.41651 (build 7345) when the deployed catalog contained 40 tools: N01–N07 and N09–N10 passed, and N08 was N/A because that client exposes no cancellation mechanism. The current 51-tool catalog additionally passed native local discovery and representative exterior-system execution on August 30. See [`docs/WEBMCP_TESTING.md`](docs/WEBMCP_TESTING.md) for the exact records.
 

@@ -9,15 +9,19 @@ import {
   roomContainsPoint,
   roomVertices,
   stairConnection,
+  stairEntryPoint,
   stairFootprint,
+  stairLayout,
   stairLocalPoint,
+  stairPlanOutline,
   stairPlanPoint,
+  stairProgressAt,
   wallLength,
   type NavigationMode,
   type PlanPoint,
   type Project,
 } from "@/lib/architecture";
-import { buildSpatialModel, openingFrameFor, resolveWalkPosition, type CollisionSegment } from "@/lib/spatial3d";
+import { buildSpatialModel, openingFrameFor, orientedSlopeFrame, resolveWalkPosition } from "@/lib/spatial3d";
 
 type ModelViewProps = {
   project: Project;
@@ -69,58 +73,41 @@ function meshBox(
   return mesh;
 }
 
-type PlanRectangle = { x: number; z: number; width: number; length: number };
+function meshSlopeBox(
+  width: number,
+  thickness: number,
+  start: THREE.Vector3,
+  end: THREE.Vector3,
+  material: THREE.Material | THREE.Material[],
+) {
+  const frame = orientedSlopeFrame(start, end);
+  if (!frame) return undefined;
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, thickness, frame.length), material);
+  const basis = new THREE.Matrix4().makeBasis(
+    new THREE.Vector3(frame.xAxis.x, frame.xAxis.y, frame.xAxis.z),
+    new THREE.Vector3(frame.yAxis.x, frame.yAxis.y, frame.yAxis.z),
+    new THREE.Vector3(frame.zAxis.x, frame.zAxis.y, frame.zAxis.z),
+  );
+  mesh.position.set(frame.center.x, frame.center.y, frame.center.z);
+  mesh.quaternion.setFromRotationMatrix(basis);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
 
-function planExtrusion(vertices: PlanPoint[], thickness: number, holes: PlanRectangle[] = []) {
+function planExtrusion(vertices: PlanPoint[], thickness: number, holes: PlanPoint[][] = []) {
   const shape = new THREE.Shape();
   vertices.forEach((point, index) => index ? shape.lineTo(point.x, point.y) : shape.moveTo(point.x, point.y));
   shape.closePath();
   holes.forEach((hole) => {
     const path = new THREE.Path();
-    path.moveTo(hole.x, hole.z);
-    path.lineTo(hole.x, hole.z + hole.length);
-    path.lineTo(hole.x + hole.width, hole.z + hole.length);
-    path.lineTo(hole.x + hole.width, hole.z);
+    [...hole].reverse().forEach((point, index) => index ? path.lineTo(point.x, point.y) : path.moveTo(point.x, point.y));
     path.closePath();
     shape.holes.push(path);
   });
   const geometry = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false });
   geometry.rotateX(Math.PI / 2);
   return geometry;
-}
-
-function cutCollisionSegmentAtStair(segment: CollisionSegment, stair: PlanRectangle) {
-  const dx = segment.x2 - segment.x1;
-  const dz = segment.z2 - segment.z1;
-  let enter = 0;
-  let exit = 1;
-  const limits: Array<[number, number]> = [
-    [-dx, segment.x1 - stair.x],
-    [dx, stair.x + stair.width - segment.x1],
-    [-dz, segment.z1 - stair.z],
-    [dz, stair.z + stair.length - segment.z1],
-  ];
-  for (const [direction, distance] of limits) {
-    if (Math.abs(direction) < 0.0001) {
-      if (distance < 0) return [segment];
-      continue;
-    }
-    const ratio = distance / direction;
-    if (direction < 0) enter = Math.max(enter, ratio);
-    else exit = Math.min(exit, ratio);
-    if (enter > exit) return [segment];
-  }
-  const piece = (start: number, end: number): CollisionSegment => ({
-    ...segment,
-    x1: segment.x1 + dx * start,
-    z1: segment.z1 + dz * start,
-    x2: segment.x1 + dx * end,
-    z2: segment.z1 + dz * end,
-  });
-  return [
-    ...(enter > 0.001 ? [piece(0, enter)] : []),
-    ...(exit < 0.999 ? [piece(exit, 1)] : []),
-  ];
 }
 
 export default function ModelView({
@@ -220,12 +207,15 @@ export default function ModelView({
       );
       const landingCandidate = (connection: (typeof activeConnections)[number]) => {
         const atLowerLanding = connection.lowerFloor.id === floor?.id;
-        const landing = stairPlanPoint(connection.stair, connection.stair.width / 2, atLowerLanding ? connection.stair.length + STAIR_LANDING_CLEARANCE : -STAIR_LANDING_CLEARANCE);
-        const stairYaw = connection.stair.rotation * Math.PI / 180;
+        const level = atLowerLanding ? "lower" : "upper";
+        const landing = stairEntryPoint(connection.stair, level, STAIR_LANDING_CLEARANCE);
+        const threshold = stairEntryPoint(connection.stair, level, 0);
+        const lookX = threshold.x - landing.x;
+        const lookZ = threshold.y - landing.y;
         return {
           x: landing.x,
           z: landing.y,
-          yaw: atLowerLanding ? stairYaw : stairYaw + Math.PI,
+          yaw: Math.atan2(-lookX, -lookZ),
         };
       };
       const selectedConnection = activeConnections.find(({ stair }) => stair.id === selectedId);
@@ -318,7 +308,8 @@ export default function ModelView({
       if (!floor) continue;
       const slabVoids = stairConnections
         .filter((connection) => connection.upperFloor.id === floor.id)
-        .map(({ stair }) => { const footprint = stairFootprint(stair); return { x: footprint.x - 0.08, z: footprint.y - 0.08, width: footprint.width + 0.16, length: footprint.length + 0.16 }; });
+        .map(({ stair }) => stairPlanOutline(stair))
+        .filter((outline) => outline.some((point) => roomContainsPoint(room, point)));
       const slabMaterial = new THREE.MeshStandardMaterial({
         color: colorWithSelection(room.color, selectedId === room.id),
         roughness: 0.82,
@@ -335,7 +326,8 @@ export default function ModelView({
       if (room.type !== "Courtyard") {
         const ceilingVoids = stairConnections
           .filter((connection) => connection.lowerFloor.id === floor.id)
-          .map(({ stair }) => { const footprint = stairFootprint(stair); return { x: footprint.x - 0.08, z: footprint.y - 0.08, width: footprint.width + 0.16, length: footprint.length + 0.16 }; });
+          .map(({ stair }) => stairPlanOutline(stair))
+          .filter((outline) => outline.some((point) => roomContainsPoint(room, point)));
         const ceilingMaterial = new THREE.MeshStandardMaterial({ color: "#f0eee7", roughness: 0.94 });
         const ceiling = new THREE.Mesh(planExtrusion(roomVertices(room), CEILING_THICKNESS, ceilingVoids), ceilingMaterial);
         ceiling.position.y = floor.elevation + floor.height;
@@ -671,6 +663,8 @@ export default function ModelView({
       }
     }
 
+    let renderedStairFlightCount = 0;
+    let renderedStairLandingCount = 0;
     for (const stair of project.stairs) {
       const floor = floorById.get(stair.floorId);
       if (!floor) continue;
@@ -680,9 +674,7 @@ export default function ModelView({
         && connection.upperFloor.id !== project.view.activeFloorId) continue;
       const lowerElevation = connection?.lowerFloor.elevation ?? floor.elevation;
       const rise = connection?.rise ?? floor.height * 0.72;
-      const treadCount = connection?.treadCount ?? 10;
-      const stepLength = stair.length / treadCount;
-      const riserHeight = rise / (treadCount + 1);
+      const layout = stairLayout(stair);
       const selected = selectedId === stair.id;
       const stairMaterial = new THREE.MeshStandardMaterial({
         color: colorWithSelection("#aaa69d", selected),
@@ -697,63 +689,96 @@ export default function ModelView({
         roughness: 0.9,
       });
       const treadThickness = 0.18;
-      const stairRotation = stair.rotation * Math.PI / 180;
-      for (let index = 0; index < treadCount; index += 1) {
-        const treadElevation = lowerElevation + riserHeight * (index + 1);
-        const centerPoint = stairPlanPoint(stair, stair.width / 2, stair.length - stepLength * (index + 0.5));
-        const step = meshBox(
-          [stair.width, treadThickness, stepLength + 0.05],
-          [centerPoint.x, treadElevation - treadThickness / 2, centerPoint.y],
-          stairRotation,
-          stairMaterial,
-        );
-        step.userData.elementId = stair.id;
-        step.userData.stairProgress = (index + 1) / (treadCount + 1);
-        selectable.push(step);
-        scene.add(step);
-      }
-      for (let index = 0; index <= treadCount; index += 1) {
-        const centerPoint = stairPlanPoint(stair, stair.width / 2, stair.length - stepLength * index);
-        const riser = meshBox(
-          [stair.width, riserHeight, 0.12],
-          [
-            centerPoint.x,
-            lowerElevation + riserHeight * (index + 0.5),
-            centerPoint.y,
-          ],
-          stairRotation,
-          riserMaterial,
-        );
-        riser.userData.elementId = stair.id;
-        selectable.push(riser);
-        scene.add(riser);
-      }
+      layout.flights.forEach((flight, flightIndex) => {
+        renderedStairFlightCount += 1;
+        const treadCount = connection?.treadsPerFlight[flightIndex] ?? Math.max(5, Math.round((connection?.treadCount ?? 10) / layout.flights.length));
+        const flightRise = rise * (flight.progressEnd - flight.progressStart);
+        const flightBase = lowerElevation + rise * flight.progressStart;
+        const stepLength = flight.length / treadCount;
+        const riserHeight = flightRise / (treadCount + 1);
+        const start = stairPlanPoint(stair, flight.start.u, flight.start.v);
+        const end = stairPlanPoint(stair, flight.end.u, flight.end.v);
+        const flightYaw = Math.atan2(end.x - start.x, end.y - start.y);
+        const localPointAt = (along: number, lateral = 0) => {
+          const ratio = along / flight.length;
+          const du = (flight.end.u - flight.start.u) / flight.length;
+          const dv = (flight.end.v - flight.start.v) / flight.length;
+          return {
+            u: flight.start.u + (flight.end.u - flight.start.u) * ratio - dv * lateral,
+            v: flight.start.v + (flight.end.v - flight.start.v) * ratio + du * lateral,
+          };
+        };
+        for (let index = 0; index < treadCount; index += 1) {
+          const treadElevation = flightBase + riserHeight * (index + 1);
+          const localCenter = localPointAt(stepLength * (index + 0.5));
+          const centerPoint = stairPlanPoint(stair, localCenter.u, localCenter.v);
+          const step = meshBox(
+            [flight.width, treadThickness, stepLength + 0.05],
+            [centerPoint.x, treadElevation - treadThickness / 2, centerPoint.y],
+            flightYaw,
+            stairMaterial,
+          );
+          step.userData.elementId = stair.id;
+          step.userData.stairProgress = flight.progressStart + (index + 1) / (treadCount + 1) * (flight.progressEnd - flight.progressStart);
+          selectable.push(step);
+          scene.add(step);
+        }
+        for (let index = 0; index <= treadCount; index += 1) {
+          const localCenter = localPointAt(stepLength * index);
+          const centerPoint = stairPlanPoint(stair, localCenter.u, localCenter.v);
+          const riser = meshBox(
+            [flight.width, riserHeight, 0.12],
+            [centerPoint.x, flightBase + riserHeight * (index + 0.5), centerPoint.y],
+            flightYaw,
+            riserMaterial,
+          );
+          riser.userData.elementId = stair.id;
+          selectable.push(riser);
+          scene.add(riser);
+        }
 
-      const stringerLength = Math.hypot(stair.length, rise);
-      const stringerAngle = Math.atan2(rise, stair.length);
-      const stairCenter = stairPlanPoint(stair, stair.width / 2, stair.length / 2);
-      const soffit = meshBox(
-        [Math.max(0.2, stair.width - 0.22), 0.14, stringerLength],
-        [stairCenter.x, lowerElevation + rise / 2 - STAIR_SOFFIT_OFFSET, stairCenter.y],
-        stairRotation,
-        supportMaterial,
-      );
-      soffit.rotation.x = stringerAngle;
-      soffit.userData.elementId = stair.id;
-      selectable.push(soffit);
-      scene.add(soffit);
-      for (const side of [0.18, stair.width - 0.18]) {
-        const stringerCenter = stairPlanPoint(stair, side, stair.length / 2);
-        const stringer = meshBox(
-          [0.16, 0.24, stringerLength],
-          [stringerCenter.x, lowerElevation + rise / 2 - 0.2, stringerCenter.y],
-          stairRotation,
+        const soffit = meshSlopeBox(
+          Math.max(0.2, flight.width - 0.22),
+          0.14,
+          new THREE.Vector3(start.x, flightBase - STAIR_SOFFIT_OFFSET, start.y),
+          new THREE.Vector3(end.x, flightBase + flightRise - STAIR_SOFFIT_OFFSET, end.y),
           supportMaterial,
         );
-        stringer.rotation.x = stringerAngle;
-        stringer.userData.elementId = stair.id;
-        selectable.push(stringer);
-        scene.add(stringer);
+        if (soffit) {
+          soffit.userData.elementId = stair.id;
+          selectable.push(soffit);
+          scene.add(soffit);
+        }
+        for (const side of [-flight.width / 2 + 0.18, flight.width / 2 - 0.18]) {
+          const localStringerStart = localPointAt(0, side);
+          const localStringerEnd = localPointAt(flight.length, side);
+          const stringerStart = stairPlanPoint(stair, localStringerStart.u, localStringerStart.v);
+          const stringerEnd = stairPlanPoint(stair, localStringerEnd.u, localStringerEnd.v);
+          const stringer = meshSlopeBox(
+            0.16,
+            0.24,
+            new THREE.Vector3(stringerStart.x, flightBase - 0.2, stringerStart.y),
+            new THREE.Vector3(stringerEnd.x, flightBase + flightRise - 0.2, stringerEnd.y),
+            supportMaterial,
+          );
+          if (stringer) {
+            stringer.userData.elementId = stair.id;
+            selectable.push(stringer);
+            scene.add(stringer);
+          }
+        }
+      });
+      if (layout.landing) {
+        renderedStairLandingCount += 1;
+        const landingVertices = layout.landing.vertices.map((point) => stairPlanPoint(stair, point.u, point.v));
+        const landing = new THREE.Mesh(planExtrusion(landingVertices, treadThickness), stairMaterial);
+        landing.position.y = lowerElevation + rise * layout.landing.progress;
+        landing.castShadow = true;
+        landing.receiveShadow = true;
+        landing.userData.elementId = stair.id;
+        landing.userData.stairProgress = layout.landing.progress;
+        selectable.push(landing);
+        scene.add(landing);
       }
     }
 
@@ -764,6 +789,8 @@ export default function ModelView({
     canvas.dataset.renderedDoorPanelCount = String(renderedDoorPanelCount);
     canvas.dataset.windowCount = String(project.openings.filter((item) => item.kind === "window").length);
     canvas.dataset.renderedWindowCount = String(renderedWindowCount);
+    canvas.dataset.stairFlightCount = String(renderedStairFlightCount);
+    canvas.dataset.stairLandingCount = String(renderedStairLandingCount);
     canvas.dataset.collisionSegmentCount = String(spatial.collisionSegments.length);
     canvas.dataset.parapetPieceCount = String(renderedParapetCount);
     canvas.dataset.boundaryPieceCount = String(renderedBoundaryPieceCount);
@@ -813,13 +840,9 @@ export default function ModelView({
     const activeStairConnections = stairConnections.filter(
       (connection) => connection.lowerFloor.id === activeFloor?.id || connection.upperFloor.id === activeFloor?.id,
     );
-    const activeCollisions = activeStairConnections.reduce(
-      (segments, { stair }) => {
-        const footprint = stairFootprint(stair);
-        return segments.flatMap((segment) => cutCollisionSegmentAtStair(segment, { x: footprint.x, z: footprint.y, width: footprint.width, length: footprint.length }));
-      },
-      spatial.collisionSegments.filter((segment) => segment.floorId === project.view.activeFloorId),
-    );
+    // A stair no longer erases every wall crossing its bounding box. Valid stair halls remain
+    // navigable; walls that cut through a flight or landing stay real obstructions and validate as clashes.
+    const activeCollisions = spatial.collisionSegments.filter((segment) => segment.floorId === project.view.activeFloorId);
     const pressed = new Set<string>();
     let yaw = camera.rotation.y;
     let pitch = camera.rotation.x;
@@ -827,21 +850,16 @@ export default function ModelView({
     let activeStairId: string | undefined;
 
     const stairAt = (x: number, z: number) => activeStairConnections
-      .filter(({ stair }) => {
-        const local = stairLocalPoint(stair, { x, y: z });
-        return local.u >= 0 && local.u <= stair.width && local.v >= 0 && local.v <= stair.length;
-      })
+      .filter(({ stair }) => stairProgressAt(stair, { x, y: z }) !== undefined)
       .sort((left, right) => {
-        const leftProgress = Math.max(0, Math.min(1, (left.stair.length - stairLocalPoint(left.stair, { x, y: z }).v) / left.stair.length));
-        const rightProgress = Math.max(0, Math.min(1, (right.stair.length - stairLocalPoint(right.stair, { x, y: z }).v) / right.stair.length));
+        const leftProgress = stairProgressAt(left.stair, { x, y: z }) ?? 0;
+        const rightProgress = stairProgressAt(right.stair, { x, y: z }) ?? 0;
         const leftEye = left.lowerFloor.elevation + leftProgress * left.rise + WALK_EYE_HEIGHT;
         const rightEye = right.lowerFloor.elevation + rightProgress * right.rise + WALK_EYE_HEIGHT;
         return Math.abs(camera.position.y - leftEye) - Math.abs(camera.position.y - rightEye);
       })[0];
 
-    const stairProgress = (connection: (typeof activeStairConnections)[number], x: number, z: number) => (
-      Math.max(0, Math.min(1, (connection.stair.length - stairLocalPoint(connection.stair, { x, y: z }).v) / connection.stair.length))
-    );
+    const stairProgress = (connection: (typeof activeStairConnections)[number], x: number, z: number) => stairProgressAt(connection.stair, { x, y: z }) ?? 0;
 
     const canWalkUnderStair = (connection: (typeof activeStairConnections)[number], x: number, z: number) => {
       if (activeFloor?.id !== connection.lowerFloor.id) return false;
@@ -871,8 +889,16 @@ export default function ModelView({
         } else if (nextStair) {
           const enteringDifferentStair = previousStair?.stair.id !== nextStair.stair.id;
           const previousLocal = stairLocalPoint(nextStair.stair, { x: previousX, y: previousZ });
-          const enteredFromLowerLanding = enteringDifferentStair && previousLocal.v >= nextStair.stair.length - 0.05;
-          const enteredFromUpperLanding = enteringDifferentStair && previousLocal.v <= 0.05;
+          const layout = stairLayout(nextStair.stair);
+          const enteredThrough = (entry: typeof layout.lowerEntry) => {
+            const deltaU = previousLocal.u - entry.u;
+            const deltaV = previousLocal.v - entry.v;
+            const outwardDistance = deltaU * entry.outwardU + deltaV * entry.outwardV;
+            const lateralDistance = -deltaU * entry.outwardV + deltaV * entry.outwardU;
+            return enteringDifferentStair && outwardDistance >= -0.05 && Math.abs(lateralDistance) <= nextStair.stair.width / 2 + 0.05;
+          };
+          const enteredFromLowerLanding = enteredThrough(layout.lowerEntry);
+          const enteredFromUpperLanding = enteredThrough(layout.upperEntry);
           const shouldClimb = activeFloor?.id === nextStair.lowerFloor.id && enteredFromLowerLanding;
           const shouldDescend = activeFloor?.id === nextStair.upperFloor.id && enteredFromUpperLanding;
           if (shouldClimb || shouldDescend) {
@@ -900,7 +926,7 @@ export default function ModelView({
           transitionRequested = true;
           const targetFloor = floorById.get(targetFloorId);
           const ascending = targetFloorId === nextStair.upperFloor.id;
-          const landing = stairPlanPoint(nextStair.stair, nextStair.stair.width / 2, ascending ? -STAIR_LANDING_CLEARANCE : nextStair.stair.length + STAIR_LANDING_CLEARANCE);
+          const landing = stairEntryPoint(nextStair.stair, ascending ? "upper" : "lower", STAIR_LANDING_CLEARANCE);
           walkPoseRef.current = {
             key: poseKeyForFloor(targetFloorId),
             x: landing.x,
@@ -1161,11 +1187,11 @@ export default function ModelView({
                 );
               })}
               {minimapStairs.map((stair) => {
-                const corners = [stairPlanPoint(stair, 0, 0), stairPlanPoint(stair, stair.width, 0), stairPlanPoint(stair, stair.width, stair.length), stairPlanPoint(stair, 0, stair.length)];
+                const outline = stairPlanOutline(stair);
                 return <polygon
                   key={stair.id}
                   className="walk-minimap__stair"
-                  points={corners.map((point) => `${point.x},${point.y}`).join(" ")}
+                  points={outline.map((point) => `${point.x},${point.y}`).join(" ")}
                 />;
               })}
               <g ref={minimapMarkerRef} className="walk-minimap__marker">

@@ -81,6 +81,20 @@ export type SpatialModelOptions = {
   doorMode?: "model" | "all-open";
 };
 
+export type SpatialPoint3 = {
+  x: number;
+  y: number;
+  z: number;
+};
+
+export type OrientedSlopeFrame = {
+  center: SpatialPoint3;
+  length: number;
+  xAxis: SpatialPoint3;
+  yAxis: SpatialPoint3;
+  zAxis: SpatialPoint3;
+};
+
 type AxisWallRectangle = {
   left: number;
   right: number;
@@ -91,6 +105,33 @@ type AxisWallRectangle = {
 
 function rounded(value: number) {
   return Math.round(value * 1000) / 1000;
+}
+
+export function orientedSlopeFrame(start: SpatialPoint3, end: SpatialPoint3): OrientedSlopeFrame | undefined {
+  const delta = { x: end.x - start.x, y: end.y - start.y, z: end.z - start.z };
+  const length = Math.hypot(delta.x, delta.y, delta.z);
+  const horizontalLength = Math.hypot(delta.x, delta.z);
+  if (length <= EPSILON || horizontalLength <= EPSILON) return undefined;
+
+  const zAxis = { x: delta.x / length, y: delta.y / length, z: delta.z / length };
+  const xAxis = { x: delta.z / horizontalLength, y: 0, z: -delta.x / horizontalLength };
+  const yAxis = {
+    x: zAxis.y * xAxis.z - zAxis.z * xAxis.y,
+    y: zAxis.z * xAxis.x - zAxis.x * xAxis.z,
+    z: zAxis.x * xAxis.y - zAxis.y * xAxis.x,
+  };
+
+  return {
+    center: {
+      x: (start.x + end.x) / 2,
+      y: (start.y + end.y) / 2,
+      z: (start.z + end.z) / 2,
+    },
+    length,
+    xAxis,
+    yAxis,
+    zAxis,
+  };
 }
 
 function wallDirection(wall: Wall) {

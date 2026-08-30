@@ -95,6 +95,22 @@ await tools.find((tool) => tool.name === "configure_plot")!.execute({ width: 40,
 assert.equal(project.plot.width, 40, "configure_plot should edit per-project land geometry");
 assert.equal(project.plot.orientation, "West");
 
+const createdFloor = await tools.find((tool) => tool.name === "create_floor")!.execute({ name: "WebMCP Upper", height: 9 }) as { floor: { id: string } };
+await createRoom.execute({ floorId: createdFloor.floor.id, name: "WebMCP Upper Hall", roomType: "Custom", x: 3, y: 12, width: 10, length: 10 });
+const addStairs = tools.find((tool) => tool.name === "add_stairs")!;
+const addStairsSchema = addStairs.inputSchema as { properties: { stairType: { enum: string[] } } };
+assert.deepEqual(addStairsSchema.properties.stairType.enum, ["straight", "l-shaped", "u-shaped"], "WebMCP should advertise all three architectural stair configurations");
+const addedUStair = await addStairs.execute({ floorId: "floor-ground", x: 4, y: 13, width: 3, length: 5, direction: "up", stairType: "u-shaped", landingDepth: 3, wellWidth: 0.5, turnSide: "left" }) as { stair: { id: string; stairType: string } };
+assert.equal(addedUStair.stair.stairType, "u-shaped", "WebMCP should create one semantic U-shaped stair");
+const updatedUStair = await tools.find((tool) => tool.name === "update_stairs")!.execute({ stairId: addedUStair.stair.id, turnSide: "right", wellWidth: 1 }) as { stair: { turnSide: string; wellWidth: number } };
+assert.deepEqual({ turnSide: updatedUStair.stair.turnSide, wellWidth: updatedUStair.stair.wellWidth }, { turnSide: "right", wellWidth: 1 }, "WebMCP should configure U-shaped return side and center well");
+const convertedLStair = await tools.find((tool) => tool.name === "update_stairs")!.execute({ stairId: addedUStair.stair.id, stairType: "l-shaped", upperFlightLength: 6, landingDepth: 3, turnSide: "left" }) as { stair: { stairType: string; upperFlightLength: number; turnSide: string } };
+assert.deepEqual({ stairType: convertedLStair.stair.stairType, upperFlightLength: convertedLStair.stair.upperFlightLength, turnSide: convertedLStair.stair.turnSide }, { stairType: "l-shaped", upperFlightLength: 6, turnSide: "left" }, "WebMCP should convert a stable stair to a configured quarter-turn L shape");
+const inspectedUpperStairs = await tools.find((tool) => tool.name === "inspect_floor")!.execute({ floorId: createdFloor.floor.id }) as { stairDetails: Array<{ roleOnFloor: string; stair: { stairType: string }; layout: { flights: unknown[]; route: unknown[] } }> };
+assert.equal(inspectedUpperStairs.stairDetails[0]?.roleOnFloor, "upper-entry", "floor inspection should identify the stair's architectural role on the selected floor");
+assert.equal(inspectedUpperStairs.stairDetails[0]?.stair.stairType, "l-shaped");
+assert.equal(inspectedUpperStairs.stairDetails[0]?.layout.flights.length, 2, "WebMCP inspection should expose explicit L-stair flights and route geometry");
+
 const exteriorWall = project.walls.find((wall) => wall.exterior && wall.roomIds.includes(project.rooms[0].id))!;
 await tools.find((tool) => tool.name === "set_wall_finish")!.execute({ wallId: exteriorWall.id, finish: "brick" });
 await tools.find((tool) => tool.name === "set_roof")!.execute({ parapetEnabled: true, parapetHeight: 3.5, finish: "concrete" });
@@ -163,10 +179,10 @@ assert.equal(JSON.stringify(project), invalidHostSnapshot, "an invalid window ho
 const cancelledSnapshot = new AbortController();
 cancelledSnapshot.abort(new DOMException("Native snapshot cancelled", "AbortError"));
 await assert.rejects(
-  tools.find((tool) => tool.name === "take_snapshot")!.execute(
+  () => Promise.resolve(tools.find((tool) => tool.name === "take_snapshot")!.execute(
     { download: false },
     { signal: cancelledSnapshot.signal },
-  ),
+  )),
   /Native snapshot cancelled/,
   "take_snapshot should forward a native cancellation signal",
 );

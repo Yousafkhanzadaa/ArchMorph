@@ -57,7 +57,8 @@ import {
   roomContainsPoint,
   roomTypes,
   stairConnection,
-  stairFootprint,
+  stairAccessPolygon,
+  stairEntryPoint,
   validateLayout,
   wallCardinalFacing,
   wallLength,
@@ -69,6 +70,8 @@ import {
   type RoomType,
   type RoomShape,
   type StairRotation,
+  type StairType,
+  type StairTurnSide,
   type ExteriorFinishId,
   type FacadeFeatureKind,
   type RailingStyle,
@@ -110,7 +113,7 @@ const toolItems: Array<{ id: CanvasTool; label: string; icon: typeof MousePointe
   { id: "wall", label: "Draw wall", icon: Minus, key: "W" },
   { id: "door", label: "Place door", icon: DoorOpen, key: "D" },
   { id: "window", label: "Place window", icon: PanelTop, key: "N" },
-  { id: "stair", label: "Place straight stair", icon: Layers3, key: "S" },
+  { id: "stair", label: "Place stair", icon: Layers3, key: "S" },
   { id: "measure", label: "Measure", icon: Ruler, key: "M" },
 ];
 
@@ -125,6 +128,12 @@ const defaultRoomSize: Record<RoomType, [number, number]> = {
   Storage: [5, 6],
   Courtyard: [10, 10],
   Custom: [10, 10],
+};
+
+const stairTypeLabel: Record<StairType, string> = {
+  straight: "Straight",
+  "l-shaped": "L-shaped",
+  "u-shaped": "U-shaped",
 };
 
 const roomSwatches: Record<RoomType, string> = {
@@ -296,6 +305,7 @@ export default function Studio() {
   const [tool, setTool] = useState<CanvasTool>("select");
   const [roomType, setRoomType] = useState<RoomType>("Living Room");
   const [roomShape, setRoomShape] = useState<Exclude<RoomShape, "custom">>("rectangle");
+  const [stairType, setStairType] = useState<StairType>("straight");
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("properties");
   const [validation, setValidation] = useState<ValidationReport>(() => validateLayout(project));
   const [debugMode, setDebugMode] = useState(false);
@@ -619,11 +629,21 @@ export default function Studio() {
   const selectedBalcony = project.balconies.find((item) => item.id === selectedId);
   const selectedFacadeFeature = project.facadeFeatures.find((item) => item.id === selectedId);
   const selectedStairConnection = selectedStair ? stairConnection(project, selectedStair) : undefined;
-  const selectedStairFootprint = selectedStair ? stairFootprint(selectedStair) : undefined;
-  const selectedStairRoom = selectedStair && selectedStairFootprint ? project.rooms.find((room) => (
-    room.floorId === selectedStair.floorId
-    && roomContainsPoint(room, { x: selectedStairFootprint.x + selectedStairFootprint.width / 2, y: selectedStairFootprint.y + selectedStairFootprint.length / 2 })
-  )) : undefined;
+  const selectedStairRoom = selectedStair && selectedStairConnection ? (() => {
+    const activeIsLower = selectedStairConnection.lowerFloor.id === project.view.activeFloorId;
+    const level = activeIsLower ? "lower" : "upper";
+    const point = stairEntryPoint(selectedStair, level, selectedStair.width / 2);
+    return project.rooms.find((room) => room.floorId === project.view.activeFloorId && roomContainsPoint(room, point));
+  })() : undefined;
+  const selectedStairAccess = selectedStair && selectedStairConnection ? (["lower", "upper"] as const).map((level) => {
+    const floor = level === "lower" ? selectedStairConnection.lowerFloor : selectedStairConnection.upperFloor;
+    const center = stairEntryPoint(selectedStair, level, selectedStair.width / 2);
+    const polygon = stairAccessPolygon(selectedStair, level);
+    const room = project.rooms.find((candidate) => candidate.floorId === floor.id
+      && roomContainsPoint(candidate, center)
+      && polygon.every((point) => roomContainsPoint(candidate, point)));
+    return { level, floor, room };
+  }) : [];
   const selectedOpeningWall = selectedOpening ? project.walls.find((item) => item.id === selectedOpening.wallId) : undefined;
   const selectedFacadeFacing = selectedOpeningWall ? wallCardinalFacing(project, selectedOpeningWall) : undefined;
   const activeFloor = project.floors.find((item) => item.id === project.view.activeFloorId)!;
@@ -708,9 +728,14 @@ export default function Studio() {
       return;
     }
     const width = 3.5;
-    const length = recommendedStairRun(project, project.view.activeFloorId, direction);
-    const x = Math.max(0, Math.min(point.x - width / 2, project.plot.width - width));
-    const y = Math.max(0, Math.min(point.y - length / 2, project.plot.length - length));
+    const length = recommendedStairRun(project, project.view.activeFloorId, direction, stairType);
+    const upperFlightLength = length;
+    const landingDepth = width;
+    const wellWidth = 0.5;
+    const footprintWidth = stairType === "u-shaped" ? width * 2 + wellWidth : stairType === "l-shaped" ? upperFlightLength + landingDepth : width;
+    const footprintLength = stairType === "straight" ? length : length + landingDepth;
+    const x = Math.max(0, Math.min(point.x - footprintWidth / 2, project.plot.width - footprintWidth));
+    const y = Math.max(0, Math.min(point.y - footprintLength / 2, project.plot.length - footprintLength));
     try {
       const outcome = commit({
         type: "add_stairs",
@@ -719,7 +744,12 @@ export default function Studio() {
         y: Math.round(y * 2) / 2,
         width,
         length,
+        upperFlightLength,
         direction,
+        stairType,
+        landingDepth,
+        wellWidth,
+        turnSide: "left",
       });
       const stair = outcome.result.stair as { id?: string } | undefined;
       if (stair?.id) setSelectedId(stair.id);
@@ -925,6 +955,12 @@ export default function Studio() {
               </div>
             </Section>
 
+            <Section title="Stairs" action={<span className="section-hint">CLICK TO PLACE</span>}>
+              <label className="field field-full"><span>Stair configuration</span><select value={stairType} onChange={(event) => { setStairType(event.target.value as StairType); setTool("stair"); }}><option value="straight">Straight · one flight</option><option value="l-shaped">L-shaped · 90° quarter turn</option><option value="u-shaped">U-shaped · 180° half turn</option></select></label>
+              <button type="button" className={`walk-inside-button ${tool === "stair" ? "is-active" : ""}`} onClick={() => setTool("stair")}><Layers3 size={15} /> Place {stairTypeLabel[stairType]} stair</button>
+              <p className="technical-note">{stairType === "u-shaped" ? "Two parallel flights reverse 180° at a half landing for a compact stacked stair core." : stairType === "l-shaped" ? "Two perpendicular flights turn 90° at a quarter landing to fit a room corner." : "One continuous flight with access at opposite ends."} Both connected floors require a clear approach outside the stair.</p>
+            </Section>
+
             <Section title="Floors" action={
               <button className="text-action" type="button" onClick={() => safeCommit({ type: "create_floor" })}><Plus size={13} /> Add</button>
             }>
@@ -1011,7 +1047,7 @@ export default function Studio() {
           <div className="statusbar">
             <span><span className="status-dot" /> {activeFloor.name}</span>
             <span>{toolItems.find((item) => item.id === tool)?.label}</span>
-            <span className="status-message">{project.view.mode === "3d" && navigationMode === "walk" ? "WASD / arrows to move · Walk onto a stair to change levels · Minimap tracks your floor and room" : tool === "room" ? `Click the plot to place a ${roomType.toLowerCase()}` : tool === "stair" ? "Click the plan to place a straight stair between adjacent floors" : tool === "door" || tool === "window" ? `Click a wall to add a ${tool} · Click an existing ${tool} to remove it` : project.view.mode === "3d" ? "Drag to orbit · Shift-drag to pan · Scroll to zoom" : "Drag rooms and stairs to move · Draw walls with orthogonal / 45° snapping"}</span>
+            <span className="status-message">{project.view.mode === "3d" && navigationMode === "walk" ? "WASD / arrows to move · Follow the stair flights and landing to change levels · Minimap tracks your floor and room" : tool === "room" ? `Click the plot to place a ${roomType.toLowerCase()}` : tool === "stair" ? `Click the plan to place a ${stairTypeLabel[stairType]} stair between adjacent floors` : tool === "door" || tool === "window" ? `Click a wall to add a ${tool} · Click an existing ${tool} to remove it` : project.view.mode === "3d" ? "Drag to orbit · Shift-drag to pan · Scroll to zoom" : "Drag rooms and stairs to move · Draw walls with orthogonal / 45° snapping"}</span>
             {debugMode && <span>Project v{project.version}</span>}
           </div>
         </section>
@@ -1103,23 +1139,39 @@ export default function Studio() {
                   </>
                 ) : selectedStair ? (
                   <>
-                    <Section title="Straight stair geometry">
+                    <Section title={`${stairTypeLabel[selectedStair.stairType]} stair geometry`}>
+                      <label className="field field-full"><span>Stair type</span><select value={selectedStair.stairType} onChange={(event) => safeCommit({ type: "update_stairs", stairId: selectedStair.id, stairType: event.target.value as StairType })}><option value="straight">Straight · one flight</option><option value="l-shaped">L-shaped · 90° quarter turn</option><option value="u-shaped">U-shaped · 180° half turn</option></select></label>
                       <div className="field-grid">
-                        <NumberField label="Width" value={selectedStair.width} min={3} onCommit={(width) => safeCommit({ type: "update_stairs", stairId: selectedStair.id, width })} />
-                        <NumberField label="Run length" value={selectedStair.length} min={6} onCommit={(length) => safeCommit({ type: "update_stairs", stairId: selectedStair.id, length })} />
+                        <NumberField label="Clear flight width" value={selectedStair.width} min={3} onCommit={(width) => safeCommit({ type: "update_stairs", stairId: selectedStair.id, width })} />
+                        <NumberField label={selectedStair.stairType === "u-shaped" ? "Run per flight" : selectedStair.stairType === "l-shaped" ? "Lower-flight run" : "Run length"} value={selectedStair.length} min={selectedStair.stairType === "straight" ? 6 : 3} onCommit={(length) => safeCommit({ type: "update_stairs", stairId: selectedStair.id, length })} />
+                        {selectedStair.stairType === "l-shaped" && <NumberField label="Upper-flight run" value={selectedStair.upperFlightLength} min={3} onCommit={(upperFlightLength) => safeCommit({ type: "update_stairs", stairId: selectedStair.id, upperFlightLength })} />}
                         <NumberField label="X position" value={selectedStair.x} min={0} onCommit={(x) => safeCommit({ type: "update_stairs", stairId: selectedStair.id, x })} />
                         <NumberField label="Y position" value={selectedStair.y} min={0} onCommit={(y) => safeCommit({ type: "update_stairs", stairId: selectedStair.id, y })} />
                       </div>
+                      {selectedStair.stairType !== "straight" && <>
+                        <div className="field-grid stair-direction-field">
+                          <NumberField label={selectedStair.stairType === "u-shaped" ? "Half-landing depth" : "Quarter-landing size"} value={selectedStair.landingDepth} min={selectedStair.width} onCommit={(landingDepth) => safeCommit({ type: "update_stairs", stairId: selectedStair.id, landingDepth })} />
+                          {selectedStair.stairType === "u-shaped" && <NumberField label="Center well" value={selectedStair.wellWidth} min={0} max={8} step={0.25} onCommit={(wellWidth) => safeCommit({ type: "update_stairs", stairId: selectedStair.id, wellWidth })} />}
+                        </div>
+                        <label className="field field-full stair-direction-field"><span>{selectedStair.stairType === "u-shaped" ? "Return direction" : "Quarter-turn direction"}</span><select value={selectedStair.turnSide} onChange={(event) => safeCommit({ type: "update_stairs", stairId: selectedStair.id, turnSide: event.target.value as StairTurnSide })}><option value="left">Turn left while ascending</option><option value="right">Turn right while ascending</option></select></label>
+                      </>}
                       <label className="field field-full stair-direction-field"><span>Connection direction</span><select value={selectedStair.direction} onChange={(event) => safeCommit({ type: "update_stairs", stairId: selectedStair.id, direction: event.target.value as "up" | "down" })}><option value="up">Up to next floor</option><option value="down">Down to previous floor</option></select></label>
                       <label className="field field-full stair-direction-field"><span>Plan rotation</span><select value={selectedStair.rotation} onChange={(event) => safeCommit({ type: "update_stairs", stairId: selectedStair.id, rotation: Number(event.target.value) as StairRotation })}><option value={0}>0°</option><option value={90}>90°</option><option value={180}>180°</option><option value={270}>270°</option></select></label>
                       <button type="button" className="walk-inside-button" onClick={() => safeCommit({ type: "update_stairs", stairId: selectedStair.id, rotation: ((selectedStair.rotation + 90) % 360) as StairRotation })}><RotateCw size={15} /> Rotate 90°</button>
                     </Section>
                     <Section title="Vertical connection">
                       {selectedStairConnection ? (
-                        <div className="detail-list"><span>Connects <b>{selectedStairConnection.sourceFloor.name} → {selectedStairConnection.targetFloor.name}</b></span><span>Floor-to-floor rise <b>{selectedStairConnection.rise} ft</b></span><span>Concept risers <b>{selectedStairConnection.riserCount} × {(selectedStairConnection.riserHeight * 12).toFixed(2)} in</b></span><span>Concept tread depth <b>{(selectedStairConnection.treadDepth * 12).toFixed(2)} in</b></span><span>Recommended straight run <b>{selectedStairConnection.recommendedRun} ft</b></span></div>
+                        <div className="detail-list"><span>Connects <b>{selectedStairConnection.sourceFloor.name} → {selectedStairConnection.targetFloor.name}</b></span><span>Configuration <b>{selectedStairConnection.flightCount} flight{selectedStairConnection.flightCount === 1 ? "" : "s"}{selectedStair.stairType === "l-shaped" ? " + quarter landing" : selectedStair.stairType === "u-shaped" ? " + half landing" : ""}</b></span><span>Floor-to-floor rise <b>{selectedStairConnection.rise} ft</b></span><span>Concept risers <b>{selectedStairConnection.riserCount} × {(selectedStairConnection.riserHeight * 12).toFixed(2)} in</b></span><span>Concept tread depth{selectedStairConnection.flightCount === 2 ? "s" : ""} <b>{selectedStairConnection.treadDepths.map((depth) => `${(depth * 12).toFixed(2)} in`).join(" / ")}</b></span>{selectedStairConnection.landingElevation !== undefined && <span>Landing elevation <b>{selectedStairConnection.landingElevation} ft</b></span>}<span>Recommended run{selectedStairConnection.flightCount === 2 ? "s" : ""} <b>{selectedStairConnection.recommendedRuns.map((run) => `${run} ft`).join(" / ")}</b></span></div>
                       ) : <p className="technical-note is-warning">This stair has no adjacent destination floor in its current direction.</p>}
-                      <p className="technical-note">Concept check uses a 7¾ in maximum riser and 10 in minimum tread. Landings, headroom, handrails, guards, structure, and local code still require project-specific review.</p>
+                      <p className="technical-note">Concept check uses a 7¾ in maximum riser and 10 in minimum tread. Turning stairs split the rise across two flights and require a landing at least as large as the clear flight width. Validation also checks a full-width approach on both floors and walls crossing the stairwell. Headroom, handrails, guards, structure, and local code still require project-specific review.</p>
                     </Section>
+                    {selectedStairConnection && <Section title="Entry and exit clearance">
+                      <div className="detail-list">
+                        {selectedStairAccess.map(({ level, floor, room }) => <span key={level}>{level === "lower" ? "Lower entry" : "Upper exit"} · {floor.name} <b>{room ? `Clear in ${room.name}` : "Needs a clear stair hall"}</b></span>)}
+                        <span>Required approach <b>{selectedStair.width} × {selectedStair.width} ft</b></span>
+                      </div>
+                      <p className="technical-note">The dashed plan rectangle is usable floor area outside the stair—not part of the flight. Keep it inside one room and free of crossing walls.</p>
+                    </Section>}
                     <button type="button" className="walk-inside-button inspector-walk-button" onClick={() => safeCommit({ type: "set_navigation_mode", mode: "walk", roomId: selectedStairRoom?.id })}><Footprints size={15} /> Test this connection in Walk Mode</button>
                   </>
                 ) : selectedBalcony ? (

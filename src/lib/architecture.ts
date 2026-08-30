@@ -28,6 +28,8 @@ export type WallSide = "north" | "east" | "south" | "west";
 export type PlanPoint = { x: number; y: number };
 export type RoomShape = "rectangle" | "l-shape" | "t-shape" | "u-shape" | "custom";
 export type StairRotation = 0 | 90 | 180 | 270;
+export type StairType = "straight" | "l-shaped" | "u-shaped";
+export type StairTurnSide = "left" | "right";
 export type ExteriorFinishId = "stucco" | "brick" | "concrete" | "timber" | "metal";
 
 export const exteriorFinishPresets: Record<ExteriorFinishId, {
@@ -218,10 +220,21 @@ export type Stair = {
   floorId: string;
   x: number;
   y: number;
+  /** Clear width of one flight. */
   width: number;
+  /** Horizontal run of one flight. */
   length: number;
+  /** Horizontal run of the upper flight of an L-shaped stair. Retained on other types for reversible conversion. */
+  upperFlightLength: number;
   direction: "up" | "down";
   rotation: StairRotation;
+  stairType: StairType;
+  /** Clear landing dimension in the direction of the lower flight. */
+  landingDepth: number;
+  /** Clear gap between the parallel flights of a U-shaped stair. */
+  wellWidth: number;
+  /** Left/right quarter turn or half-turn return when ascending the lower flight. */
+  turnSide: StairTurnSide;
 };
 
 export type StairConnection = {
@@ -235,7 +248,13 @@ export type StairConnection = {
   riserHeight: number;
   treadCount: number;
   treadDepth: number;
+  treadDepths: number[];
   recommendedRun: number;
+  recommendedRuns: number[];
+  flightCount: 1 | 2;
+  risersPerFlight: number[];
+  treadsPerFlight: number[];
+  landingElevation?: number;
 };
 
 export type ActivityEntry = {
@@ -288,6 +307,8 @@ export type ValidationIssue = {
     | "DISCONNECTED_CIRCULATION"
     | "INVALID_STAIR_CONNECTION"
     | "INVALID_STAIR_GEOMETRY"
+    | "STAIR_ACCESS_CLEARANCE"
+    | "STAIR_WALL_CLASH"
     | "OPENING_WITHOUT_ADJACENCY"
     | "OPENING_OVERLAP"
     | "WALL_OUTSIDE_PLOT"
@@ -446,8 +467,13 @@ export type ArchitectureOperation =
       y: number;
       width: number;
       length: number;
+      upperFlightLength?: number;
       direction?: "up" | "down";
       rotation?: StairRotation;
+      stairType?: StairType;
+      landingDepth?: number;
+      wellWidth?: number;
+      turnSide?: StairTurnSide;
     }
   | {
       type: "update_stairs";
@@ -456,8 +482,13 @@ export type ArchitectureOperation =
       y?: number;
       width?: number;
       length?: number;
+      upperFlightLength?: number;
       direction?: "up" | "down";
       rotation?: StairRotation;
+      stairType?: StairType;
+      landingDepth?: number;
+      wellWidth?: number;
+      turnSide?: StairTurnSide;
     }
   | { type: "set_wall_finish"; wallId: string; finish?: ExteriorFinishId }
   | {
@@ -584,7 +615,7 @@ export function createInitialProject(): Project {
   };
 
   return {
-    schemaVersion: 5,
+    schemaVersion: 7,
     id: "project-archmorph-home",
     name: "Untitled Residence",
     unit: "ft",
@@ -717,24 +748,269 @@ export function roomContainsPoint(room: Room, point: PlanPoint) {
   return inside;
 }
 
-export function stairFootprint(stair: Pick<Stair, "x" | "y" | "width" | "length" | "rotation">) {
-  const rotated = stair.rotation === 90 || stair.rotation === 270;
-  return { x: stair.x, y: stair.y, width: rotated ? stair.length : stair.width, length: rotated ? stair.width : stair.length };
+type StairGeometry = Pick<Stair, "x" | "y" | "width" | "length" | "upperFlightLength" | "rotation" | "stairType" | "landingDepth" | "wellWidth" | "turnSide">;
+
+export type StairLocalPoint = { u: number; v: number };
+
+export type StairFlightLayout = {
+  id: "single" | "lower" | "upper";
+  /** Ascending centerline start and end, in unrotated stair-local coordinates. */
+  start: StairLocalPoint;
+  end: StairLocalPoint;
+  width: number;
+  length: number;
+  progressStart: number;
+  progressEnd: number;
+};
+
+export type StairLayout = {
+  localWidth: number;
+  localLength: number;
+  flights: StairFlightLayout[];
+  /** True stairwell outline. L-shaped stairs use an L-shaped polygon rather than a bounding rectangle. */
+  outline: StairLocalPoint[];
+  landing?: { vertices: StairLocalPoint[]; progress: number };
+  /** Continuous centerline route, including level travel across an intermediate landing. */
+  route: Array<StairLocalPoint & { progress: number }>;
+  lowerEntry: StairLocalPoint & { outwardU: number; outwardV: number };
+  upperEntry: StairLocalPoint & { outwardU: number; outwardV: number };
+};
+
+function compactStairPolygon(points: StairLocalPoint[]) {
+  return points.filter((point, index) => {
+    const previous = points[(index + points.length - 1) % points.length];
+    return Math.abs(point.u - previous.u) > 0.001 || Math.abs(point.v - previous.v) > 0.001;
+  });
 }
 
-/** Maps width/run-local stair coordinates into plan coordinates. Local v=0 is the upper landing. */
-export function stairPlanPoint(stair: Pick<Stair, "x" | "y" | "width" | "length" | "rotation">, u: number, v: number): PlanPoint {
-  if (stair.rotation === 90) return { x: stair.x + v, y: stair.y + stair.width - u };
-  if (stair.rotation === 180) return { x: stair.x + stair.width - u, y: stair.y + stair.length - v };
-  if (stair.rotation === 270) return { x: stair.x + stair.length - v, y: stair.y + u };
+function stairFlightPoint(flight: StairFlightLayout, along: number, lateral = 0): StairLocalPoint {
+  const du = (flight.end.u - flight.start.u) / flight.length;
+  const dv = (flight.end.v - flight.start.v) / flight.length;
+  return {
+    u: flight.start.u + du * along - dv * lateral,
+    v: flight.start.v + dv * along + du * lateral,
+  };
+}
+
+export function stairFlightCorners(flight: StairFlightLayout) {
+  return [
+    stairFlightPoint(flight, 0, -flight.width / 2),
+    stairFlightPoint(flight, flight.length, -flight.width / 2),
+    stairFlightPoint(flight, flight.length, flight.width / 2),
+    stairFlightPoint(flight, 0, flight.width / 2),
+  ];
+}
+
+export function stairLayout(stair: StairGeometry): StairLayout {
+  if (stair.stairType === "straight") {
+    const flight: StairFlightLayout = {
+      id: "single",
+      start: { u: stair.width / 2, v: stair.length },
+      end: { u: stair.width / 2, v: 0 },
+      width: stair.width,
+      length: stair.length,
+      progressStart: 0,
+      progressEnd: 1,
+    };
+    return {
+      localWidth: stair.width,
+      localLength: stair.length,
+      flights: [flight],
+      outline: [{ u: 0, v: 0 }, { u: stair.width, v: 0 }, { u: stair.width, v: stair.length }, { u: 0, v: stair.length }],
+      route: [{ ...flight.start, progress: 0 }, { ...flight.end, progress: 1 }],
+      lowerEntry: { ...flight.start, outwardU: 0, outwardV: 1 },
+      upperEntry: { ...flight.end, outwardU: 0, outwardV: -1 },
+    };
+  }
+
+  if (stair.stairType === "l-shaped") {
+    const landing = Math.max(stair.width, stair.landingDepth);
+    const lowerU = stair.turnSide === "left" ? stair.upperFlightLength + landing - stair.width / 2 : stair.width / 2;
+    const upperStartU = stair.turnSide === "left" ? stair.upperFlightLength : landing;
+    const upperEndU = stair.turnSide === "left" ? 0 : landing + stair.upperFlightLength;
+    const lower: StairFlightLayout = {
+      id: "lower",
+      start: { u: lowerU, v: landing + stair.length },
+      end: { u: lowerU, v: landing },
+      width: stair.width,
+      length: stair.length,
+      progressStart: 0,
+      progressEnd: 0.5,
+    };
+    const upper: StairFlightLayout = {
+      id: "upper",
+      start: { u: upperStartU, v: stair.width / 2 },
+      end: { u: upperEndU, v: stair.width / 2 },
+      width: stair.width,
+      length: stair.upperFlightLength,
+      progressStart: 0.5,
+      progressEnd: 1,
+    };
+    const landingU = stair.turnSide === "left" ? stair.upperFlightLength : 0;
+    const landingCenter = { u: landingU + landing / 2, v: landing / 2 };
+    const outline = stair.turnSide === "left"
+      ? [
+          { u: 0, v: 0 }, { u: stair.upperFlightLength + landing, v: 0 },
+          { u: stair.upperFlightLength + landing, v: landing + stair.length },
+          { u: stair.upperFlightLength + landing - stair.width, v: landing + stair.length },
+          { u: stair.upperFlightLength + landing - stair.width, v: landing },
+          { u: stair.upperFlightLength, v: landing }, { u: stair.upperFlightLength, v: stair.width },
+          { u: 0, v: stair.width },
+        ]
+      : [
+          { u: 0, v: 0 }, { u: landing + stair.upperFlightLength, v: 0 },
+          { u: landing + stair.upperFlightLength, v: stair.width }, { u: landing, v: stair.width },
+          { u: landing, v: landing }, { u: stair.width, v: landing },
+          { u: stair.width, v: landing + stair.length }, { u: 0, v: landing + stair.length },
+        ];
+    return {
+      localWidth: stair.upperFlightLength + landing,
+      localLength: stair.length + landing,
+      flights: [lower, upper],
+      outline: compactStairPolygon(outline),
+      landing: {
+        vertices: [
+          { u: landingU, v: 0 }, { u: landingU + landing, v: 0 },
+          { u: landingU + landing, v: landing }, { u: landingU, v: landing },
+        ],
+        progress: 0.5,
+      },
+      route: [
+        { ...lower.start, progress: 0 }, { ...lower.end, progress: 0.5 },
+        { ...landingCenter, progress: 0.5 }, { ...upper.start, progress: 0.5 }, { ...upper.end, progress: 1 },
+      ],
+      lowerEntry: { ...lower.start, outwardU: 0, outwardV: 1 },
+      upperEntry: {
+        ...upper.end,
+        outwardU: stair.turnSide === "left" ? -1 : 1,
+        outwardV: 0,
+      },
+    };
+  }
+
+  const localWidth = stair.width * 2 + stair.wellWidth;
+  const localLength = stair.length + stair.landingDepth;
+  const lowerU = stair.turnSide === "right" ? 0 : stair.width + stair.wellWidth;
+  const upperU = stair.turnSide === "right" ? stair.width + stair.wellWidth : 0;
+  const lower: StairFlightLayout = {
+    id: "lower",
+    start: { u: lowerU + stair.width / 2, v: localLength },
+    end: { u: lowerU + stair.width / 2, v: stair.landingDepth },
+    width: stair.width,
+    length: stair.length,
+    progressStart: 0,
+    progressEnd: 0.5,
+  };
+  const upper: StairFlightLayout = {
+    id: "upper",
+    start: { u: upperU + stair.width / 2, v: stair.landingDepth },
+    end: { u: upperU + stair.width / 2, v: localLength },
+    width: stair.width,
+    length: stair.length,
+    progressStart: 0.5,
+    progressEnd: 1,
+  };
+  return {
+    localWidth,
+    localLength,
+    flights: [lower, upper],
+    outline: [{ u: 0, v: 0 }, { u: localWidth, v: 0 }, { u: localWidth, v: localLength }, { u: 0, v: localLength }],
+    landing: {
+      vertices: [{ u: 0, v: 0 }, { u: localWidth, v: 0 }, { u: localWidth, v: stair.landingDepth }, { u: 0, v: stair.landingDepth }],
+      progress: 0.5,
+    },
+    route: [
+      { ...lower.start, progress: 0 }, { ...lower.end, progress: 0.5 },
+      { u: lower.start.u, v: stair.landingDepth / 2, progress: 0.5 },
+      { u: upper.start.u, v: stair.landingDepth / 2, progress: 0.5 },
+      { ...upper.start, progress: 0.5 }, { ...upper.end, progress: 1 },
+    ],
+    lowerEntry: { ...lower.start, outwardU: 0, outwardV: 1 },
+    upperEntry: { ...upper.end, outwardU: 0, outwardV: 1 },
+  };
+}
+
+export function stairFootprint(stair: StairGeometry) {
+  const layout = stairLayout(stair);
+  const rotated = stair.rotation === 90 || stair.rotation === 270;
+  return { x: stair.x, y: stair.y, width: rotated ? layout.localLength : layout.localWidth, length: rotated ? layout.localWidth : layout.localLength };
+}
+
+export function stairPlanOutline(stair: StairGeometry) {
+  return stairLayout(stair).outline.map((point) => stairPlanPoint(stair, point.u, point.v));
+}
+
+export function stairPlanFlightCorners(stair: StairGeometry, flight: StairFlightLayout) {
+  return stairFlightCorners(flight).map((point) => stairPlanPoint(stair, point.u, point.v));
+}
+
+/** Maps stair-local coordinates into plan coordinates. */
+export function stairPlanPoint(stair: StairGeometry, u: number, v: number): PlanPoint {
+  const layout = stairLayout(stair);
+  if (stair.rotation === 90) return { x: stair.x + v, y: stair.y + layout.localWidth - u };
+  if (stair.rotation === 180) return { x: stair.x + layout.localWidth - u, y: stair.y + layout.localLength - v };
+  if (stair.rotation === 270) return { x: stair.x + layout.localLength - v, y: stair.y + u };
   return { x: stair.x + u, y: stair.y + v };
 }
 
-export function stairLocalPoint(stair: Pick<Stair, "x" | "y" | "width" | "length" | "rotation">, point: PlanPoint) {
-  if (stair.rotation === 90) return { u: stair.y + stair.width - point.y, v: point.x - stair.x };
-  if (stair.rotation === 180) return { u: stair.x + stair.width - point.x, v: stair.y + stair.length - point.y };
-  if (stair.rotation === 270) return { u: point.y - stair.y, v: stair.x + stair.length - point.x };
+export function stairLocalPoint(stair: StairGeometry, point: PlanPoint) {
+  const layout = stairLayout(stair);
+  if (stair.rotation === 90) return { u: stair.y + layout.localWidth - point.y, v: point.x - stair.x };
+  if (stair.rotation === 180) return { u: stair.x + layout.localWidth - point.x, v: stair.y + layout.localLength - point.y };
+  if (stair.rotation === 270) return { u: point.y - stair.y, v: stair.x + layout.localLength - point.x };
   return { u: point.x - stair.x, v: point.y - stair.y };
+}
+
+function localPolygonContains(vertices: StairLocalPoint[], point: StairLocalPoint) {
+  let inside = false;
+  for (let index = 0, previous = vertices.length - 1; index < vertices.length; previous = index, index += 1) {
+    const a = vertices[index];
+    const b = vertices[previous];
+    const onEdge = Math.abs((point.v - a.v) * (b.u - a.u) - (point.u - a.u) * (b.v - a.v)) < 0.001
+      && point.u >= Math.min(a.u, b.u) - 0.001 && point.u <= Math.max(a.u, b.u) + 0.001
+      && point.v >= Math.min(a.v, b.v) - 0.001 && point.v <= Math.max(a.v, b.v) + 0.001;
+    if (onEdge) return true;
+    if ((a.v > point.v) !== (b.v > point.v) && point.u < (b.u - a.u) * (point.v - a.v) / (b.v - a.v) + a.u) inside = !inside;
+  }
+  return inside;
+}
+
+/** Returns vertical progress only on a walkable flight or landing; wells and L-shaped inner voids are excluded. */
+export function stairProgressAt(stair: StairGeometry, point: PlanPoint) {
+  const local = stairLocalPoint(stair, point);
+  const layout = stairLayout(stair);
+  if (layout.landing && localPolygonContains(layout.landing.vertices, local)) return layout.landing.progress;
+  for (const flight of layout.flights) {
+    const du = (flight.end.u - flight.start.u) / flight.length;
+    const dv = (flight.end.v - flight.start.v) / flight.length;
+    const deltaU = local.u - flight.start.u;
+    const deltaV = local.v - flight.start.v;
+    const along = deltaU * du + deltaV * dv;
+    const lateral = -deltaU * dv + deltaV * du;
+    if (along < -0.001 || along > flight.length + 0.001 || Math.abs(lateral) > flight.width / 2 + 0.001) continue;
+    return Math.max(0, Math.min(1, flight.progressStart + along / flight.length * (flight.progressEnd - flight.progressStart)));
+  }
+  return undefined;
+}
+
+export function stairEntryPoint(stair: StairGeometry, level: "lower" | "upper", clearance = 0) {
+  const layout = stairLayout(stair);
+  const entry = level === "lower" ? layout.lowerEntry : layout.upperEntry;
+  return stairPlanPoint(stair, entry.u + entry.outwardU * clearance, entry.v + entry.outwardV * clearance);
+}
+
+/** Clear floor area required immediately outside the lower or upper stair entry. */
+export function stairAccessPolygon(stair: StairGeometry, level: "lower" | "upper", depth = stair.width) {
+  const layout = stairLayout(stair);
+  const entry = level === "lower" ? layout.lowerEntry : layout.upperEntry;
+  const crossU = -entry.outwardV;
+  const crossV = entry.outwardU;
+  return [
+    stairPlanPoint(stair, entry.u - crossU * stair.width / 2, entry.v - crossV * stair.width / 2),
+    stairPlanPoint(stair, entry.u + crossU * stair.width / 2, entry.v + crossV * stair.width / 2),
+    stairPlanPoint(stair, entry.u + crossU * stair.width / 2 + entry.outwardU * depth, entry.v + crossV * stair.width / 2 + entry.outwardV * depth),
+    stairPlanPoint(stair, entry.u - crossU * stair.width / 2 + entry.outwardU * depth, entry.v - crossV * stair.width / 2 + entry.outwardV * depth),
+  ];
 }
 
 export function wallLength(wall: Wall) {
@@ -755,8 +1031,15 @@ export function stairConnection(project: Project, stair: Stair): StairConnection
   const upperFloor = sourceFloor.elevation > targetFloor.elevation ? sourceFloor : targetFloor;
   const rise = Math.abs(upperFloor.elevation - lowerFloor.elevation);
   if (rise <= 0) return undefined;
-  const riserCount = Math.max(1, Math.ceil(rise / CONCEPT_MAX_RISER));
-  const treadCount = Math.max(1, riserCount - 1);
+  let riserCount = Math.max(1, Math.ceil(rise / CONCEPT_MAX_RISER));
+  if (stair.stairType !== "straight" && riserCount % 2) riserCount += 1;
+  const flightCount = stair.stairType === "straight" ? 1 : 2;
+  const risersPerFlight = flightCount === 2 ? [riserCount / 2, riserCount / 2] : [riserCount];
+  const treadsPerFlight = risersPerFlight.map((count) => Math.max(1, count - 1));
+  const treadCount = treadsPerFlight.reduce((total, count) => total + count, 0);
+  const runs = stair.stairType === "l-shaped" ? [stair.length, stair.upperFlightLength] : treadsPerFlight.map(() => stair.length);
+  const treadDepths = treadsPerFlight.map((count, index) => round(runs[index] / count, 3));
+  const recommendedRuns = treadsPerFlight.map((count) => Math.ceil(count * CONCEPT_MIN_TREAD * 2) / 2);
   return {
     stair,
     sourceFloor,
@@ -767,8 +1050,14 @@ export function stairConnection(project: Project, stair: Stair): StairConnection
     riserCount,
     riserHeight: round(rise / riserCount, 3),
     treadCount,
-    treadDepth: round(stair.length / treadCount, 3),
-    recommendedRun: Math.ceil(treadCount * CONCEPT_MIN_TREAD * 2) / 2,
+    treadDepth: Math.min(...treadDepths),
+    treadDepths,
+    recommendedRun: Math.max(...recommendedRuns),
+    recommendedRuns,
+    flightCount,
+    risersPerFlight,
+    treadsPerFlight,
+    landingElevation: flightCount === 2 ? round(lowerFloor.elevation + rise / 2, 3) : undefined,
   };
 }
 
@@ -776,8 +1065,9 @@ export function recommendedStairRun(
   project: Project,
   floorId: string,
   direction: "up" | "down",
+  stairType: StairType = "straight",
 ) {
-  const placeholder: Stair = { id: "stair-preview", floorId, x: 0, y: 0, width: 3, length: 6, direction, rotation: 0 };
+  const placeholder: Stair = { id: "stair-preview", floorId, x: 0, y: 0, width: 3.5, length: 6, upperFlightLength: 6, direction, rotation: 0, stairType, landingDepth: 3.5, wellWidth: 0.5, turnSide: "left" };
   return stairConnection(project, placeholder)?.recommendedRun ?? 10;
 }
 
@@ -1355,7 +1645,7 @@ function roomFromVertices(room: Room, vertices: PlanPoint[], shape: RoomShape = 
 
 export function migrateProject(input: Project): Project {
   const project = cloneProject(input);
-  project.schemaVersion = 5;
+  project.schemaVersion = 7;
   project.exteriorFinish = exteriorFinishPresets[project.exteriorFinish] ? project.exteriorFinish : "stucco";
   project.roof = {
     type: "flat",
@@ -1429,7 +1719,15 @@ export function migrateProject(input: Project): Project {
     };
   });
   project.floors = (project.floors ?? []).map((floor, index) => ({ ...floor, level: floor.level ?? index, elevation: floor.elevation ?? index * (floor.height ?? 9), height: floor.height ?? 9 }));
-  project.stairs = (project.stairs ?? []).map((stair) => ({ ...stair, rotation: stair.rotation ?? 0 }));
+  project.stairs = (project.stairs ?? []).map((stair) => ({
+    ...stair,
+    rotation: stair.rotation ?? 0,
+    stairType: stair.stairType === "u-shaped" || stair.stairType === "l-shaped" ? stair.stairType : "straight",
+    upperFlightLength: stair.upperFlightLength ?? stair.length ?? 6,
+    landingDepth: stair.landingDepth ?? stair.width ?? 3.5,
+    wellWidth: stair.wellWidth ?? 0.5,
+    turnSide: stair.turnSide === "right" ? "right" : "left",
+  }));
   if (!project.view || !project.floors.some((floor) => floor.id === project.view.activeFloorId)) {
     project.view = { mode: "2d", navigationMode: "orbit", activeFloorId: project.floors[0]?.id ?? "floor-ground", cameraPreset: "front-right" };
   }
@@ -1471,8 +1769,18 @@ function assertRoomInsidePlot(project: Project, room: Pick<Room, "x" | "y" | "wi
   }
 }
 
-function assertStairInsidePlot(project: Project, stair: Pick<Stair, "x" | "y" | "width" | "length" | "rotation">) {
-  if (stair.width < 3 || stair.length < 6) throw new Error("Straight stairs must be at least 3 × 6 ft.");
+function assertStairInsidePlot(project: Project, stair: Stair) {
+  if (stair.width < 3) throw new Error("Stair flights must be at least 3 ft wide.");
+  if (stair.stairType === "straight" && stair.length < 6) throw new Error("Straight stairs must have at least a 6 ft run.");
+  if (stair.stairType === "l-shaped") {
+    if (stair.length < 3 || stair.upperFlightLength < 3) throw new Error("L-shaped stair flights must each have at least a 3 ft run.");
+    if (stair.landingDepth < stair.width) throw new Error("An L-shaped stair landing must be at least as deep and wide as the clear flight width.");
+  }
+  if (stair.stairType === "u-shaped") {
+    if (stair.length < 3) throw new Error("U-shaped stair flights must have at least a 3 ft run.");
+    if (stair.landingDepth < stair.width) throw new Error("A U-shaped stair landing must be at least as deep as its clear flight width.");
+    if (stair.wellWidth < 0 || stair.wellWidth > 8) throw new Error("The U-shaped stair center well must be between 0 and 8 ft wide.");
+  }
   const footprint = stairFootprint(stair);
   if (
     footprint.x < 0 || footprint.y < 0 ||
@@ -1913,13 +2221,18 @@ export function applyOperation(
         y: round(operation.y),
         width: round(operation.width),
         length: round(operation.length),
+        upperFlightLength: round(operation.upperFlightLength ?? operation.length),
         direction: operation.direction ?? "up",
         rotation: operation.rotation ?? 0,
+        stairType: operation.stairType ?? "straight",
+        landingDepth: round(operation.landingDepth ?? operation.width),
+        wellWidth: round(operation.wellWidth ?? 0.5),
+        turnSide: operation.turnSide ?? "left",
       };
       assertStairInsidePlot(project, stair);
       project.stairs.push(stair);
       project.view.focusElementId = stair.id;
-      description = `${who} added a staircase`;
+      description = `${who} added a ${stair.stairType === "u-shaped" ? "U-shaped" : stair.stairType === "l-shaped" ? "L-shaped" : "straight"} staircase`;
       result = { stair, connection: stairConnection(project, stair) ?? null };
       break;
     }
@@ -1933,8 +2246,13 @@ export function applyOperation(
         y: round(operation.y ?? previous.y),
         width: round(operation.width ?? previous.width),
         length: round(operation.length ?? previous.length),
+        upperFlightLength: round(operation.upperFlightLength ?? previous.upperFlightLength),
         direction: operation.direction ?? previous.direction,
         rotation: operation.rotation ?? previous.rotation,
+        stairType: operation.stairType ?? previous.stairType,
+        landingDepth: round(operation.landingDepth ?? (operation.width !== undefined && (operation.stairType ?? previous.stairType) !== "straight" ? Math.max(previous.landingDepth, operation.width) : previous.landingDepth)),
+        wellWidth: round(operation.wellWidth ?? previous.wellWidth),
+        turnSide: operation.turnSide ?? previous.turnSide,
       };
       assertStairInsidePlot(project, stair);
       project.stairs[index] = stair;
@@ -2253,10 +2571,18 @@ export function buildCirculationGraph(project: Project): CirculationGraph {
   project.stairs.forEach((stair) => {
     const floorIndex = floors.findIndex((floor) => floor.id === stair.floorId);
     const targetFloor = stair.direction === "down" ? floors[floorIndex - 1] : floors[floorIndex + 1];
-    const footprint = stairFootprint(stair);
-    const point = { x: footprint.x + footprint.width / 2, y: footprint.y + footprint.length / 2 };
-    const sourceRoom = project.rooms.find((room) => room.floorId === stair.floorId && roomContainsPoint(room, point));
-    const targetRoom = targetFloor && project.rooms.find((room) => room.floorId === targetFloor.id && roomContainsPoint(room, point));
+    const sourceFloor = floors[floorIndex];
+    if (!sourceFloor) {
+      invalidStairIds.push(stair.id);
+      return;
+    }
+    const sourceLevel = targetFloor && sourceFloor.elevation <= targetFloor.elevation ? "lower" : "upper";
+    const targetLevel = sourceLevel === "lower" ? "upper" : "lower";
+    // Circulation belongs to the clear floor area outside the stair, not to a point buried in a tread.
+    const sourcePoint = stairEntryPoint(stair, sourceLevel, stair.width / 2);
+    const targetPoint = stairEntryPoint(stair, targetLevel, stair.width / 2);
+    const sourceRoom = project.rooms.find((room) => room.floorId === stair.floorId && roomContainsPoint(room, sourcePoint));
+    const targetRoom = targetFloor && project.rooms.find((room) => room.floorId === targetFloor.id && roomContainsPoint(room, targetPoint));
     if (!sourceRoom || !targetRoom) {
       invalidStairIds.push(stair.id);
       return;
@@ -2426,33 +2752,80 @@ export function validateLayout(project: Project, floorId?: string): ValidationRe
       id: createId("issue"),
       code: "INVALID_STAIR_CONNECTION",
       severity: "error",
-      message: "A staircase does not connect valid rooms on adjacent floors at the same plan position.",
+      message: "A staircase does not connect valid rooms at its lower and upper entries on adjacent floors.",
       elementIds: [stair.id],
       evidence: { stairId: stair.id, floorId: stair.floorId },
-      suggestion: "Move the stair within rooms that overlap vertically on adjacent floors, or add the missing destination floor/room.",
-      possibleCorrection: "Create aligned stair landings on consecutive floors and validate floor connections again.",
+      suggestion: "Move the stair so both physical entries land inside valid rooms on adjacent floors, or add the missing destination floor/room.",
+      possibleCorrection: "Create aligned stair halls on consecutive floors and validate both stair entries again.",
     });
   });
   project.stairs.filter((stair) => targetFloors.includes(stair.floorId)).forEach((stair) => {
     const connection = stairConnection(project, stair);
-    if (!connection || stair.length + 0.01 >= connection.recommendedRun) return;
-    issues.push({
-      id: createId("issue"),
-      code: "INVALID_STAIR_GEOMETRY",
-      severity: "error",
-      message: `The straight stair run is ${round(connection.recommendedRun - stair.length, 2)} ft too short for the current floor-to-floor rise.`,
-      elementIds: [stair.id],
-      evidence: {
-        rise: connection.rise,
-        riserCount: connection.riserCount,
-        riserHeightInches: round(connection.riserHeight * 12, 2),
-        treadDepthInches: round(connection.treadDepth * 12, 2),
-        actualRun: stair.length,
-        recommendedRun: connection.recommendedRun,
-      },
-      suggestion: `Extend the run to at least ${connection.recommendedRun} ft for this concept check, or develop a landing/turning stair outside this straight-flight model.`,
-      possibleCorrection: "Resize the stair, then confirm landings, headroom, guards, and local code requirements separately.",
+    if (!connection) return;
+    const actualRuns = stair.stairType === "l-shaped" ? [stair.length, stair.upperFlightLength] : connection.recommendedRuns.map(() => stair.length);
+    const shortFlights = actualRuns.flatMap((run, index) => run + 0.01 < connection.recommendedRuns[index]
+      ? [{ index, actual: run, required: connection.recommendedRuns[index] }]
+      : []);
+    if (shortFlights.length) {
+      const stairName = stair.stairType === "u-shaped" ? "U-shaped" : stair.stairType === "l-shaped" ? "L-shaped" : "straight";
+      issues.push({
+        id: createId("issue"),
+        code: "INVALID_STAIR_GEOMETRY",
+        severity: "error",
+        message: `${stairName} stair ${shortFlights.length === 1 ? `flight ${shortFlights[0].index + 1} is` : "flights are"} too short for the current floor-to-floor rise.`,
+        elementIds: [stair.id],
+        evidence: {
+          rise: connection.rise,
+          riserCount: connection.riserCount,
+          riserHeightInches: round(connection.riserHeight * 12, 2),
+          treadDepthsInches: connection.treadDepths.map((depth) => round(depth * 12, 2)).join(" / "),
+          actualRuns: actualRuns.join(" / "),
+          recommendedRuns: connection.recommendedRuns.join(" / "),
+        },
+        suggestion: `Extend ${connection.flightCount === 2 ? "each undersized flight" : "the run"} to its recommended length: ${connection.recommendedRuns.join(" ft / ")} ft.`,
+        possibleCorrection: "Resize the stair, then confirm landings, headroom, guards, and local code requirements separately.",
+      });
+    }
+
+    (["lower", "upper"] as const).forEach((level) => {
+      const floor = level === "lower" ? connection.lowerFloor : connection.upperFloor;
+      const access = stairAccessPolygon(stair, level);
+      const center = stairEntryPoint(stair, level, stair.width / 2);
+      const accessRoom = project.rooms.find((room) => room.floorId === floor.id
+        && roomContainsPoint(room, center)
+        && access.every((point) => roomContainsPoint(room, point)));
+      if (accessRoom) return;
+      issues.push({
+        id: createId("issue"),
+        code: "STAIR_ACCESS_CLEARANCE",
+        severity: "error",
+        message: `The ${level}-floor stair entry does not have a clear ${round(stair.width, 2)} × ${round(stair.width, 2)} ft approach within one stair hall or room.`,
+        elementIds: [stair.id],
+        evidence: { stairId: stair.id, floorId: floor.id, level, requiredDepth: stair.width, accessPolygon: JSON.stringify(access) },
+        suggestion: `Move or rotate the stair so its ${level} entry and full clear approach land inside one room.`,
+        possibleCorrection: "Reserve a stair hall on both connected floors before finalizing adjacent walls and doors.",
+      });
     });
+
+    const outline = stairPlanOutline(stair);
+    const connectedFloorIds = new Set([connection.lowerFloor.id, connection.upperFloor.id]);
+    const crossingWallIds = project.walls.filter((wall) => connectedFloorIds.has(wall.floorId)).filter((wall) =>
+      outline.some((point, index) => segmentsIntersect(
+        { x: wall.x1, y: wall.y1 }, { x: wall.x2, y: wall.y2 },
+        point, outline[(index + 1) % outline.length],
+      )),
+    ).map((wall) => wall.id);
+    if (crossingWallIds.length) {
+      issues.push({
+        id: createId("issue"),
+        code: "STAIR_WALL_CLASH",
+        severity: "error",
+        message: `The stairwell crosses ${crossingWallIds.length} wall segment${crossingWallIds.length === 1 ? "" : "s"}.`,
+        elementIds: [stair.id, ...crossingWallIds],
+        evidence: { stairId: stair.id, wallIds: crossingWallIds.join(", ") },
+        suggestion: "Move the stair inside a clear stair hall; walls must not pass through flights, landings, or the stairwell void.",
+      });
+    }
   });
 
   for (let i = 0; i < rooms.length; i += 1) {
@@ -2650,12 +3023,31 @@ export function inspectOpening(project: Project, openingId: string) {
 export function inspectFloor(project: Project, floorId: string) {
   const floor = project.floors.find((item) => item.id === floorId);
   if (!floor) throw new Error(`Floor ${floorId} does not exist.`);
+  const stairDetails = project.stairs.flatMap((stair) => {
+    const connection = stairConnection(project, stair);
+    if (!connection || (connection.lowerFloor.id !== floorId && connection.upperFloor.id !== floorId)) return [];
+    const layout = stairLayout(stair);
+    return [{
+      stair,
+      roleOnFloor: connection.lowerFloor.id === floorId ? "lower-entry" : "upper-entry",
+      connection,
+      layout: {
+        outline: stairPlanOutline(stair),
+        flights: layout.flights,
+        landing: layout.landing,
+        route: layout.route,
+      },
+      lowerAccess: stairAccessPolygon(stair, "lower"),
+      upperAccess: stairAccessPolygon(stair, "upper"),
+    }];
+  });
   return {
     floor,
     rooms: project.rooms.filter((room) => room.floorId === floorId),
     walls: project.walls.filter((wall) => wall.floorId === floorId),
     openings: project.openings.filter((opening) => opening.floorId === floorId),
     stairs: project.stairs.filter((stair) => stair.floorId === floorId),
+    stairDetails,
     balconies: project.balconies.filter((balcony) => balcony.floorId === floorId),
     facadeFeatures: project.facadeFeatures.filter((feature) => project.walls.find((wall) => wall.id === feature.wallId)?.floorId === floorId),
     metrics: projectMetrics(project, floorId),
