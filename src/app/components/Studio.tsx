@@ -70,6 +70,8 @@ import {
   type RoomShape,
   type StairRotation,
   type ExteriorFinishId,
+  type FacadeFeatureKind,
+  type RailingStyle,
   type ValidationReport,
 } from "@/lib/architecture";
 import {
@@ -614,6 +616,8 @@ export default function Studio() {
   const selectedWall = project.walls.find((item) => item.id === selectedId);
   const selectedOpening = project.openings.find((item) => item.id === selectedId);
   const selectedStair = project.stairs.find((item) => item.id === selectedId);
+  const selectedBalcony = project.balconies.find((item) => item.id === selectedId);
+  const selectedFacadeFeature = project.facadeFeatures.find((item) => item.id === selectedId);
   const selectedStairConnection = selectedStair ? stairConnection(project, selectedStair) : undefined;
   const selectedStairFootprint = selectedStair ? stairFootprint(selectedStair) : undefined;
   const selectedStairRoom = selectedStair && selectedStairFootprint ? project.rooms.find((room) => (
@@ -633,6 +637,30 @@ export default function Studio() {
     } catch {
       // Errors are surfaced by commit as a toast.
     }
+  };
+
+  const addDefaultBalcony = (kind: "balcony" | "terrace") => {
+    const width = Math.min(10, project.plot.width - 2);
+    const length = Math.min(6, project.plot.length - 2);
+    safeCommit({
+      type: "add_balcony",
+      floorId: activeFloor.id,
+      name: kind === "terrace" ? "Front Terrace" : "Front Balcony",
+      kind,
+      x: Math.max(0, (project.plot.width - width) / 2),
+      y: 0,
+      width,
+      length,
+    });
+  };
+
+  const addDefaultFacadeFeature = (kind: FacadeFeatureKind) => {
+    const wall = project.walls.find((item) => item.floorId === activeFloor.id && item.exterior && wallLength(item) >= 4);
+    if (!wall) {
+      notify("Add a room on this floor first so the feature has an exterior host wall");
+      return;
+    }
+    safeCommit({ type: "add_facade_feature", kind, wallId: wall.id, offset: wallLength(wall) / 2, width: Math.min(kind === "frame" ? 8 : 6, wallLength(wall) - 1) });
   };
 
   const handleWalkFloorChange = useCallback((floorId: string) => {
@@ -730,7 +758,7 @@ export default function Studio() {
   };
 
   const createProject = () => {
-    const next = createNewLocalProject();
+    const next = createNewLocalProject("Untitled Residence", projectRef.current.plot);
     replaceProject(next, "Created a new local project");
   };
 
@@ -860,7 +888,23 @@ export default function Studio() {
 
             <Section title="Exterior finish">
               <label className="field field-full"><span>Façade palette</span><select value={project.exteriorFinish} onChange={(event) => safeCommit({ type: "set_exterior_finish", finish: event.target.value as ExteriorFinishId })}>{Object.entries(exteriorFinishPresets).map(([id, finish]) => <option key={id} value={id}>{finish.label}</option>)}</select></label>
-              <p className="technical-note">One lightweight visual finish across exterior walls; no heavy assembly simulation.</p>
+              <p className="technical-note">Project default with optional per-wall overrides; lightweight visual materials only.</p>
+            </Section>
+
+            <Section title="Exterior systems" action={<span className="section-hint">LIGHTWEIGHT</span>}>
+              <div className="room-library">
+                <button type="button" onClick={() => addDefaultBalcony(activeFloor.level > 0 ? "balcony" : "terrace")}>
+                  <span style={{ background: "#b8aea0" }} /><div><b>{activeFloor.level > 0 ? "Add balcony" : "Add terrace"}</b><small>Slab + configurable railing</small></div><Plus size={14} />
+                </button>
+                {(["canopy", "frame", "sunshade"] as FacadeFeatureKind[]).map((kind) => (
+                  <button type="button" key={kind} onClick={() => addDefaultFacadeFeature(kind)}>
+                    <span style={{ background: kind === "frame" ? "#9f6653" : kind === "canopy" ? "#69756f" : "#aaa79f" }} /><div><b>Add {kind}</b><small>Exterior-wall hosted feature</small></div><Plus size={14} />
+                  </button>
+                ))}
+              </div>
+              <button type="button" className="walk-inside-button" onClick={() => safeCommit({ type: "set_site_boundary", enabled: !project.siteBoundary.enabled })}>
+                <Building2 size={15} /> {project.siteBoundary.enabled ? "Hide" : "Add"} boundary wall + gate
+              </button>
             </Section>
 
             <Section title="Rooms" action={<span className="section-hint">CLICK TO PLACE</span>}>
@@ -985,11 +1029,11 @@ export default function Studio() {
               <>
                 <div className="selection-title">
                   <span className="selection-icon">
-                    {selectedRoom ? <Square size={17} /> : selectedWall ? <Minus size={17} /> : selectedOpening ? <DoorOpen size={17} /> : selectedStair ? <Layers3 size={17} /> : <Grid2X2 size={17} />}
+                    {selectedRoom ? <Square size={17} /> : selectedWall ? <Minus size={17} /> : selectedOpening ? <DoorOpen size={17} /> : selectedStair ? <Layers3 size={17} /> : selectedBalcony ? <PanelTop size={17} /> : selectedFacadeFeature ? <Maximize2 size={17} /> : <Grid2X2 size={17} />}
                   </span>
                   <div>
-                    <small>{selectedRoom ? selectedRoom.type : selectedWall ? "Wall" : selectedOpening ? selectedOpening.kind : selectedStair ? "Staircase" : "Project site"}</small>
-                    <h2>{selectedRoom?.name ?? (selectedWall ? selectedWall.roomIds.length > 1 ? "Shared wall" : selectedWall.side ? `${selectedWall.side} wall` : "Independent wall" : selectedOpening ? `${selectedOpening.kind[0].toUpperCase()}${selectedOpening.kind.slice(1)}` : selectedStair ? "Staircase" : project.name)}</h2>
+                    <small>{selectedRoom ? selectedRoom.type : selectedWall ? "Wall" : selectedOpening ? selectedOpening.kind : selectedStair ? "Staircase" : selectedBalcony ? selectedBalcony.kind : selectedFacadeFeature ? "Façade feature" : "Project site"}</small>
+                    <h2>{selectedRoom?.name ?? (selectedWall ? selectedWall.roomIds.length > 1 ? "Shared wall" : selectedWall.side ? `${selectedWall.side} wall` : "Independent wall" : selectedOpening ? `${selectedOpening.kind[0].toUpperCase()}${selectedOpening.kind.slice(1)}` : selectedStair ? "Staircase" : selectedBalcony ? selectedBalcony.name : selectedFacadeFeature ? selectedFacadeFeature.kind[0].toUpperCase() + selectedFacadeFeature.kind.slice(1) : project.name)}</h2>
                   </div>
                   {selectedId && <button type="button" onClick={deleteSelected} title="Delete selected element"><Trash2 size={16} /></button>}
                 </div>
@@ -1016,7 +1060,8 @@ export default function Studio() {
                   </>
                 ) : selectedWall ? (
                   <>
-                    <Section title="Geometry"><div className="detail-list"><span>Length <b>{wallLength(selectedWall).toFixed(2)} ft</b></span><span>Thickness <b>{selectedWall.thickness} ft</b></span><span>Height <b>{selectedWall.height} ft</b></span><span>Topology <b>{selectedWall.exterior ? "Exterior" : selectedWall.roomIds.length > 1 ? "Shared interior" : "Independent"}</b></span>{selectedWall.exterior && <span>Finish <b>{exteriorFinishPresets[project.exteriorFinish].label}</b></span>}<span>Adjacent spaces <b>{selectedWall.roomIds.map((roomId) => project.rooms.find((room) => room.id === roomId)?.name ?? roomId).join(" / ") || "None"}</b></span></div></Section>
+                    <Section title="Geometry"><div className="detail-list"><span>Length <b>{wallLength(selectedWall).toFixed(2)} ft</b></span><span>Thickness <b>{selectedWall.thickness} ft</b></span><span>Height <b>{selectedWall.height} ft</b></span><span>Topology <b>{selectedWall.exterior ? "Exterior" : selectedWall.roomIds.length > 1 ? "Shared interior" : "Independent"}</b></span><span>Adjacent spaces <b>{selectedWall.roomIds.map((roomId) => project.rooms.find((room) => room.id === roomId)?.name ?? roomId).join(" / ") || "None"}</b></span></div></Section>
+                    {selectedWall.exterior && <Section title="Façade finish"><label className="field field-full"><span>Wall material</span><select value={selectedWall.finish ?? ""} onChange={(event) => safeCommit({ type: "set_wall_finish", wallId: selectedWall.id, finish: (event.target.value || undefined) as ExteriorFinishId | undefined })}><option value="">Project default · {exteriorFinishPresets[project.exteriorFinish].label}</option>{Object.entries(exteriorFinishPresets).map(([id, finish]) => <option key={id} value={id}>{finish.label}</option>)}</select></label><p className="technical-note">A wall override stays attached to this canonical exterior wall; reset it to follow the project palette.</p></Section>}
                     <Section title="Openings"><div className="detail-list"><span>Doors <b>{project.openings.filter((item) => item.wallId === selectedWall.id && item.kind === "door").length}</b></span><span>Windows <b>{project.openings.filter((item) => item.wallId === selectedWall.id && item.kind === "window").length}</b></span></div></Section>
                   </>
                 ) : selectedOpening ? (
@@ -1077,6 +1122,43 @@ export default function Studio() {
                     </Section>
                     <button type="button" className="walk-inside-button inspector-walk-button" onClick={() => safeCommit({ type: "set_navigation_mode", mode: "walk", roomId: selectedStairRoom?.id })}><Footprints size={15} /> Test this connection in Walk Mode</button>
                   </>
+                ) : selectedBalcony ? (
+                  <>
+                    <Section title="Platform geometry">
+                      <label className="field field-full"><span>Name</span><input key={`${selectedBalcony.id}:${selectedBalcony.name}`} defaultValue={selectedBalcony.name} onBlur={(event) => safeCommit({ type: "update_balcony", balconyId: selectedBalcony.id, name: event.currentTarget.value })} /></label>
+                      <div className="field-grid">
+                        <NumberField label="Width" value={selectedBalcony.width} min={3} onCommit={(width) => safeCommit({ type: "update_balcony", balconyId: selectedBalcony.id, width })} />
+                        <NumberField label="Length" value={selectedBalcony.length} min={3} onCommit={(length) => safeCommit({ type: "update_balcony", balconyId: selectedBalcony.id, length })} />
+                        <NumberField label="X position" value={selectedBalcony.x} min={0} onCommit={(x) => safeCommit({ type: "update_balcony", balconyId: selectedBalcony.id, x })} />
+                        <NumberField label="Y position" value={selectedBalcony.y} min={0} onCommit={(y) => safeCommit({ type: "update_balcony", balconyId: selectedBalcony.id, y })} />
+                        <NumberField label="Slab thickness" value={selectedBalcony.slabThickness} min={0.25} max={2} step={0.05} onCommit={(slabThickness) => safeCommit({ type: "update_balcony", balconyId: selectedBalcony.id, slabThickness })} />
+                      </div>
+                      <label className="field field-full"><span>Type</span><select value={selectedBalcony.kind} onChange={(event) => safeCommit({ type: "update_balcony", balconyId: selectedBalcony.id, kind: event.target.value as "balcony" | "terrace" })}><option value="balcony">Balcony</option><option value="terrace">Terrace</option></select></label>
+                    </Section>
+                    <Section title="Railing">
+                      <label className="field field-full"><span>Railing</span><select value={selectedBalcony.railing.enabled ? "enabled" : "disabled"} onChange={(event) => safeCommit({ type: "update_balcony", balconyId: selectedBalcony.id, railingEnabled: event.target.value === "enabled" })}><option value="enabled">Enabled</option><option value="disabled">Disabled</option></select></label>
+                      <div className="field-grid"><NumberField label="Height" value={selectedBalcony.railing.height} min={2} max={6} step={0.1} onCommit={(railingHeight) => safeCommit({ type: "update_balcony", balconyId: selectedBalcony.id, railingHeight })} /><label className="field"><span>Style</span><select value={selectedBalcony.railing.style} onChange={(event) => safeCommit({ type: "update_balcony", balconyId: selectedBalcony.id, railingStyle: event.target.value as RailingStyle })}><option value="horizontal">Horizontal</option><option value="vertical">Vertical</option><option value="solid">Solid</option></select></label></div>
+                    </Section>
+                    <Section title="Finish"><label className="field field-full"><span>Material</span><select value={selectedBalcony.finish} onChange={(event) => safeCommit({ type: "update_balcony", balconyId: selectedBalcony.id, finish: event.target.value as ExteriorFinishId })}>{Object.entries(exteriorFinishPresets).map(([id, finish]) => <option key={id} value={id}>{finish.label}</option>)}</select></label></Section>
+                  </>
+                ) : selectedFacadeFeature ? (
+                  <>
+                    <Section title="Façade feature">
+                      <label className="field field-full"><span>Type</span><select value={selectedFacadeFeature.kind} onChange={(event) => safeCommit({ type: "update_facade_feature", featureId: selectedFacadeFeature.id, kind: event.target.value as FacadeFeatureKind })}><option value="frame">Frame</option><option value="canopy">Canopy</option><option value="sunshade">Sunshade</option></select></label>
+                      <div className="field-grid">
+                        <NumberField label="Offset" value={selectedFacadeFeature.offset} min={0.5} onCommit={(offset) => safeCommit({ type: "update_facade_feature", featureId: selectedFacadeFeature.id, offset })} />
+                        <NumberField label="Width" value={selectedFacadeFeature.width} min={1} onCommit={(width) => safeCommit({ type: "update_facade_feature", featureId: selectedFacadeFeature.id, width })} />
+                        <NumberField label="Elevation" value={selectedFacadeFeature.elevation} min={0} onCommit={(elevation) => safeCommit({ type: "update_facade_feature", featureId: selectedFacadeFeature.id, elevation })} />
+                        <NumberField label="Height" value={selectedFacadeFeature.height} min={0.1} onCommit={(height) => safeCommit({ type: "update_facade_feature", featureId: selectedFacadeFeature.id, height })} />
+                        <NumberField label="Projection" value={selectedFacadeFeature.projection} min={0.1} max={8} step={0.1} onCommit={(projection) => safeCommit({ type: "update_facade_feature", featureId: selectedFacadeFeature.id, projection })} />
+                        <NumberField label="Thickness" value={selectedFacadeFeature.thickness} min={0.1} max={2} step={0.05} onCommit={(thickness) => safeCommit({ type: "update_facade_feature", featureId: selectedFacadeFeature.id, thickness })} />
+                      </div>
+                    </Section>
+                    <Section title="Host + finish">
+                      <label className="field field-full"><span>Exterior wall</span><select value={selectedFacadeFeature.wallId} onChange={(event) => { const wall = project.walls.find((item) => item.id === event.target.value)!; safeCommit({ type: "update_facade_feature", featureId: selectedFacadeFeature.id, wallId: wall.id, offset: Math.max(selectedFacadeFeature.width / 2, Math.min(selectedFacadeFeature.offset, wallLength(wall) - selectedFacadeFeature.width / 2)) }); }}>{project.walls.filter((wall) => wall.exterior && wallLength(wall) >= selectedFacadeFeature.width).map((wall) => <option key={wall.id} value={wall.id}>{project.floors.find((floor) => floor.id === wall.floorId)?.name} · {wallCardinalFacing(project, wall)} · {wallLength(wall).toFixed(1)} ft</option>)}</select></label>
+                      <label className="field field-full"><span>Material</span><select value={selectedFacadeFeature.finish} onChange={(event) => safeCommit({ type: "update_facade_feature", featureId: selectedFacadeFeature.id, finish: event.target.value as ExteriorFinishId })}>{Object.entries(exteriorFinishPresets).map(([id, finish]) => <option key={id} value={id}>{finish.label}</option>)}</select></label>
+                    </Section>
+                  </>
                 ) : (
                   <>
                     <Section title="Plot dimensions">
@@ -1093,12 +1175,22 @@ export default function Studio() {
                       <label className="field field-full"><span>Façade palette</span><select value={project.exteriorFinish} onChange={(event) => safeCommit({ type: "set_exterior_finish", finish: event.target.value as ExteriorFinishId })}>{Object.entries(exteriorFinishPresets).map(([id, finish]) => <option key={id} value={id}>{finish.label}</option>)}</select></label>
                       <p className="technical-note">{exteriorFinishPresets[project.exteriorFinish].description}</p>
                     </Section>
+                    <Section title="Flat roof + parapet">
+                      <label className="field field-full"><span>Parapet</span><select value={project.roof.parapetEnabled ? "enabled" : "disabled"} onChange={(event) => safeCommit({ type: "set_roof", parapetEnabled: event.target.value === "enabled" })}><option value="enabled">Enabled</option><option value="disabled">Disabled</option></select></label>
+                      <div className="field-grid"><NumberField label="Height" value={project.roof.parapetHeight} min={0.5} max={6} step={0.1} onCommit={(parapetHeight) => safeCommit({ type: "set_roof", parapetHeight })} /><NumberField label="Thickness" value={project.roof.parapetThickness} min={0.2} max={2} step={0.05} onCommit={(parapetThickness) => safeCommit({ type: "set_roof", parapetThickness })} /></div>
+                      <label className="field field-full"><span>Finish</span><select value={project.roof.finish} onChange={(event) => safeCommit({ type: "set_roof", finish: event.target.value as ExteriorFinishId })}>{Object.entries(exteriorFinishPresets).map(([id, finish]) => <option key={id} value={id}>{finish.label}</option>)}</select></label>
+                    </Section>
+                    <Section title="Boundary wall + gate">
+                      <label className="field field-full"><span>Boundary</span><select value={project.siteBoundary.enabled ? "enabled" : "disabled"} onChange={(event) => safeCommit({ type: "set_site_boundary", enabled: event.target.value === "enabled" })}><option value="enabled">Enabled</option><option value="disabled">Disabled</option></select></label>
+                      <label className="field field-full"><span>Front gate</span><select value={project.siteBoundary.gate.enabled ? "enabled" : "disabled"} onChange={(event) => safeCommit({ type: "set_site_boundary", gateEnabled: event.target.value === "enabled" })}><option value="enabled">Enabled</option><option value="disabled">Disabled</option></select></label>
+                      <div className="field-grid"><NumberField label="Wall height" value={project.siteBoundary.height} min={2} max={10} step={0.1} onCommit={(height) => safeCommit({ type: "set_site_boundary", height })} /><NumberField label="Wall thickness" value={project.siteBoundary.thickness} min={0.2} max={2} step={0.05} onCommit={(thickness) => safeCommit({ type: "set_site_boundary", thickness })} /><NumberField label="Gate offset" value={project.siteBoundary.gate.offset} min={0} onCommit={(gateOffset) => safeCommit({ type: "set_site_boundary", gateOffset })} /><NumberField label="Gate width" value={project.siteBoundary.gate.width} min={3} max={Math.max(3, project.plot.width - 1)} onCommit={(gateWidth) => safeCommit({ type: "set_site_boundary", gateWidth })} /><NumberField label="Gate height" value={project.siteBoundary.gate.height} min={3} max={10} onCommit={(gateHeight) => safeCommit({ type: "set_site_boundary", gateHeight })} /><label className="field"><span>Gate style</span><select value={project.siteBoundary.gate.style} onChange={(event) => safeCommit({ type: "set_site_boundary", gateStyle: event.target.value as "slatted" | "solid" })}><option value="slatted">Slatted</option><option value="solid">Solid</option></select></label></div>
+                    </Section>
                     <Section title="Setbacks">
                       <div className="field-grid">
                         {(["front", "rear", "left", "right"] as const).map((side) => <NumberField key={side} label={side[0].toUpperCase() + side.slice(1)} value={project.plot.setbacks[side]} min={0} onCommit={(value) => safeCommit({ type: "set_plot", setbacks: { [side]: value } })} />)}
                       </div>
                     </Section>
-                    <Section title="Live area schedule"><div className="detail-list"><span>Total net floor area <b>{metrics.totalNetFloorArea.toLocaleString()} sq ft</b></span><span>Gross covered area <b>{metrics.grossCoveredArea.toLocaleString()} sq ft</b></span><span>Open site area <b>{metrics.openSiteArea.toLocaleString()} sq ft</b></span><span>Plot area <b>{metrics.plotArea.toLocaleString()} sq ft</b></span><span>Buildable envelope <b>{metrics.buildableEnvelope.area.toLocaleString()} sq ft</b></span></div></Section>
+                    <Section title="Live area schedule"><div className="detail-list"><span>Total net floor area <b>{metrics.totalNetFloorArea.toLocaleString()} sq ft</b></span><span>Gross covered area <b>{metrics.grossCoveredArea.toLocaleString()} sq ft</b></span><span>Balcony area <b>{metrics.balconyArea.toLocaleString()} sq ft</b></span><span>Terrace area <b>{metrics.terraceArea.toLocaleString()} sq ft</b></span><span>Open site area <b>{metrics.openSiteArea.toLocaleString()} sq ft</b></span><span>Plot area <b>{metrics.plotArea.toLocaleString()} sq ft</b></span><span>Buildable envelope <b>{metrics.buildableEnvelope.area.toLocaleString()} sq ft</b></span></div></Section>
                   </>
                 )}
               </>

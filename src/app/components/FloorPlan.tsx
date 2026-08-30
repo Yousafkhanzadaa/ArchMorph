@@ -94,6 +94,8 @@ export default function FloorPlan({
   const walls = project.walls.filter((wall) => wall.floorId === floorId);
   const openings = project.openings.filter((opening) => opening.floorId === floorId);
   const stairs = project.stairs.filter((stair) => stair.floorId === floorId);
+  const balconies = project.balconies.filter((balcony) => balcony.floorId === floorId);
+  const facadeFeatures = project.facadeFeatures.filter((feature) => walls.some((wall) => wall.id === feature.wallId));
   const linkedStairs = project.stairs.filter((stair) => {
     const connection = stairConnection(project, stair);
     return connection?.targetFloor.id === floorId && stair.floorId !== floorId;
@@ -378,6 +380,19 @@ export default function FloorPlan({
         <text x={project.plot.setbacks.left + 0.6} y={project.plot.setbacks.front + 1.1} className="setback-label">BUILDABLE ENVELOPE</text>
       </g>
 
+      {project.siteBoundary.enabled && (
+        <g className="site-boundary" pointerEvents="none" fill="none" stroke="#665d53" strokeWidth={Math.max(0.18, project.siteBoundary.thickness)}>
+          <line x1="0" y1="0" x2="0" y2={project.plot.length} />
+          <line x1={project.plot.width} y1="0" x2={project.plot.width} y2={project.plot.length} />
+          <line x1="0" y1={project.plot.length} x2={project.plot.width} y2={project.plot.length} />
+          {project.siteBoundary.gate.enabled ? <>
+            <line x1="0" y1="0" x2={project.siteBoundary.gate.offset - project.siteBoundary.gate.width / 2} y2="0" />
+            <line x1={project.siteBoundary.gate.offset + project.siteBoundary.gate.width / 2} y1="0" x2={project.plot.width} y2="0" />
+            <line x1={project.siteBoundary.gate.offset - project.siteBoundary.gate.width / 2} y1="-0.3" x2={project.siteBoundary.gate.offset + project.siteBoundary.gate.width / 2} y2="-0.3" stroke="#47544c" strokeWidth="0.16" strokeDasharray={project.siteBoundary.gate.style === "slatted" ? "0.35 0.22" : undefined} />
+          </> : <line x1="0" y1="0" x2={project.plot.width} y2="0" />}
+        </g>
+      )}
+
       <g className="alignment-guides" pointerEvents="none">
         {alignmentGuides.vertical !== undefined && <line x1={alignmentGuides.vertical} y1="0" x2={alignmentGuides.vertical} y2={project.plot.length} />}
         {alignmentGuides.horizontal !== undefined && <line x1="0" y1={alignmentGuides.horizontal} x2={project.plot.width} y2={alignmentGuides.horizontal} />}
@@ -397,6 +412,25 @@ export default function FloorPlan({
       <g className="north-arrow" transform={`translate(${project.plot.width + 5.3} 5) rotate(${northRotation})`} pointerEvents="none">
         <text x="0" y="-2.1" textAnchor="middle">N</text>
         <path d="M0,-1.5 L-0.75,1.5 L0,0.95 L0.75,1.5 Z" fill="#25322b" />
+      </g>
+
+      <g className="balconies">
+        {balconies.map((balcony) => {
+          const selected = selectedId === balcony.id;
+          const sideLine = (side: "north" | "east" | "south" | "west") => side === "north"
+            ? { x1: balcony.x, y1: balcony.y, x2: balcony.x + balcony.width, y2: balcony.y }
+            : side === "south"
+              ? { x1: balcony.x, y1: balcony.y + balcony.length, x2: balcony.x + balcony.width, y2: balcony.y + balcony.length }
+              : side === "west"
+                ? { x1: balcony.x, y1: balcony.y, x2: balcony.x, y2: balcony.y + balcony.length }
+                : { x1: balcony.x + balcony.width, y1: balcony.y, x2: balcony.x + balcony.width, y2: balcony.y + balcony.length };
+          return <g key={balcony.id} onPointerDown={(event) => { event.stopPropagation(); onSelect(balcony.id); }}>
+            <title>{balcony.name} · {balcony.width} × {balcony.length} ft</title>
+            <rect x={balcony.x} y={balcony.y} width={balcony.width} height={balcony.length} fill="#c8c1b3" fillOpacity="0.38" stroke={selected ? "#d65b32" : "#786f63"} strokeWidth={selected ? 0.3 : 0.12} />
+            {balcony.railing.enabled && balcony.railing.sides.map((side) => <line key={side} {...sideLine(side)} stroke="#52635b" strokeWidth="0.2" strokeDasharray={balcony.railing.style === "solid" ? undefined : "0.45 0.25"} />)}
+            <text x={balcony.x + balcony.width / 2} y={balcony.y + balcony.length / 2 + 0.25} textAnchor="middle" fontSize="0.68" fontWeight="700" pointerEvents="none">{balcony.kind.toUpperCase()}</text>
+          </g>;
+        })}
       </g>
 
       {rooms.map((rawRoom) => {
@@ -460,6 +494,31 @@ export default function FloorPlan({
               />
             </g>
           );
+        })}
+      </g>
+
+      {project.roof.parapetEnabled && project.floors.find((floor) => floor.id === floorId)?.level === Math.max(...project.floors.map((floor) => floor.level)) && (
+        <g className="parapets" pointerEvents="none">
+          {walls.filter((wall) => wall.exterior).map((wall) => <line key={wall.id} x1={wall.x1} y1={wall.y1} x2={wall.x2} y2={wall.y2} stroke="#70675d" strokeWidth={Math.max(0.18, project.roof.parapetThickness)} strokeDasharray="0.65 0.3" />)}
+        </g>
+      )}
+
+      <g className="facade-features">
+        {facadeFeatures.map((feature) => {
+          const wall = walls.find((item) => item.id === feature.wallId);
+          if (!wall) return null;
+          const length = wallLength(wall);
+          const tx = (wall.x2 - wall.x1) / length;
+          const ty = (wall.y2 - wall.y1) / length;
+          const center = { x: wall.x1 + tx * feature.offset, y: wall.y1 + ty * feature.offset };
+          const side = wall.roomSides[0]?.side;
+          const normal = side === "north" ? { x: 0, y: -1 } : side === "south" ? { x: 0, y: 1 } : side === "east" ? { x: 1, y: 0 } : { x: -1, y: 0 };
+          const projection = feature.kind === "frame" ? feature.projection / 2 : feature.projection;
+          const x1 = center.x - tx * feature.width / 2 + normal.x * projection;
+          const y1 = center.y - ty * feature.width / 2 + normal.y * projection;
+          const x2 = center.x + tx * feature.width / 2 + normal.x * projection;
+          const y2 = center.y + ty * feature.width / 2 + normal.y * projection;
+          return <line key={feature.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke={selectedId === feature.id ? "#d65b32" : "#866d55"} strokeWidth={selectedId === feature.id ? 0.4 : Math.max(0.18, feature.thickness)} strokeLinecap="square" onPointerDown={(event) => { event.stopPropagation(); onSelect(feature.id); }}><title>{feature.kind} · {feature.width} ft</title></line>;
         })}
       </g>
 

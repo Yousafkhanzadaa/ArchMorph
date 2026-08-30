@@ -12,7 +12,7 @@ ArchMorph is a browser-based architectural concept-design environment where a pe
 
 ## Why WebMCP
 
-Coordinate clicking is fragile in an architectural editor. A small visual error can select the wrong wall, place an opening outside its host, or edit the wrong floor. ArchMorph instead exposes 40 architectural operations through `document.modelContext.registerTool()`.
+Coordinate clicking is fragile in an architectural editor. A small visual error can select the wrong wall, place an opening outside its host, or edit the wrong floor. ArchMorph instead exposes 51 architectural operations through `document.modelContext.registerTool()`.
 
 The agent works with stable floor, room, wall, opening, and stair identifiers. Human actions and WebMCP calls both pass through the same operation pipeline, so they share:
 
@@ -32,7 +32,7 @@ A representative collaboration loop is:
 
 ## Current capabilities
 
-- Plot size, cardinal orientation, setbacks, buildable envelope, coverage, and open-area metrics.
+- Per-project editable land size, cardinal orientation, setbacks, buildable envelope, coverage, and open-area metrics.
 - Multiple floors with explicit elevations and storey heights.
 - Rectangular, L-, T-, U-, and custom orthogonal polygon rooms.
 - Canonical walls with connectivity, adjacency, and exterior/interior classification.
@@ -43,6 +43,8 @@ A representative collaboration loop is:
 - Validation for overlap, plot/setback violations, opening hosts, circulation, and stairs.
 - Local project library, JSON import/export, SVG export, migration, and undo/redo.
 - Synchronized SVG plan, Three.js orbit view, and first-person Walk Mode.
+- Flat roofs with adjustable parapets; balcony/terrace slabs with bounded railing styles; and boundary walls with adjustable gates.
+- Project façade palettes, per-exterior-wall finish overrides, and wall-hosted frames, canopies, and sunshades.
 - Exterior finish presets and conceptual SHGC, VT, and U-factor glazing values.
 
 ArchMorph intentionally focuses on architecture rather than furniture, decoration, cinematic effects, or unvalidated simulation.
@@ -51,8 +53,8 @@ ArchMorph intentionally focuses on architecture rather than furniture, decoratio
 
 | Category | Count | Examples |
 | --- | ---: | --- |
-| Inspect | 7 | `inspect_project`, `inspect_floor`, `inspect_room`, `inspect_circulation` |
-| Edit | 22 | `create_polygon_room`, `add_door`, `rehost_window`, `add_stairs`, `create_floor` |
+| Inspect | 8 | `inspect_project`, `inspect_floor`, `inspect_exterior`, `inspect_circulation` |
+| Edit | 32 | `configure_plot`, `add_balcony`, `set_roof`, `configure_site_boundary`, `add_facade_feature` |
 | Calculate and validate | 5 | `calculate_room_area`, `measure_distance`, `validate_layout` |
 | Present | 6 | `switch_view`, `set_camera`, `focus_element`, `take_snapshot`, `export_plan` |
 
@@ -91,9 +93,9 @@ npm run lint
 npm run build
 ```
 
-`test:architecture` covers canonical geometry, topology, openings, circulation, stairs, polygonal rooms, persistence, migrations, and spatial collision data. `test:webmcp` checks the 40-tool catalog, schema boundaries, annotations, unique names, and representative inspection/mutation failures.
+`test:architecture` covers canonical geometry, topology, openings, circulation, stairs, polygonal rooms, exterior systems, per-project sites, persistence, migrations, and spatial collision data. `test:webmcp` checks the 51-tool catalog, schema boundaries, annotations, unique names, and representative inspection/mutation failures.
 
-Native WebMCP discovery and the N01–N10 production suite were verified with ChatGPT desktop 26.825.41651 (build 7345): exactly 40 tools were discovered, N01–N07 and N09–N10 passed, and N08 was N/A because that client exposes no cancellation mechanism. See [`docs/WEBMCP_TESTING.md`](docs/WEBMCP_TESTING.md) for the exact IDs, arguments, versions, results, and screenshots.
+The N01–N10 production baseline was verified with ChatGPT desktop 26.825.41651 (build 7345) when the deployed catalog contained 40 tools: N01–N07 and N09–N10 passed, and N08 was N/A because that client exposes no cancellation mechanism. The current 51-tool catalog additionally passed native local discovery and representative exterior-system execution on August 30. See [`docs/WEBMCP_TESTING.md`](docs/WEBMCP_TESTING.md) for the exact records.
 
 The under-three-minute recording plan and narration are ready in [`docs/DEMO_VIDEO_SCRIPT.md`](docs/DEMO_VIDEO_SCRIPT.md).
 

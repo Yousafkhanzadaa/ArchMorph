@@ -90,10 +90,69 @@ export type Wall = {
   roomSides: WallRoomSide[];
   exterior: boolean;
   connectedWallIds: string[];
+  /** Optional exterior finish override. Interior walls ignore this value. */
+  finish?: ExteriorFinishId;
   /** @deprecated Compatibility fields for pre-topology projects. */
   roomId?: string;
   /** @deprecated Compatibility fields for pre-topology projects. */
   side?: WallSide;
+};
+
+export type RailingStyle = "horizontal" | "vertical" | "solid";
+export type FacadeFeatureKind = "frame" | "canopy" | "sunshade";
+
+export type RoofSettings = {
+  type: "flat";
+  parapetEnabled: boolean;
+  parapetHeight: number;
+  parapetThickness: number;
+  finish: ExteriorFinishId;
+};
+
+export type SiteBoundarySettings = {
+  enabled: boolean;
+  height: number;
+  thickness: number;
+  finish: ExteriorFinishId;
+  gate: {
+    enabled: boolean;
+    offset: number;
+    width: number;
+    height: number;
+    style: "slatted" | "solid";
+  };
+};
+
+export type Balcony = {
+  id: string;
+  floorId: string;
+  name: string;
+  kind: "balcony" | "terrace";
+  x: number;
+  y: number;
+  width: number;
+  length: number;
+  slabThickness: number;
+  finish: ExteriorFinishId;
+  railing: {
+    enabled: boolean;
+    height: number;
+    style: RailingStyle;
+    sides: WallSide[];
+  };
+};
+
+export type FacadeFeature = {
+  id: string;
+  kind: FacadeFeatureKind;
+  wallId: string;
+  offset: number;
+  width: number;
+  elevation: number;
+  height: number;
+  projection: number;
+  thickness: number;
+  finish: ExteriorFinishId;
 };
 
 export type DoorHingeSide = "start" | "end";
@@ -199,6 +258,10 @@ export type Project = {
   walls: Wall[];
   openings: Opening[];
   stairs: Stair[];
+  balconies: Balcony[];
+  facadeFeatures: FacadeFeature[];
+  roof: RoofSettings;
+  siteBoundary: SiteBoundarySettings;
   exteriorFinish: ExteriorFinishId;
   view: {
     mode: ViewMode;
@@ -227,7 +290,10 @@ export type ValidationIssue = {
     | "INVALID_STAIR_GEOMETRY"
     | "OPENING_WITHOUT_ADJACENCY"
     | "OPENING_OVERLAP"
-    | "WALL_OUTSIDE_PLOT";
+    | "WALL_OUTSIDE_PLOT"
+    | "INVALID_BALCONY"
+    | "INVALID_SITE_BOUNDARY"
+    | "INVALID_FACADE_FEATURE";
   severity: "error" | "warning";
   message: string;
   elementIds: string[];
@@ -289,7 +355,7 @@ export type PointRef =
 
 export type ArchitectureOperation =
   | { type: "rename_project"; name: string }
-  | { type: "set_plot"; width?: number; length?: number; setbacks?: Partial<Plot["setbacks"]> }
+  | { type: "set_plot"; width?: number; length?: number; orientation?: Plot["orientation"]; setbacks?: Partial<Plot["setbacks"]> }
   | { type: "set_plot_orientation"; orientation: Plot["orientation"] }
   | {
       type: "create_room";
@@ -393,6 +459,85 @@ export type ArchitectureOperation =
       direction?: "up" | "down";
       rotation?: StairRotation;
     }
+  | { type: "set_wall_finish"; wallId: string; finish?: ExteriorFinishId }
+  | {
+      type: "set_roof";
+      parapetEnabled?: boolean;
+      parapetHeight?: number;
+      parapetThickness?: number;
+      finish?: ExteriorFinishId;
+    }
+  | {
+      type: "set_site_boundary";
+      enabled?: boolean;
+      height?: number;
+      thickness?: number;
+      finish?: ExteriorFinishId;
+      gateEnabled?: boolean;
+      gateOffset?: number;
+      gateWidth?: number;
+      gateHeight?: number;
+      gateStyle?: SiteBoundarySettings["gate"]["style"];
+    }
+  | {
+      type: "add_balcony";
+      floorId: string;
+      name?: string;
+      kind?: Balcony["kind"];
+      x: number;
+      y: number;
+      width: number;
+      length: number;
+      slabThickness?: number;
+      finish?: ExteriorFinishId;
+      railingEnabled?: boolean;
+      railingHeight?: number;
+      railingStyle?: RailingStyle;
+      railingSides?: WallSide[];
+    }
+  | {
+      type: "update_balcony";
+      balconyId: string;
+      name?: string;
+      kind?: Balcony["kind"];
+      x?: number;
+      y?: number;
+      width?: number;
+      length?: number;
+      slabThickness?: number;
+      finish?: ExteriorFinishId;
+      railingEnabled?: boolean;
+      railingHeight?: number;
+      railingStyle?: RailingStyle;
+      railingSides?: WallSide[];
+    }
+  | { type: "delete_balcony"; balconyId: string }
+  | {
+      type: "add_facade_feature";
+      kind: FacadeFeatureKind;
+      wallId: string;
+      offset: number;
+      width: number;
+      elevation?: number;
+      height?: number;
+      projection?: number;
+      thickness?: number;
+      finish?: ExteriorFinishId;
+    }
+  | {
+      type: "update_facade_feature";
+      featureId: string;
+      kind?: FacadeFeatureKind;
+      wallId?: string;
+      offset?: number;
+      width?: number;
+      elevation?: number;
+      height?: number;
+      projection?: number;
+      thickness?: number;
+      finish?: ExteriorFinishId;
+    }
+  | { type: "delete_facade_feature"; featureId: string }
   | { type: "set_exterior_finish"; finish: ExteriorFinishId }
   | { type: "create_floor"; name?: string; height?: number }
   | { type: "set_active_floor"; floorId: string }
@@ -439,7 +584,7 @@ export function createInitialProject(): Project {
   };
 
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     id: "project-archmorph-home",
     name: "Untitled Residence",
     unit: "ft",
@@ -454,6 +599,22 @@ export function createInitialProject(): Project {
     walls: [],
     openings: [],
     stairs: [],
+    balconies: [],
+    facadeFeatures: [],
+    roof: {
+      type: "flat",
+      parapetEnabled: true,
+      parapetHeight: 3,
+      parapetThickness: 0.5,
+      finish: "stucco",
+    },
+    siteBoundary: {
+      enabled: false,
+      height: 4,
+      thickness: 0.5,
+      finish: "stucco",
+      gate: { enabled: true, offset: 15, width: 10, height: 5, style: "slatted" },
+    },
     exteriorFinish: "stucco",
     view: {
       mode: "2d",
@@ -465,7 +626,7 @@ export function createInitialProject(): Project {
       {
         id: "activity-created",
         actor: "system",
-        description: "30 × 60 ft residential plot created",
+        description: "Editable 30 × 60 ft residential site created",
         operation: "create_project",
         timestamp: now,
         version: 1,
@@ -848,6 +1009,12 @@ export function projectMetrics(project: Project, floorId = project.view.activeFl
     0,
     project.plot.length - project.plot.setbacks.front - project.plot.setbacks.rear,
   );
+  const balconyArea = round(project.balconies
+    .filter((balcony) => balcony.floorId === floorId && balcony.kind === "balcony")
+    .reduce((sum, balcony) => sum + balcony.width * balcony.length, 0));
+  const terraceArea = round(project.balconies
+    .filter((balcony) => balcony.floorId === floorId && balcony.kind === "terrace")
+    .reduce((sum, balcony) => sum + balcony.width * balcony.length, 0));
 
   return {
     unit: "sq ft",
@@ -856,6 +1023,8 @@ export function projectMetrics(project: Project, floorId = project.view.activeFl
     totalNetFloorArea: roomAreaSum,
     totalNetBuildingArea,
     grossCoveredArea,
+    balconyArea,
+    terraceArea,
     totalGrossCoveredArea,
     openSiteArea: round(Math.max(0, plotArea - groundGrossArea)),
     measurementDefinitions: {
@@ -957,8 +1126,10 @@ export function rebuildCanonicalTopology(
   project: Project,
   openingTargets: Map<string, { x: number; y: number }> = new Map(),
   strict = true,
+  facadeFeatureTargets: Map<string, { x: number; y: number }> = new Map(),
 ) {
   const oldWalls = project.walls.map((wall) => ({ ...wall }));
+  const oldFacadeFeatures = (project.facadeFeatures ?? []).map((feature) => ({ ...feature }));
   const oldWallById = new Map(oldWalls.map((wall) => [wall.id, wall]));
   const independentWalls = oldWalls
     .filter((wall) => !(wall.roomIds?.length || wall.roomId))
@@ -982,8 +1153,9 @@ export function rebuildCanonicalTopology(
       const floor = project.floors.find((item) => item.id === reference.floorId);
       const roomSides = covering.map((edge) => ({ roomId: edge.roomId, side: edge.side }));
       const roomIds = Array.from(new Set(roomSides.map((item) => item.roomId)));
+      const id = canonicalWallId({ ...reference, start, end });
       topologyWalls.push({
-        id: canonicalWallId({ ...reference, start, end }),
+        id,
         floorId: reference.floorId,
         x1: reference.orientation === "horizontal" ? start : reference.coordinate,
         y1: reference.orientation === "horizontal" ? reference.coordinate : start,
@@ -995,6 +1167,7 @@ export function rebuildCanonicalTopology(
         roomSides,
         exterior: roomIds.length === 1,
         connectedWallIds: [],
+        finish: oldWallById.get(id)?.finish,
         roomId: roomIds.length === 1 ? roomIds[0] : undefined,
         side: roomIds.length === 1 ? roomSides[0]?.side : undefined,
       });
@@ -1028,6 +1201,32 @@ export function rebuildCanonicalTopology(
     migratedOpenings.push({ ...opening, wallId: candidate.wall.id, offset: round(candidate.placement.offset) });
   }
   project.openings = migratedOpenings;
+  const migratedFeatures: FacadeFeature[] = [];
+  for (const feature of oldFacadeFeatures) {
+    const oldWall = oldWallById.get(feature.wallId);
+    if (!oldWall) {
+      if (strict) throw new Error(`Façade feature ${feature.id} has no host wall.`);
+      continue;
+    }
+    const length = wallLength(oldWall);
+    const ratio = length ? feature.offset / length : 0;
+    const target = facadeFeatureTargets.get(feature.id) ?? {
+      x: oldWall.x1 + (oldWall.x2 - oldWall.x1) * ratio,
+      y: oldWall.y1 + (oldWall.y2 - oldWall.y1) * ratio,
+    };
+    const candidate = project.walls
+      .filter((wall) => wall.floorId === oldWall.floorId && wall.exterior)
+      .map((wall) => ({ wall, placement: pointOnWall(wall, target) }))
+      .filter((item): item is { wall: Wall; placement: { offset: number; distance: number } } => Boolean(item.placement))
+      .filter(({ wall, placement }) => placement.distance < 0.05 && placement.offset >= feature.width / 2 - 0.01 && placement.offset <= wallLength(wall) - feature.width / 2 + 0.01)
+      .sort((a, b) => a.placement.distance - b.placement.distance)[0];
+    if (!candidate) {
+      if (strict) throw new Error(`Façade feature ${feature.id} no longer fits a valid exterior wall.`);
+      continue;
+    }
+    migratedFeatures.push({ ...feature, wallId: candidate.wall.id, offset: round(candidate.placement.offset) });
+  }
+  project.facadeFeatures = migratedFeatures;
   return project;
 }
 
@@ -1043,6 +1242,35 @@ function roomOpeningTargets(project: Project, room: Room, nextRoom: Room) {
     });
   });
   return targets;
+}
+
+function roomFacadeFeatureTargets(project: Project, room: Room, nextRoom: Room) {
+  const targets = new Map<string, { x: number; y: number }>();
+  project.facadeFeatures.forEach((feature) => {
+    const wall = project.walls.find((item) => item.id === feature.wallId);
+    if (!wall || wall.roomIds.length !== 1 || wall.roomIds[0] !== room.id) return;
+    const length = wallLength(wall);
+    const ratio = length ? feature.offset / length : 0;
+    const center = { x: wall.x1 + (wall.x2 - wall.x1) * ratio, y: wall.y1 + (wall.y2 - wall.y1) * ratio };
+    targets.set(feature.id, {
+      x: nextRoom.x + (center.x - room.x) / room.width * nextRoom.width,
+      y: nextRoom.y + (center.y - room.y) / room.length * nextRoom.length,
+    });
+  });
+  return targets;
+}
+
+function roomWallFinishes(project: Project, roomId: string) {
+  return new Map(project.walls
+    .filter((wall) => wall.exterior && wall.finish && wall.roomIds.includes(roomId))
+    .flatMap((wall) => wall.roomSides.filter((side) => side.roomId === roomId).map((side) => [side.side, wall.finish!] as const)));
+}
+
+function restoreRoomWallFinishes(project: Project, roomId: string, finishes: Map<WallSide, ExteriorFinishId>) {
+  project.walls = project.walls.map((wall) => {
+    const side = wall.exterior ? wall.roomSides.find((item) => item.roomId === roomId)?.side : undefined;
+    return side && finishes.has(side) ? { ...wall, finish: finishes.get(side) } : wall;
+  });
 }
 
 function shapeVertices(shape: Exclude<RoomShape, "custom">, x: number, y: number, width: number, length: number) {
@@ -1127,8 +1355,49 @@ function roomFromVertices(room: Room, vertices: PlanPoint[], shape: RoomShape = 
 
 export function migrateProject(input: Project): Project {
   const project = cloneProject(input);
-  project.schemaVersion = 4;
+  project.schemaVersion = 5;
   project.exteriorFinish = exteriorFinishPresets[project.exteriorFinish] ? project.exteriorFinish : "stucco";
+  project.roof = {
+    type: "flat",
+    parapetEnabled: project.roof?.parapetEnabled ?? true,
+    parapetHeight: project.roof?.parapetHeight ?? 3,
+    parapetThickness: project.roof?.parapetThickness ?? 0.5,
+    finish: exteriorFinishPresets[project.roof?.finish] ? project.roof.finish : project.exteriorFinish,
+  };
+  project.siteBoundary = {
+    enabled: project.siteBoundary?.enabled ?? false,
+    height: project.siteBoundary?.height ?? 4,
+    thickness: project.siteBoundary?.thickness ?? 0.5,
+    finish: exteriorFinishPresets[project.siteBoundary?.finish] ? project.siteBoundary.finish : project.exteriorFinish,
+    gate: {
+      enabled: project.siteBoundary?.gate?.enabled ?? true,
+      offset: project.siteBoundary?.gate?.offset ?? project.plot.width / 2,
+      width: project.siteBoundary?.gate?.width ?? Math.min(10, project.plot.width - 2),
+      height: project.siteBoundary?.gate?.height ?? 5,
+      style: project.siteBoundary?.gate?.style === "solid" ? "solid" : "slatted",
+    },
+  };
+  project.balconies = (project.balconies ?? []).map((balcony) => ({
+    ...balcony,
+    kind: balcony.kind ?? "balcony",
+    name: balcony.name?.trim() || (balcony.kind === "terrace" ? "Terrace" : "Balcony"),
+    slabThickness: balcony.slabThickness ?? 0.5,
+    finish: exteriorFinishPresets[balcony.finish] ? balcony.finish : project.exteriorFinish,
+    railing: {
+      enabled: balcony.railing?.enabled ?? true,
+      height: balcony.railing?.height ?? 3.5,
+      style: balcony.railing?.style ?? "horizontal",
+      sides: balcony.railing?.sides?.length ? balcony.railing.sides : ["north", "east", "south", "west"],
+    },
+  }));
+  project.facadeFeatures = (project.facadeFeatures ?? []).map((feature) => ({
+    ...feature,
+    elevation: feature.elevation ?? 7,
+    height: feature.height ?? (feature.kind === "frame" ? 8 : 0.5),
+    projection: feature.projection ?? (feature.kind === "frame" ? 0.5 : 3),
+    thickness: feature.thickness ?? 0.4,
+    finish: exteriorFinishPresets[feature.finish] ? feature.finish : project.exteriorFinish,
+  }));
   project.rooms = (project.rooms ?? []).map((room) => {
     if (!room.vertices?.length) return { ...room, shape: room.shape ?? "rectangle", wallIds: room.wallIds ?? [] };
     const normalized = normalizedRoomVertices(room.vertices);
@@ -1140,6 +1409,7 @@ export function migrateProject(input: Project): Project {
     roomSides: wall.roomSides ?? (wall.roomId && wall.side ? [{ roomId: wall.roomId, side: wall.side }] : []),
     exterior: wall.exterior ?? Boolean(wall.roomId),
     connectedWallIds: wall.connectedWallIds ?? [],
+    finish: wall.finish && exteriorFinishPresets[wall.finish] ? wall.finish : undefined,
   }));
   const normalizedOpenings = (project.openings ?? []).map((opening) => {
     if (opening.kind === "door") {
@@ -1211,6 +1481,48 @@ function assertStairInsidePlot(project: Project, stair: Pick<Stair, "x" | "y" | 
   ) throw new Error("The staircase must remain inside the plot.");
 }
 
+function assertFinish(finish: ExteriorFinishId) {
+  if (!exteriorFinishPresets[finish]) throw new Error(`Exterior finish ${finish} is not supported.`);
+}
+
+function assertBalcony(project: Project, balcony: Balcony) {
+  if (!project.floors.some((floor) => floor.id === balcony.floorId)) throw new Error(`Floor ${balcony.floorId} does not exist.`);
+  if (balcony.width < 3 || balcony.length < 3) throw new Error("Balconies and terraces must be at least 3 × 3 ft.");
+  if (balcony.slabThickness < 0.25 || balcony.slabThickness > 2) throw new Error("Balcony slab thickness must be between 0.25 and 2 ft.");
+  if (balcony.x < 0 || balcony.y < 0 || balcony.x + balcony.width > project.plot.width || balcony.y + balcony.length > project.plot.length) {
+    throw new Error("The balcony or terrace must remain inside the plot boundary.");
+  }
+  if (balcony.railing.height < 2 || balcony.railing.height > 6) throw new Error("Railing height must be between 2 and 6 ft.");
+  if (!balcony.railing.sides.length) throw new Error("Select at least one railing side.");
+  assertFinish(balcony.finish);
+}
+
+function assertSiteBoundary(project: Project, boundary: SiteBoundarySettings) {
+  if (boundary.height < 2 || boundary.height > 10) throw new Error("Boundary-wall height must be between 2 and 10 ft.");
+  if (boundary.thickness < 0.2 || boundary.thickness > 2) throw new Error("Boundary-wall thickness must be between 0.2 and 2 ft.");
+  if (boundary.enabled && boundary.gate.enabled) {
+    if (boundary.gate.width < 3 || boundary.gate.width > project.plot.width - 1) throw new Error("Gate width must leave at least 0.5 ft of wall at both sides.");
+    if (boundary.gate.offset < boundary.gate.width / 2 || boundary.gate.offset > project.plot.width - boundary.gate.width / 2) {
+      throw new Error("The gate must fit within the front plot boundary.");
+    }
+  }
+  if (boundary.gate.height < 3 || boundary.gate.height > 10) throw new Error("Gate height must be between 3 and 10 ft.");
+  assertFinish(boundary.finish);
+}
+
+function assertFacadeFeature(project: Project, feature: FacadeFeature) {
+  const wall = project.walls.find((item) => item.id === feature.wallId);
+  if (!wall) throw new Error(`Wall ${feature.wallId} does not exist.`);
+  if (!wall.exterior) throw new Error("Façade features require an exterior wall.");
+  if (feature.width < 1 || feature.width > wallLength(wall)) throw new Error("Façade feature width must fit its host wall.");
+  if (feature.offset < feature.width / 2 || feature.offset > wallLength(wall) - feature.width / 2) throw new Error("Façade feature must fit within its host wall.");
+  if (feature.elevation < 0 || feature.elevation > wall.height + 3) throw new Error("Façade feature elevation is outside the supported wall zone.");
+  if (feature.height <= 0 || feature.height > wall.height + 3) throw new Error("Façade feature height is outside the supported range.");
+  if (feature.projection < 0.1 || feature.projection > 8) throw new Error("Façade feature projection must be between 0.1 and 8 ft.");
+  if (feature.thickness < 0.1 || feature.thickness > 2) throw new Error("Façade feature thickness must be between 0.1 and 2 ft.");
+  assertFinish(feature.finish);
+}
+
 function actorLabel(actor: Actor) {
   if (actor === "agent") return "Agent";
   if (actor === "human") return "You";
@@ -1249,6 +1561,8 @@ function displayName(project: Project, id: string) {
     project.walls.find((item) => item.id === id)?.side?.concat(" wall") ??
     project.openings.find((item) => item.id === id)?.kind ??
     project.stairs.find((item) => item.id === id)?.id ??
+    project.balconies.find((item) => item.id === id)?.name ??
+    project.facadeFeatures.find((item) => item.id === id)?.kind?.concat(" façade feature") ??
     id
   );
 }
@@ -1267,6 +1581,10 @@ export function applyOperation(
     walls: current.walls.map((item) => ({ ...item, roomIds: [...(item.roomIds ?? [])], roomSides: (item.roomSides ?? []).map((side) => ({ ...side })), connectedWallIds: [...(item.connectedWallIds ?? [])] })),
     openings: current.openings.map((item) => ({ ...item })),
     stairs: current.stairs.map((item) => ({ ...item })),
+    balconies: current.balconies.map((item) => ({ ...item, railing: { ...item.railing, sides: [...item.railing.sides] } })),
+    facadeFeatures: current.facadeFeatures.map((item) => ({ ...item })),
+    roof: { ...current.roof },
+    siteBoundary: { ...current.siteBoundary, gate: { ...current.siteBoundary.gate } },
     view: { ...current.view },
     activity: [...current.activity],
   };
@@ -1290,8 +1608,15 @@ export function applyOperation(
         ...project.plot,
         width,
         length,
+        orientation: operation.orientation ?? project.plot.orientation,
         setbacks: { ...project.plot.setbacks, ...operation.setbacks },
       };
+      const setbacks = project.plot.setbacks;
+      if (Object.values(setbacks).some((value) => value < 0)) throw new Error("Setbacks cannot be negative.");
+      if (setbacks.left + setbacks.right >= width || setbacks.front + setbacks.rear >= length) {
+        throw new Error("Setbacks must leave a positive buildable envelope.");
+      }
+      assertSiteBoundary(project, project.siteBoundary);
       description = `${who} updated the plot to ${width} × ${length} ft`;
       result = { plot: project.plot, metrics: projectMetrics(project) };
       break;
@@ -1356,8 +1681,11 @@ export function applyOperation(
       const room = { ...previousRoom, x: round(operation.x), y: round(operation.y), vertices: movedVertices };
       assertRoomInsidePlot(project, room);
       const targets = roomOpeningTargets(project, previousRoom, room);
+      const featureTargets = roomFacadeFeatureTargets(project, previousRoom, room);
+      const wallFinishes = roomWallFinishes(project, previousRoom.id);
       project.rooms[index] = room;
-      rebuildCanonicalTopology(project, targets);
+      rebuildCanonicalTopology(project, targets, true, featureTargets);
+      restoreRoomWallFinishes(project, room.id, wallFinishes);
       assertAllOpeningsValid(project);
       project.view.focusElementId = room.id;
       description = `${who} moved ${room.name}`;
@@ -1382,8 +1710,11 @@ export function applyOperation(
       };
       assertRoomInsidePlot(project, room);
       const targets = roomOpeningTargets(project, previousRoom, room);
+      const featureTargets = roomFacadeFeatureTargets(project, previousRoom, room);
+      const wallFinishes = roomWallFinishes(project, previousRoom.id);
       project.rooms[index] = room;
-      rebuildCanonicalTopology(project, targets);
+      rebuildCanonicalTopology(project, targets, true, featureTargets);
+      restoreRoomWallFinishes(project, room.id, wallFinishes);
       assertAllOpeningsValid(project);
       project.view.focusElementId = room.id;
       description = `${who} resized ${room.name} to ${room.width} × ${room.length} ft`;
@@ -1426,6 +1757,7 @@ export function applyOperation(
       const roomWallIds = new Set(project.walls.filter((wall) => wall.roomIds.length === 1 && wall.roomIds[0] === room.id).map((wall) => wall.id));
       project.rooms = project.rooms.filter((item) => item.id !== room.id);
       project.openings = project.openings.filter((opening) => !roomWallIds.has(opening.wallId));
+      project.facadeFeatures = project.facadeFeatures.filter((feature) => !roomWallIds.has(feature.wallId));
       rebuildCanonicalTopology(project);
       if (project.view.focusElementId === room.id) project.view.focusElementId = undefined;
       description = `${who} deleted ${room.name}`;
@@ -1611,8 +1943,169 @@ export function applyOperation(
       result = { stair, connection: stairConnection(project, stair) ?? null };
       break;
     }
+    case "set_wall_finish": {
+      const index = project.walls.findIndex((wall) => wall.id === operation.wallId);
+      if (index < 0) throw new Error(`Wall ${operation.wallId} does not exist.`);
+      if (!project.walls[index].exterior) throw new Error("Finish overrides apply only to exterior walls.");
+      if (operation.finish) assertFinish(operation.finish);
+      project.walls[index] = { ...project.walls[index], finish: operation.finish };
+      project.view.focusElementId = operation.wallId;
+      description = operation.finish
+        ? `${who} set a wall finish to ${exteriorFinishPresets[operation.finish].label}`
+        : `${who} reset a wall to the project façade palette`;
+      result = { wall: project.walls[index], effectiveFinish: operation.finish ?? project.exteriorFinish };
+      break;
+    }
+    case "set_roof": {
+      const roof: RoofSettings = {
+        ...project.roof,
+        parapetEnabled: operation.parapetEnabled ?? project.roof.parapetEnabled,
+        parapetHeight: round(operation.parapetHeight ?? project.roof.parapetHeight),
+        parapetThickness: round(operation.parapetThickness ?? project.roof.parapetThickness),
+        finish: operation.finish ?? project.roof.finish,
+      };
+      if (roof.parapetHeight < 0.5 || roof.parapetHeight > 6) throw new Error("Parapet height must be between 0.5 and 6 ft.");
+      if (roof.parapetThickness < 0.2 || roof.parapetThickness > 2) throw new Error("Parapet thickness must be between 0.2 and 2 ft.");
+      assertFinish(roof.finish);
+      project.roof = roof;
+      description = `${who} updated the flat roof and parapet`;
+      result = { roof };
+      break;
+    }
+    case "set_site_boundary": {
+      const siteBoundary: SiteBoundarySettings = {
+        ...project.siteBoundary,
+        enabled: operation.enabled ?? project.siteBoundary.enabled,
+        height: round(operation.height ?? project.siteBoundary.height),
+        thickness: round(operation.thickness ?? project.siteBoundary.thickness),
+        finish: operation.finish ?? project.siteBoundary.finish,
+        gate: {
+          ...project.siteBoundary.gate,
+          enabled: operation.gateEnabled ?? project.siteBoundary.gate.enabled,
+          offset: round(operation.gateOffset ?? project.siteBoundary.gate.offset),
+          width: round(operation.gateWidth ?? project.siteBoundary.gate.width),
+          height: round(operation.gateHeight ?? project.siteBoundary.gate.height),
+          style: operation.gateStyle ?? project.siteBoundary.gate.style,
+        },
+      };
+      assertSiteBoundary(project, siteBoundary);
+      project.siteBoundary = siteBoundary;
+      description = `${who} updated the boundary wall and front gate`;
+      result = { siteBoundary };
+      break;
+    }
+    case "add_balcony": {
+      const balcony: Balcony = {
+        id: createId("balcony"),
+        floorId: operation.floorId,
+        name: operation.name?.trim() || (operation.kind === "terrace" ? "Terrace" : "Balcony"),
+        kind: operation.kind ?? "balcony",
+        x: round(operation.x), y: round(operation.y), width: round(operation.width), length: round(operation.length),
+        slabThickness: round(operation.slabThickness ?? 0.5),
+        finish: operation.finish ?? project.exteriorFinish,
+        railing: {
+          enabled: operation.railingEnabled ?? true,
+          height: round(operation.railingHeight ?? 3.5),
+          style: operation.railingStyle ?? "horizontal",
+          sides: operation.railingSides?.length ? [...new Set(operation.railingSides)] : ["north", "east", "south", "west"],
+        },
+      };
+      assertBalcony(project, balcony);
+      project.balconies.push(balcony);
+      project.view.activeFloorId = balcony.floorId;
+      project.view.focusElementId = balcony.id;
+      description = `${who} added ${balcony.name}`;
+      result = { balcony, area: round(balcony.width * balcony.length) };
+      break;
+    }
+    case "update_balcony": {
+      const index = project.balconies.findIndex((item) => item.id === operation.balconyId);
+      if (index < 0) throw new Error(`Balcony ${operation.balconyId} does not exist.`);
+      const previous = project.balconies[index];
+      const balcony: Balcony = {
+        ...previous,
+        name: operation.name?.trim() || previous.name,
+        kind: operation.kind ?? previous.kind,
+        x: round(operation.x ?? previous.x), y: round(operation.y ?? previous.y),
+        width: round(operation.width ?? previous.width), length: round(operation.length ?? previous.length),
+        slabThickness: round(operation.slabThickness ?? previous.slabThickness),
+        finish: operation.finish ?? previous.finish,
+        railing: {
+          ...previous.railing,
+          enabled: operation.railingEnabled ?? previous.railing.enabled,
+          height: round(operation.railingHeight ?? previous.railing.height),
+          style: operation.railingStyle ?? previous.railing.style,
+          sides: operation.railingSides?.length ? [...new Set(operation.railingSides)] : previous.railing.sides,
+        },
+      };
+      assertBalcony(project, balcony);
+      project.balconies[index] = balcony;
+      project.view.focusElementId = balcony.id;
+      description = `${who} updated ${balcony.name}`;
+      result = { balcony, area: round(balcony.width * balcony.length) };
+      break;
+    }
+    case "delete_balcony": {
+      const balcony = project.balconies.find((item) => item.id === operation.balconyId);
+      if (!balcony) throw new Error(`Balcony ${operation.balconyId} does not exist.`);
+      project.balconies = project.balconies.filter((item) => item.id !== balcony.id);
+      if (project.view.focusElementId === balcony.id) project.view.focusElementId = undefined;
+      description = `${who} deleted ${balcony.name}`;
+      result = { deletedBalconyId: balcony.id };
+      break;
+    }
+    case "add_facade_feature": {
+      const defaults = operation.kind === "frame"
+        ? { elevation: 1, height: 8, projection: 0.6, thickness: 0.45 }
+        : operation.kind === "canopy"
+          ? { elevation: 7, height: 0.45, projection: 3, thickness: 0.4 }
+          : { elevation: 6.5, height: 0.3, projection: 2, thickness: 0.3 };
+      const feature: FacadeFeature = {
+        id: createId("facade"), kind: operation.kind, wallId: operation.wallId,
+        offset: round(operation.offset), width: round(operation.width),
+        elevation: round(operation.elevation ?? defaults.elevation),
+        height: round(operation.height ?? defaults.height),
+        projection: round(operation.projection ?? defaults.projection),
+        thickness: round(operation.thickness ?? defaults.thickness),
+        finish: operation.finish ?? project.exteriorFinish,
+      };
+      assertFacadeFeature(project, feature);
+      project.facadeFeatures.push(feature);
+      project.view.activeFloorId = project.walls.find((wall) => wall.id === feature.wallId)!.floorId;
+      project.view.focusElementId = feature.id;
+      description = `${who} added a ${feature.kind}`;
+      result = { facadeFeature: feature };
+      break;
+    }
+    case "update_facade_feature": {
+      const index = project.facadeFeatures.findIndex((item) => item.id === operation.featureId);
+      if (index < 0) throw new Error(`Façade feature ${operation.featureId} does not exist.`);
+      const previous = project.facadeFeatures[index];
+      const feature: FacadeFeature = {
+        ...previous, kind: operation.kind ?? previous.kind, wallId: operation.wallId ?? previous.wallId,
+        offset: round(operation.offset ?? previous.offset), width: round(operation.width ?? previous.width),
+        elevation: round(operation.elevation ?? previous.elevation), height: round(operation.height ?? previous.height),
+        projection: round(operation.projection ?? previous.projection), thickness: round(operation.thickness ?? previous.thickness),
+        finish: operation.finish ?? previous.finish,
+      };
+      assertFacadeFeature(project, feature);
+      project.facadeFeatures[index] = feature;
+      project.view.focusElementId = feature.id;
+      description = `${who} updated a ${feature.kind}`;
+      result = { facadeFeature: feature };
+      break;
+    }
+    case "delete_facade_feature": {
+      const feature = project.facadeFeatures.find((item) => item.id === operation.featureId);
+      if (!feature) throw new Error(`Façade feature ${operation.featureId} does not exist.`);
+      project.facadeFeatures = project.facadeFeatures.filter((item) => item.id !== feature.id);
+      if (project.view.focusElementId === feature.id) project.view.focusElementId = undefined;
+      description = `${who} deleted a ${feature.kind}`;
+      result = { deletedFacadeFeatureId: feature.id };
+      break;
+    }
     case "set_exterior_finish": {
-      if (!exteriorFinishPresets[operation.finish]) throw new Error(`Exterior finish ${operation.finish} is not supported.`);
+      assertFinish(operation.finish);
       project.exteriorFinish = operation.finish;
       const finish = exteriorFinishPresets[operation.finish];
       description = `${who} set the exterior finish to ${finish.label}`;
@@ -1647,13 +2140,17 @@ export function applyOperation(
       const wall = project.walls.find((item) => item.id === operation.elementId);
       const opening = project.openings.find((item) => item.id === operation.elementId);
       const stair = project.stairs.find((item) => item.id === operation.elementId);
+      const balcony = project.balconies.find((item) => item.id === operation.elementId);
+      const facadeFeature = project.facadeFeatures.find((item) => item.id === operation.elementId);
       if (wall?.roomIds.length) throw new Error("Canonical room-boundary walls are controlled by their rooms.");
-      if (!wall && !opening && !stair) throw new Error("This element cannot be deleted.");
+      if (!wall && !opening && !stair && !balcony && !facadeFeature) throw new Error("This element cannot be deleted.");
       project.walls = project.walls.filter((item) => item.id !== operation.elementId);
       project.openings = project.openings.filter(
         (item) => item.id !== operation.elementId && item.wallId !== operation.elementId,
       );
       project.stairs = project.stairs.filter((item) => item.id !== operation.elementId);
+      project.balconies = project.balconies.filter((item) => item.id !== operation.elementId);
+      project.facadeFeatures = project.facadeFeatures.filter((item) => item.id !== operation.elementId && item.wallId !== operation.elementId);
       description = `${who} deleted ${displayName(current, operation.elementId)}`;
       result = { deletedElementId: operation.elementId };
       break;
@@ -1690,7 +2187,7 @@ export function applyOperation(
     }
     case "focus_element": {
       if (operation.elementId) {
-        const exists = [project.rooms, project.walls, project.openings, project.stairs]
+        const exists = [project.rooms, project.walls, project.openings, project.stairs, project.balconies, project.facadeFeatures]
           .some((items) => items.some((item) => item.id === operation.elementId));
         if (!exists) throw new Error(`Element ${operation.elementId} does not exist.`);
       }
@@ -2032,6 +2529,45 @@ export function validateLayout(project: Project, floorId?: string): ValidationRe
     }
   }
 
+  for (const balcony of project.balconies.filter((item) => targetFloors.includes(item.floorId))) {
+    const outside = balcony.width < 3 || balcony.length < 3 || balcony.x < 0 || balcony.y < 0
+      || balcony.x + balcony.width > plot.width || balcony.y + balcony.length > plot.length;
+    if (!outside) continue;
+    issues.push({
+      id: createId("issue"), code: "INVALID_BALCONY", severity: "error",
+      message: `${balcony.name} does not fit within the editable site boundary.`,
+      elementIds: [balcony.id],
+      evidence: { x: balcony.x, y: balcony.y, width: balcony.width, length: balcony.length },
+      suggestion: "Move or resize the balcony/terrace so its complete slab remains inside the plot.",
+    });
+  }
+
+  for (const feature of project.facadeFeatures) {
+    const wall = project.walls.find((item) => item.id === feature.wallId);
+    if (wall && targetFloors.includes(wall.floorId) && wall.exterior && feature.width >= 1
+      && feature.offset >= feature.width / 2 && feature.offset <= wallLength(wall) - feature.width / 2) continue;
+    if (wall && !targetFloors.includes(wall.floorId)) continue;
+    issues.push({
+      id: createId("issue"), code: "INVALID_FACADE_FEATURE", severity: "error",
+      message: `A ${feature.kind} is not hosted within a valid exterior wall segment.`,
+      elementIds: [feature.id, feature.wallId],
+      evidence: { wallId: feature.wallId, offset: feature.offset, width: feature.width },
+      suggestion: "Rehost or resize the façade feature so it fits an exterior wall.",
+    });
+  }
+
+  const gate = project.siteBoundary.gate;
+  if (project.siteBoundary.enabled && gate.enabled
+    && (gate.width < 3 || gate.offset < gate.width / 2 || gate.offset > plot.width - gate.width / 2)) {
+    issues.push({
+      id: createId("issue"), code: "INVALID_SITE_BOUNDARY", severity: "error",
+      message: "The front gate does not fit within the current plot width.",
+      elementIds: [],
+      evidence: { plotWidth: plot.width, gateOffset: gate.offset, gateWidth: gate.width },
+      suggestion: "Move or narrow the gate, or increase the plot width.",
+    });
+  }
+
   const errors = issues.filter((issue) => issue.severity === "error").length;
   const warnings = issues.length - errors;
   return {
@@ -2085,7 +2621,12 @@ export function inspectWall(project: Project, wallId: string) {
     }),
     openings: project.openings.filter((opening) => opening.wallId === wall.id),
     connectedWallIds: wall.connectedWallIds,
-    exteriorFinish: wall.exterior ? { id: project.exteriorFinish, ...exteriorFinishPresets[project.exteriorFinish] } : null,
+    exteriorFinish: wall.exterior ? {
+      id: wall.finish ?? project.exteriorFinish,
+      source: wall.finish ? "wall-override" : "project-default",
+      ...exteriorFinishPresets[wall.finish ?? project.exteriorFinish],
+    } : null,
+    facadeFeatures: project.facadeFeatures.filter((feature) => feature.wallId === wall.id),
   };
 }
 
@@ -2115,6 +2656,8 @@ export function inspectFloor(project: Project, floorId: string) {
     walls: project.walls.filter((wall) => wall.floorId === floorId),
     openings: project.openings.filter((opening) => opening.floorId === floorId),
     stairs: project.stairs.filter((stair) => stair.floorId === floorId),
+    balconies: project.balconies.filter((balcony) => balcony.floorId === floorId),
+    facadeFeatures: project.facadeFeatures.filter((feature) => project.walls.find((wall) => wall.id === feature.wallId)?.floorId === floorId),
     metrics: projectMetrics(project, floorId),
     circulation: buildCirculationGraph(project),
     validation: validateLayout(project, floorId),
@@ -2136,6 +2679,17 @@ function elementPoint(project: Project, ref: PointRef) {
   if (stair) {
     const footprint = stairFootprint(stair);
     return { x: footprint.x + footprint.width / 2, y: footprint.y + footprint.length / 2 };
+  }
+  const balcony = project.balconies.find((item) => item.id === ref.elementId);
+  if (balcony) return { x: balcony.x + balcony.width / 2, y: balcony.y + balcony.length / 2 };
+  const facadeFeature = project.facadeFeatures.find((item) => item.id === ref.elementId);
+  if (facadeFeature) {
+    const facadeWall = project.walls.find((item) => item.id === facadeFeature.wallId);
+    if (facadeWall) {
+      const length = wallLength(facadeWall);
+      const ratio = length ? facadeFeature.offset / length : 0;
+      return { x: facadeWall.x1 + (facadeWall.x2 - facadeWall.x1) * ratio, y: facadeWall.y1 + (facadeWall.y2 - facadeWall.y1) * ratio };
+    }
   }
   const opening = project.openings.find((item) => item.id === ref.elementId);
   if (opening) {
@@ -2179,6 +2733,10 @@ export function projectInspection(project: Project) {
     },
     plot: project.plot,
     exteriorFinish: { id: project.exteriorFinish, ...exteriorFinishPresets[project.exteriorFinish] },
+    roof: project.roof,
+    siteBoundary: project.siteBoundary,
+    balconies: project.balconies,
+    facadeFeatures: project.facadeFeatures,
     floors: project.floors,
     counts: {
       floors: project.floors.length,
@@ -2187,6 +2745,9 @@ export function projectInspection(project: Project) {
       doors: project.openings.filter((opening) => opening.kind === "door").length,
       windows: project.openings.filter((opening) => opening.kind === "window").length,
       stairs: project.stairs.length,
+      balconies: project.balconies.filter((item) => item.kind === "balcony").length,
+      terraces: project.balconies.filter((item) => item.kind === "terrace").length,
+      facadeFeatures: project.facadeFeatures.length,
     },
     metrics: projectMetrics(project),
     currentView: project.view,

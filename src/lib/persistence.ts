@@ -6,7 +6,7 @@ import {
   type Project,
 } from "./architecture.ts";
 
-export const PROJECT_SCHEMA_VERSION = 4;
+export const PROJECT_SCHEMA_VERSION = 5;
 const LIBRARY_SCHEMA_VERSION = 1;
 const STORAGE_KEY = "archmorph.project-library.v1";
 
@@ -125,10 +125,20 @@ export function listSavedProjects(): SavedProjectSummary[] {
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
-export function createNewLocalProject(name = "Untitled Residence") {
+export function createNewLocalProject(name = "Untitled Residence", plot?: Partial<Project["plot"]>) {
   const project = createInitialProject();
   project.id = createId("project");
   project.name = name;
+  if (plot) {
+    project.plot = {
+      ...project.plot,
+      ...plot,
+      setbacks: { ...project.plot.setbacks, ...plot.setbacks },
+    };
+    project.siteBoundary.gate.offset = project.plot.width / 2;
+    project.siteBoundary.gate.width = Math.min(project.siteBoundary.gate.width, project.plot.width - 1);
+    project.activity[0].description = `Editable ${project.plot.width} × ${project.plot.length} ft residential site created`;
+  }
   project.updatedAt = new Date().toISOString();
   saveProjectLocally(project);
   return project;

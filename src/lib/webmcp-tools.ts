@@ -8,6 +8,9 @@ import {
   type RoomShape,
   type StairRotation,
   type ExteriorFinishId,
+  type FacadeFeatureKind,
+  type RailingStyle,
+  type WallSide,
   type ValidationReport,
   buildCirculationGraph,
   inspectFloor,
@@ -92,6 +95,13 @@ function optionalBoolean(input: Record<string, unknown>, key: string) {
   return value;
 }
 
+function optionalStringArray(input: Record<string, unknown>, key: string) {
+  const value = input[key];
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) throw new Error(`${key} must be an array of strings.`);
+  return value as string[];
+}
+
 function pointReference(input: unknown, label: string): PointRef {
   if (!input || typeof input !== "object") throw new Error(`${label} must be a coordinate or element reference.`);
   const value = input as Record<string, unknown>;
@@ -128,6 +138,50 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
       execute: () => {
         const project = runtime.getProject();
         return { plot: project.plot, metrics: projectMetrics(project), unit: project.unit };
+      },
+    },
+    {
+      name: "configure_plot",
+      category: "edit",
+      description: "Configure this project's editable land width, length, setbacks, and front-edge orientation in one canonical transaction. Omitted fields remain unchanged.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          width: { type: "number", minimum: 15 }, length: { type: "number", minimum: 15 },
+          orientation: { type: "string", enum: ["North", "East", "South", "West"] },
+          frontSetback: { type: "number", minimum: 0 }, rearSetback: { type: "number", minimum: 0 },
+          leftSetback: { type: "number", minimum: 0 }, rightSetback: { type: "number", minimum: 0 },
+        },
+        additionalProperties: false,
+      },
+      execute: (input) => runtime.perform({
+        type: "set_plot",
+        width: optionalNumber(input, "width"), length: optionalNumber(input, "length"),
+        orientation: optionalString(input, "orientation") as Project["plot"]["orientation"] | undefined,
+        setbacks: {
+          ...(input.frontSetback !== undefined ? { front: requiredNumber(input, "frontSetback") } : {}),
+          ...(input.rearSetback !== undefined ? { rear: requiredNumber(input, "rearSetback") } : {}),
+          ...(input.leftSetback !== undefined ? { left: requiredNumber(input, "leftSetback") } : {}),
+          ...(input.rightSetback !== undefined ? { right: requiredNumber(input, "rightSetback") } : {}),
+        },
+      }).result,
+    },
+    {
+      name: "inspect_exterior",
+      category: "inspect",
+      description: "Inspect the flat roof, parapet, site boundary, gate, balconies, terraces, façade features, and per-wall material overrides in the live project.",
+      inputSchema: emptyObject,
+      annotations: readOnly,
+      execute: () => {
+        const project = runtime.getProject();
+        return {
+          roof: project.roof,
+          siteBoundary: project.siteBoundary,
+          balconies: project.balconies,
+          facadeFeatures: project.facadeFeatures,
+          wallFinishOverrides: project.walls.filter((wall) => wall.exterior && wall.finish).map((wall) => ({ wallId: wall.id, finish: wall.finish })),
+          projectDefaultFinish: project.exteriorFinish,
+        };
       },
     },
     {
@@ -717,6 +771,122 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
       description: "Set one lightweight, project-wide exterior facade finish. This changes 3D exterior wall appearance without adding heavy assembly simulation.",
       inputSchema: { type: "object", properties: { finish: { type: "string", enum: ["stucco", "brick", "concrete", "timber", "metal"] } }, required: ["finish"], additionalProperties: false },
       execute: (input) => runtime.perform({ type: "set_exterior_finish", finish: requiredString(input, "finish") as ExteriorFinishId }).result,
+    },
+    {
+      name: "set_wall_finish",
+      category: "edit",
+      description: "Set or reset a material override on one exterior canonical wall. Omit finish to return the wall to the project façade default.",
+      inputSchema: { type: "object", properties: { wallId, finish: { type: "string", enum: ["stucco", "brick", "concrete", "timber", "metal"] } }, required: ["wallId"], additionalProperties: false },
+      execute: (input) => runtime.perform({ type: "set_wall_finish", wallId: requiredString(input, "wallId"), finish: optionalString(input, "finish") as ExteriorFinishId | undefined }).result,
+    },
+    {
+      name: "set_roof",
+      category: "edit",
+      description: "Configure the lightweight flat roof parapet and its visual finish. Omitted values remain unchanged.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          parapetEnabled: { type: "boolean" }, parapetHeight: { type: "number", minimum: 0.5, maximum: 6 },
+          parapetThickness: { type: "number", minimum: 0.2, maximum: 2 },
+          finish: { type: "string", enum: ["stucco", "brick", "concrete", "timber", "metal"] },
+        },
+        additionalProperties: false,
+      },
+      execute: (input) => runtime.perform({ type: "set_roof", parapetEnabled: optionalBoolean(input, "parapetEnabled"), parapetHeight: optionalNumber(input, "parapetHeight"), parapetThickness: optionalNumber(input, "parapetThickness"), finish: optionalString(input, "finish") as ExteriorFinishId | undefined }).result,
+    },
+    {
+      name: "configure_site_boundary",
+      category: "edit",
+      description: "Configure the plot boundary wall and adjustable front gate, including height, size, position, style, and lightweight finish.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          enabled: { type: "boolean" }, height: { type: "number", minimum: 2, maximum: 10 }, thickness: { type: "number", minimum: 0.2, maximum: 2 },
+          finish: { type: "string", enum: ["stucco", "brick", "concrete", "timber", "metal"] }, gateEnabled: { type: "boolean" },
+          gateOffset: { type: "number", minimum: 0 }, gateWidth: { type: "number", minimum: 3 }, gateHeight: { type: "number", minimum: 3, maximum: 10 },
+          gateStyle: { type: "string", enum: ["slatted", "solid"] },
+        },
+        additionalProperties: false,
+      },
+      execute: (input) => runtime.perform({ type: "set_site_boundary", enabled: optionalBoolean(input, "enabled"), height: optionalNumber(input, "height"), thickness: optionalNumber(input, "thickness"), finish: optionalString(input, "finish") as ExteriorFinishId | undefined, gateEnabled: optionalBoolean(input, "gateEnabled"), gateOffset: optionalNumber(input, "gateOffset"), gateWidth: optionalNumber(input, "gateWidth"), gateHeight: optionalNumber(input, "gateHeight"), gateStyle: optionalString(input, "gateStyle") as "slatted" | "solid" | undefined }).result,
+    },
+    {
+      name: "add_balcony",
+      category: "edit",
+      description: "Add a rectangular balcony or terrace slab with a bounded lightweight railing system on a floor.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          floorId, name: { type: "string" }, kind: { type: "string", enum: ["balcony", "terrace"], default: "balcony" },
+          x: { type: "number" }, y: { type: "number" }, width: { type: "number", minimum: 3 }, length: { type: "number", minimum: 3 },
+          slabThickness: { type: "number", minimum: 0.25, maximum: 2 }, finish: { type: "string", enum: ["stucco", "brick", "concrete", "timber", "metal"] },
+          railingEnabled: { type: "boolean" }, railingHeight: { type: "number", minimum: 2, maximum: 6 }, railingStyle: { type: "string", enum: ["horizontal", "vertical", "solid"] },
+          railingSides: { type: "array", items: { type: "string", enum: ["north", "east", "south", "west"] }, minItems: 1, maxItems: 4 },
+        },
+        required: ["floorId", "x", "y", "width", "length"], additionalProperties: false,
+      },
+      execute: (input) => runtime.perform({ type: "add_balcony", floorId: requiredString(input, "floorId"), name: optionalString(input, "name"), kind: optionalString(input, "kind") as "balcony" | "terrace" | undefined, x: requiredNumber(input, "x"), y: requiredNumber(input, "y"), width: requiredNumber(input, "width"), length: requiredNumber(input, "length"), slabThickness: optionalNumber(input, "slabThickness"), finish: optionalString(input, "finish") as ExteriorFinishId | undefined, railingEnabled: optionalBoolean(input, "railingEnabled"), railingHeight: optionalNumber(input, "railingHeight"), railingStyle: optionalString(input, "railingStyle") as RailingStyle | undefined, railingSides: optionalStringArray(input, "railingSides") as WallSide[] | undefined }).result,
+    },
+    {
+      name: "update_balcony",
+      category: "edit",
+      description: "Update balcony or terrace geometry, type, finish, and railing without replacing its stable project identity.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          balconyId: { type: "string" }, name: { type: "string" }, kind: { type: "string", enum: ["balcony", "terrace"] },
+          x: { type: "number" }, y: { type: "number" }, width: { type: "number", minimum: 3 }, length: { type: "number", minimum: 3 },
+          slabThickness: { type: "number", minimum: 0.25, maximum: 2 }, finish: { type: "string", enum: ["stucco", "brick", "concrete", "timber", "metal"] },
+          railingEnabled: { type: "boolean" }, railingHeight: { type: "number", minimum: 2, maximum: 6 }, railingStyle: { type: "string", enum: ["horizontal", "vertical", "solid"] },
+          railingSides: { type: "array", items: { type: "string", enum: ["north", "east", "south", "west"] }, minItems: 1, maxItems: 4 },
+        },
+        required: ["balconyId"], additionalProperties: false,
+      },
+      execute: (input) => runtime.perform({ type: "update_balcony", balconyId: requiredString(input, "balconyId"), name: optionalString(input, "name"), kind: optionalString(input, "kind") as "balcony" | "terrace" | undefined, x: optionalNumber(input, "x"), y: optionalNumber(input, "y"), width: optionalNumber(input, "width"), length: optionalNumber(input, "length"), slabThickness: optionalNumber(input, "slabThickness"), finish: optionalString(input, "finish") as ExteriorFinishId | undefined, railingEnabled: optionalBoolean(input, "railingEnabled"), railingHeight: optionalNumber(input, "railingHeight"), railingStyle: optionalString(input, "railingStyle") as RailingStyle | undefined, railingSides: optionalStringArray(input, "railingSides") as WallSide[] | undefined }).result,
+    },
+    {
+      name: "delete_balcony",
+      category: "edit",
+      description: "Delete one balcony or terrace and its derived slab and railing representations.",
+      inputSchema: { type: "object", properties: { balconyId: { type: "string" } }, required: ["balconyId"], additionalProperties: false },
+      execute: (input) => runtime.perform({ type: "delete_balcony", balconyId: requiredString(input, "balconyId") }).result,
+    },
+    {
+      name: "add_facade_feature",
+      category: "edit",
+      description: "Add a frame, canopy, or sunshade hosted by an exterior wall with exact lightweight geometry.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          kind: { type: "string", enum: ["frame", "canopy", "sunshade"] }, wallId, offset: { type: "number" }, width: { type: "number", minimum: 1 },
+          elevation: { type: "number", minimum: 0 }, height: { type: "number", minimum: 0.1 }, projection: { type: "number", minimum: 0.1, maximum: 8 },
+          thickness: { type: "number", minimum: 0.1, maximum: 2 }, finish: { type: "string", enum: ["stucco", "brick", "concrete", "timber", "metal"] },
+        },
+        required: ["kind", "wallId", "offset", "width"], additionalProperties: false,
+      },
+      execute: (input) => runtime.perform({ type: "add_facade_feature", kind: requiredString(input, "kind") as FacadeFeatureKind, wallId: requiredString(input, "wallId"), offset: requiredNumber(input, "offset"), width: requiredNumber(input, "width"), elevation: optionalNumber(input, "elevation"), height: optionalNumber(input, "height"), projection: optionalNumber(input, "projection"), thickness: optionalNumber(input, "thickness"), finish: optionalString(input, "finish") as ExteriorFinishId | undefined }).result,
+    },
+    {
+      name: "update_facade_feature",
+      category: "edit",
+      description: "Update or rehost a frame, canopy, or sunshade while retaining its stable project identity.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          featureId: { type: "string" }, kind: { type: "string", enum: ["frame", "canopy", "sunshade"] }, wallId,
+          offset: { type: "number" }, width: { type: "number", minimum: 1 }, elevation: { type: "number", minimum: 0 }, height: { type: "number", minimum: 0.1 },
+          projection: { type: "number", minimum: 0.1, maximum: 8 }, thickness: { type: "number", minimum: 0.1, maximum: 2 }, finish: { type: "string", enum: ["stucco", "brick", "concrete", "timber", "metal"] },
+        },
+        required: ["featureId"], additionalProperties: false,
+      },
+      execute: (input) => runtime.perform({ type: "update_facade_feature", featureId: requiredString(input, "featureId"), kind: optionalString(input, "kind") as FacadeFeatureKind | undefined, wallId: optionalString(input, "wallId"), offset: optionalNumber(input, "offset"), width: optionalNumber(input, "width"), elevation: optionalNumber(input, "elevation"), height: optionalNumber(input, "height"), projection: optionalNumber(input, "projection"), thickness: optionalNumber(input, "thickness"), finish: optionalString(input, "finish") as ExteriorFinishId | undefined }).result,
+    },
+    {
+      name: "delete_facade_feature",
+      category: "edit",
+      description: "Delete one hosted façade frame, canopy, or sunshade from the shared model.",
+      inputSchema: { type: "object", properties: { featureId: { type: "string" } }, required: ["featureId"], additionalProperties: false },
+      execute: (input) => runtime.perform({ type: "delete_facade_feature", featureId: requiredString(input, "featureId") }).result,
     },
     {
       name: "create_floor",

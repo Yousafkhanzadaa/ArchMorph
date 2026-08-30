@@ -12,6 +12,7 @@ import {
   stairFootprint,
   stairLocalPoint,
   stairPlanPoint,
+  wallLength,
   type NavigationMode,
   type PlanPoint,
   type Project,
@@ -299,6 +300,18 @@ export default function ModelView({
     scene.add(boundary);
 
     const selectable: THREE.Object3D[] = [];
+    const finishMaterial = (finishId: keyof typeof exteriorFinishPresets, selected = false) => {
+      const finish = exteriorFinishPresets[finishId];
+      return new THREE.MeshStandardMaterial({
+        color: colorWithSelection(finish.color, selected),
+        roughness: finish.roughness,
+        metalness: finish.metalness,
+      });
+    };
+    const wallFinish = (wallIds: string[]) => {
+      const wall = wallIds.map((id) => project.walls.find((item) => item.id === id)).find((item) => item?.exterior);
+      return wall?.finish ?? project.exteriorFinish;
+    };
 
     for (const room of project.rooms) {
       const floor = floorById.get(room.floorId);
@@ -340,7 +353,7 @@ export default function ModelView({
       if (!floor || volume.width <= 0 || volume.length <= 0) continue;
       const selected = volume.wallIds.includes(selectedId ?? "");
       const exterior = volume.wallIds.some((wallId) => project.walls.find((wall) => wall.id === wallId)?.exterior);
-      const finish = exteriorFinishPresets[project.exteriorFinish];
+      const finish = exteriorFinishPresets[wallFinish(volume.wallIds)];
       const mesh = meshBox(
         [volume.width, volume.top - volume.bottom, volume.length],
         [volume.x + volume.width / 2, floor.elevation + (volume.bottom + volume.top) / 2, volume.z + volume.length / 2],
@@ -359,7 +372,7 @@ export default function ModelView({
       if (!floor || !length) continue;
       const selected = solid.wallIds.includes(selectedId ?? "");
       const exterior = solid.wallIds.some((wallId) => project.walls.find((wall) => wall.id === wallId)?.exterior);
-      const finish = exteriorFinishPresets[project.exteriorFinish];
+      const finish = exteriorFinishPresets[wallFinish(solid.wallIds)];
       const mesh = meshBox(
         [length, solid.top - solid.bottom, solid.thickness],
         [(solid.x1 + solid.x2) / 2, floor.elevation + (solid.bottom + solid.top) / 2, (solid.z1 + solid.z2) / 2],
@@ -371,6 +384,163 @@ export default function ModelView({
       selectable.push(mesh);
       scene.add(mesh);
       wallPieceCount += 1;
+    }
+
+    let renderedParapetCount = 0;
+    if (project.roof.parapetEnabled) {
+      const topFloor = [...project.floors].sort((a, b) => b.level - a.level)[0];
+      if (topFloor) {
+        const material = finishMaterial(project.roof.finish);
+        for (const wall of project.walls.filter((item) => item.floorId === topFloor.id && item.exterior)) {
+          const length = Math.hypot(wall.x2 - wall.x1, wall.y2 - wall.y1);
+          if (!length) continue;
+          const parapet = meshBox(
+            [length, project.roof.parapetHeight, project.roof.parapetThickness],
+            [(wall.x1 + wall.x2) / 2, topFloor.elevation + topFloor.height + project.roof.parapetHeight / 2, (wall.y1 + wall.y2) / 2],
+            -Math.atan2(wall.y2 - wall.y1, wall.x2 - wall.x1),
+            material,
+          );
+          parapet.userData.elementId = wall.id;
+          selectable.push(parapet);
+          scene.add(parapet);
+          renderedParapetCount += 1;
+        }
+      }
+    }
+
+    let renderedBoundaryPieceCount = 0;
+    if (project.siteBoundary.enabled) {
+      const setting = project.siteBoundary;
+      const material = finishMaterial(setting.finish);
+      const addBoundaryPiece = (size: [number, number, number], position: [number, number, number]) => {
+        if (size[0] <= 0.05 || size[2] <= 0.05) return;
+        scene.add(meshBox(size, position, 0, material));
+        renderedBoundaryPieceCount += 1;
+      };
+      const halfHeight = setting.height / 2;
+      const t = setting.thickness;
+      if (setting.gate.enabled) {
+        const gateStart = setting.gate.offset - setting.gate.width / 2;
+        const gateEnd = setting.gate.offset + setting.gate.width / 2;
+        addBoundaryPiece([gateStart, setting.height, t], [gateStart / 2, halfHeight, 0]);
+        addBoundaryPiece([project.plot.width - gateEnd, setting.height, t], [(gateEnd + project.plot.width) / 2, halfHeight, 0]);
+        const gateMaterial = finishMaterial("metal");
+        if (setting.gate.style === "solid") {
+          scene.add(meshBox([setting.gate.width, setting.gate.height, 0.22], [setting.gate.offset, setting.gate.height / 2, -0.03], 0, gateMaterial));
+          renderedBoundaryPieceCount += 1;
+        } else {
+          const slatCount = Math.min(12, Math.max(4, Math.round(setting.gate.width / 0.75)));
+          for (let index = 0; index < slatCount; index += 1) {
+            const x = gateStart + (index + 0.5) * setting.gate.width / slatCount;
+            scene.add(meshBox([0.16, setting.gate.height, 0.16], [x, setting.gate.height / 2, -0.03], 0, gateMaterial));
+            renderedBoundaryPieceCount += 1;
+          }
+          for (const y of [0.35, setting.gate.height - 0.35]) {
+            scene.add(meshBox([setting.gate.width, 0.16, 0.16], [setting.gate.offset, y, -0.03], 0, gateMaterial));
+            renderedBoundaryPieceCount += 1;
+          }
+        }
+      } else {
+        addBoundaryPiece([project.plot.width, setting.height, t], [project.plot.width / 2, halfHeight, 0]);
+      }
+      addBoundaryPiece([project.plot.width, setting.height, t], [project.plot.width / 2, halfHeight, project.plot.length]);
+      addBoundaryPiece([t, setting.height, project.plot.length], [0, halfHeight, project.plot.length / 2]);
+      addBoundaryPiece([t, setting.height, project.plot.length], [project.plot.width, halfHeight, project.plot.length / 2]);
+    }
+
+    let renderedBalconyCount = 0;
+    let renderedRailingPieceCount = 0;
+    for (const balcony of project.balconies) {
+      const floor = floorById.get(balcony.floorId);
+      if (!floor) continue;
+      const selected = selectedId === balcony.id;
+      const slabTop = floor.elevation + Math.max(FLOOR_SLAB_THICKNESS, balcony.slabThickness);
+      const slab = meshBox(
+        [balcony.width, balcony.slabThickness, balcony.length],
+        [balcony.x + balcony.width / 2, floor.elevation + balcony.slabThickness / 2, balcony.y + balcony.length / 2],
+        0,
+        finishMaterial(balcony.finish, selected),
+      );
+      slab.userData.elementId = balcony.id;
+      selectable.push(slab);
+      scene.add(slab);
+      renderedBalconyCount += 1;
+      if (!balcony.railing.enabled) continue;
+      const railMaterial = finishMaterial("metal", selected);
+      const addRailPiece = (size: [number, number, number], position: [number, number, number]) => {
+        const piece = meshBox(size, position, 0, railMaterial);
+        piece.userData.elementId = balcony.id;
+        selectable.push(piece);
+        scene.add(piece);
+        renderedRailingPieceCount += 1;
+      };
+      for (const side of balcony.railing.sides) {
+        const alongX = side === "north" || side === "south";
+        const span = alongX ? balcony.width : balcony.length;
+        const fixed = side === "north" ? balcony.y : side === "south" ? balcony.y + balcony.length : side === "west" ? balcony.x : balcony.x + balcony.width;
+        const center = alongX
+          ? [balcony.x + balcony.width / 2, fixed] as const
+          : [fixed, balcony.y + balcony.length / 2] as const;
+        if (balcony.railing.style === "solid") {
+          addRailPiece(
+            alongX ? [span, balcony.railing.height, 0.12] : [0.12, balcony.railing.height, span],
+            [center[0], slabTop + balcony.railing.height / 2, center[1]],
+          );
+          continue;
+        }
+        const levels = balcony.railing.style === "horizontal" ? [0.18, balcony.railing.height / 2, balcony.railing.height] : [balcony.railing.height];
+        for (const level of levels) addRailPiece(
+          alongX ? [span, 0.12, 0.12] : [0.12, 0.12, span],
+          [center[0], slabTop + level, center[1]],
+        );
+        const postCount = Math.min(10, Math.max(2, Math.ceil(span / (balcony.railing.style === "vertical" ? 1 : 4)) + 1));
+        for (let index = 0; index < postCount; index += 1) {
+          const progress = postCount === 1 ? 0.5 : index / (postCount - 1);
+          const x = alongX ? balcony.x + span * progress : center[0];
+          const z = alongX ? center[1] : balcony.y + span * progress;
+          addRailPiece([0.12, balcony.railing.height, 0.12], [x, slabTop + balcony.railing.height / 2, z]);
+        }
+      }
+    }
+
+    let renderedFacadeFeaturePieceCount = 0;
+    for (const feature of project.facadeFeatures) {
+      const wall = project.walls.find((item) => item.id === feature.wallId);
+      const floor = wall ? floorById.get(wall.floorId) : undefined;
+      if (!wall || !floor) continue;
+      const length = wallLength(wall);
+      if (!length) continue;
+      const tx = (wall.x2 - wall.x1) / length;
+      const tz = (wall.y2 - wall.y1) / length;
+      const side = wall.roomSides[0]?.side;
+      const normal = side === "north" ? { x: 0, z: -1 }
+        : side === "south" ? { x: 0, z: 1 }
+          : side === "east" ? { x: 1, z: 0 }
+            : { x: -1, z: 0 };
+      const anchor = { x: wall.x1 + tx * feature.offset, z: wall.y1 + tz * feature.offset };
+      const rotation = -Math.atan2(wall.y2 - wall.y1, wall.x2 - wall.x1);
+      const material = finishMaterial(feature.finish, selectedId === feature.id);
+      const addFeaturePiece = (size: [number, number, number], y: number, projectionCenter: number, tangentCenter = 0) => {
+        const piece = meshBox(
+          size,
+          [anchor.x + tx * tangentCenter + normal.x * projectionCenter, floor.elevation + y, anchor.z + tz * tangentCenter + normal.z * projectionCenter],
+          rotation,
+          material,
+        );
+        piece.userData.elementId = feature.id;
+        selectable.push(piece);
+        scene.add(piece);
+        renderedFacadeFeaturePieceCount += 1;
+      };
+      if (feature.kind === "frame") {
+        const centerProjection = feature.projection / 2 + wall.thickness / 2;
+        addFeaturePiece([feature.width + feature.thickness * 2, feature.thickness, feature.projection], feature.elevation + feature.height, centerProjection);
+        for (const tangentCenter of [-(feature.width + feature.thickness) / 2, (feature.width + feature.thickness) / 2]) {
+          addFeaturePiece([feature.thickness, feature.height, feature.projection], feature.elevation + feature.height / 2, centerProjection, tangentCenter);
+        }
+      } else {
+        addFeaturePiece([feature.width, feature.thickness, feature.projection], feature.elevation, feature.projection / 2 + wall.thickness / 2);
+      }
     }
 
     let renderedDoorCount = 0;
@@ -595,6 +765,11 @@ export default function ModelView({
     canvas.dataset.windowCount = String(project.openings.filter((item) => item.kind === "window").length);
     canvas.dataset.renderedWindowCount = String(renderedWindowCount);
     canvas.dataset.collisionSegmentCount = String(spatial.collisionSegments.length);
+    canvas.dataset.parapetPieceCount = String(renderedParapetCount);
+    canvas.dataset.boundaryPieceCount = String(renderedBoundaryPieceCount);
+    canvas.dataset.balconyCount = String(renderedBalconyCount);
+    canvas.dataset.railingPieceCount = String(renderedRailingPieceCount);
+    canvas.dataset.facadeFeaturePieceCount = String(renderedFacadeFeaturePieceCount);
 
     const resize = () => {
       const width = Math.max(1, host.clientWidth);

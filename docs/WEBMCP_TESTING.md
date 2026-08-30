@@ -18,7 +18,7 @@ The architecture suite covers canonical geometry, topology, hosted openings, cir
 1. Use the current ChatGPT in-app browser or the Chrome version and flag specified by the official challenge instructions.
 2. Open the public ArchMorph URL, not a source-code preview.
 3. Confirm the production UI loads without `?debug=1`.
-4. Confirm the client discovers 40 ArchMorph tools.
+4. Confirm the client discovers 51 ArchMorph tools. Historical result rows below retain the exact 40-tool count observed before the exterior-system expansion.
 5. Record the client name, exact version/model when visible, date, and result below.
 
 ## Native smoke suite
@@ -59,6 +59,7 @@ For each fixture, record:
 | 2026-08-29 | Codex in-app browser, localhost | UI load, fixture import, plan/3D/validation/debug views | Pass for UI; native discovery not claimed | Local page displayed 40-tool harness; native browser API availability must be checked on deployed origin |
 | 2026-08-29 | ChatGPT desktop 26.814.41407 (build 6720), Codex in-app browser, public deployment | Public access, production UI, metadata, native prerequisite check | Blocked before N01; native discovery unavailable | The normal URL loaded without `?debug=1`, but `"modelContext" in document` was `false` and `typeof document.modelContext` was `"undefined"`; no Chrome browser was connected |
 | 2026-08-29 | ChatGPT desktop 26.825.41651 (build 7345), Codex In-app Browser, public deployment | Native discovery and N01–N10 | Pass: N01–N07, N09–N10; N08 N/A | Native browser capability discovered exactly 40 page tools; client exposes timeout but no cancellation mechanism |
+| 2026-08-30 | Codex In-app Browser, localhost | Native discovery plus editable site, roof/parapet, boundary/gate, balcony/railing, wall finish, façade features, and 3D render | Pass | Native capability discovered 51 tools; representative calls completed with no browser console errors; derived 3D detail remained bounded |
 | — | Chrome WebMCP configuration, public deployment | N01–N10 | Not run | Optional second-client evidence; not required for the verified ChatGPT run |
 
 ## Initial blocked native attempt — 2026-08-29

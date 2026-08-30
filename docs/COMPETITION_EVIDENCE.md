@@ -31,7 +31,7 @@ Run `git log --reverse --date=iso-strict --format='%h %ad %s'` to inspect the so
 
 ## WebMCP evidence paths
 
-- `src/lib/webmcp-tools.ts`: 40 named, schema-bounded tools.
+- `src/lib/webmcp-tools.ts`: 51 named, schema-bounded tools; the added exterior/site tools use the same canonical operation pipeline.
 - `src/app/components/Studio.tsx`: signal-scoped `document.modelContext.registerTool()` lifecycle and the shared human/agent commit path.
 - `src/lib/architecture.ts`: canonical operation, inspection, topology, metric, circulation, and validation logic used by tools and UI.
 - `src/types/webmcp.d.ts`: local type boundary for the draft imperative API.

@@ -104,7 +104,7 @@ assert.equal(metrics.openSiteArea, metrics.plotArea - projectMetrics(project).gr
 persistence.saveProjectLocally(project);
 const restored = persistence.loadLatestProject()!;
 assert.equal(restored.id, project.id);
-assert.equal(restored.schemaVersion, 4);
+assert.equal(restored.schemaVersion, 5);
 assert.equal(restored.walls.length, project.walls.length);
 assert.equal(restored.openings.length, project.openings.length);
 assert.equal(restored.view.focusElementId, undefined, "temporary focus state should not be persisted");
@@ -118,6 +118,8 @@ assert.notEqual(duplicate.id, project.id);
 assert.ok(persistence.listSavedProjects().length >= 3);
 const next = persistence.deleteLocalProject(duplicate.id);
 assert.ok(next, "deleting one saved project should leave another loadable project");
+const customSiteProject = persistence.createNewLocalProject("Custom Site", { width: 42, length: 75, orientation: "South", setbacks: { front: 7, rear: 5, left: 4, right: 4 } });
+assert.deepEqual(customSiteProject.plot, { width: 42, length: 75, orientation: "South", setbacks: { front: 7, rear: 5, left: 4, right: 4 } }, "new projects should accept their own site dimensions instead of sharing a fixed plot");
 
 let multiFloor = createInitialProject();
 const performMultiFloor = (operation: ArchitectureOperation) => {
@@ -250,6 +252,34 @@ for (const finish of ["stucco", "brick", "concrete", "timber", "metal"] satisfie
   assert.equal(finishProject.exteriorFinish, finish, `${finish} should be stored as canonical facade state`);
 }
 
+let exteriorProject = createInitialProject();
+const performExterior = (operation: ArchitectureOperation) => { exteriorProject = applyOperation(exteriorProject, operation, "agent").project; };
+performExterior({ type: "set_plot", width: 40, length: 80, orientation: "East", setbacks: { front: 8, rear: 6, left: 4, right: 4 } });
+assert.deepEqual(exteriorProject.plot, { width: 40, length: 80, orientation: "East", setbacks: { front: 8, rear: 6, left: 4, right: 4 } }, "site geometry must be editable project state");
+performExterior({ type: "set_roof", parapetEnabled: true, parapetHeight: 3.5, parapetThickness: 0.6, finish: "concrete" });
+performExterior({ type: "set_site_boundary", enabled: true, height: 5, gateOffset: 20, gateWidth: 12, gateHeight: 6, gateStyle: "slatted", finish: "stucco" });
+performExterior({ type: "create_floor", name: "Upper Exterior" });
+const exteriorFloor = exteriorProject.floors.find((floor) => floor.level === 1)!;
+performExterior({ type: "create_room", floorId: exteriorFloor.id, name: "Upper Suite", roomType: "Bedroom", x: 6, y: 8, width: 16, length: 14 });
+const exteriorWall = exteriorProject.walls.find((wall) => wall.floorId === exteriorFloor.id && wall.exterior && wallLength(wall) >= 8)!;
+performExterior({ type: "set_wall_finish", wallId: exteriorWall.id, finish: "brick" });
+performExterior({ type: "add_balcony", floorId: exteriorFloor.id, name: "Front Balcony", x: 8, y: 1, width: 12, length: 6, finish: "concrete", railingStyle: "vertical", railingSides: ["north", "east", "west"] });
+performExterior({ type: "add_facade_feature", kind: "canopy", wallId: exteriorWall.id, offset: 6, width: 6, projection: 3, finish: "metal" });
+assert.equal(exteriorProject.roof.parapetHeight, 3.5);
+assert.equal(exteriorProject.siteBoundary.gate.width, 12);
+assert.equal(exteriorProject.walls.find((wall) => wall.id === exteriorWall.id)?.finish, "brick");
+assert.equal(projectMetrics(exteriorProject, exteriorFloor.id).balconyArea, 72);
+assert.equal(exteriorProject.facadeFeatures[0].wallId, exteriorWall.id);
+performExterior({ type: "move_room", roomId: exteriorProject.rooms.find((room) => room.floorId === exteriorFloor.id)!.id, x: 7, y: 9 });
+assert.equal(exteriorProject.facadeFeatures.length, 1, "hosted façade features should follow their room-controlled wall when it moves");
+assert.ok(exteriorProject.walls.some((wall) => wall.exterior && wall.finish === "brick"), "per-wall finish overrides should survive room-controlled topology movement");
+assertOperationRejectedWithoutMutation(exteriorProject, { type: "update_balcony", balconyId: exteriorProject.balconies[0].id, width: 80 }, /inside the plot/);
+const exteriorRoundTrip = persistence.importProjectDocument(persistence.exportProjectDocument(exteriorProject));
+assert.equal(exteriorRoundTrip.schemaVersion, 5);
+assert.equal(exteriorRoundTrip.balconies.length, 1);
+assert.equal(exteriorRoundTrip.facadeFeatures.length, 1);
+assert.equal(exteriorRoundTrip.siteBoundary.enabled, true);
+
 let legacyProject = createInitialProject();
 legacyProject = applyOperation(legacyProject, { type: "create_room", floorId: "floor-ground", name: "Legacy Room", roomType: "Custom", x: 3, y: 8, width: 12, length: 14 }, "agent").project;
 legacyProject = applyOperation(legacyProject, { type: "create_floor", name: "Legacy Upper" }, "agent").project;
@@ -257,13 +287,21 @@ legacyProject = applyOperation(legacyProject, { type: "add_stairs", floorId: "fl
 const legacyDocument = JSON.parse(JSON.stringify(legacyProject)) as Record<string, unknown>;
 legacyDocument.schemaVersion = 3;
 delete legacyDocument.exteriorFinish;
+delete legacyDocument.roof;
+delete legacyDocument.siteBoundary;
+delete legacyDocument.balconies;
+delete legacyDocument.facadeFeatures;
 delete (legacyDocument.rooms as Array<Record<string, unknown>>)[0].shape;
 delete (legacyDocument.stairs as Array<Record<string, unknown>>)[0].rotation;
 const migratedLegacy = migrateProject(legacyDocument as unknown as Project);
-assert.equal(migratedLegacy.schemaVersion, 4, "legacy projects should migrate to schema v4");
+assert.equal(migratedLegacy.schemaVersion, 5, "legacy projects should migrate to schema v5");
 assert.equal(migratedLegacy.exteriorFinish, "stucco", "legacy projects should receive a stable default facade finish");
 assert.equal(migratedLegacy.rooms[0].shape, "rectangle", "legacy rooms should migrate as rectangles");
 assert.equal(migratedLegacy.stairs[0].rotation, 0, "legacy stairs should migrate to zero rotation");
+assert.equal(migratedLegacy.roof.type, "flat", "legacy projects should gain the lightweight flat-roof model");
+assert.equal(migratedLegacy.siteBoundary.enabled, false, "legacy projects should not unexpectedly show a boundary wall");
+assert.deepEqual(migratedLegacy.balconies, []);
+assert.deepEqual(migratedLegacy.facadeFeatures, []);
 
 let spatialProject = createInitialProject();
 const performSpatial = (operation: ArchitectureOperation) => {

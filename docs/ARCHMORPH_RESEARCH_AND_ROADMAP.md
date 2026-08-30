@@ -27,7 +27,7 @@ ArchMorph is a strong fit for the WebMCP Challenge because spatial design is dif
 5. The human adjusts the design directly.
 6. The agent re-inspects, explains tradeoffs, and refines the live model.
 
-The current product already contains a meaningful architectural domain model, 2D and 3D synchronization, browser persistence, Walk Mode, multi-storey stairs, orthogonal irregular rooms, a lightweight exterior-finish palette, glazing properties, validation, and 40 WebMCP tools. The most urgent remaining work is submission readiness: public deployment, public source synchronization, a real project README, an open-source license, native WebMCP smoke tests, evaluation evidence, and a concise demo video.
+The current product contains a meaningful architectural domain model, 2D and 3D synchronization, browser persistence, Walk Mode, multi-storey stairs, orthogonal irregular rooms, editable project sites, lightweight exterior systems, glazing properties, validation, and 51 WebMCP tools.
 
 ## 2. Product purpose and boundaries
 
@@ -150,7 +150,7 @@ The central principle is one canonical project model and one mutation pipeline. 
 | `src/lib/spatial3d.ts` | Derived wall/opening geometry and collision data used by 3D navigation |
 | `src/app/components/ModelView.tsx` | Three.js model, camera/navigation modes, level presentation, openings, stairs, and Walk Mode |
 | `src/lib/persistence.ts` | Local project library, save/load, import/export, and schema migration |
-| `src/lib/webmcp-tools.ts` | 40 typed tools mapped to inspections, operations, calculations, validation, and presentation actions |
+| `src/lib/webmcp-tools.ts` | 51 typed tools mapped to inspections, operations, calculations, validation, and presentation actions |
 | `src/types/webmcp.d.ts` | Local types for the current WebMCP imperative API |
 | `scripts/architecture-regression.ts` | Deterministic architectural-domain regression coverage |
 
@@ -338,12 +338,12 @@ Good: `rehost_window({ openingId, wallId, offset })`.
 
 Weak: `click_canvas({ x, y })`.
 
-### 6.7 Current 40-tool surface
+### 6.7 Current 51-tool surface
 
 | Category | Count | Tools |
 | --- | ---: | --- |
-| Inspect | 7 | `inspect_project`, `inspect_plot`, `inspect_floor`, `inspect_room`, `inspect_wall`, `inspect_opening`, `inspect_circulation` |
-| Edit | 22 | `set_plot_orientation`, `create_room`, `create_polygon_room`, `move_room`, `resize_room`, `update_room_vertices`, `delete_room`, `add_wall`, `move_wall`, `add_door`, `add_window`, `update_opening`, `set_door_properties`, `rehost_door`, `set_window_properties`, `rehost_window`, `set_exact_dimension`, `delete_opening`, `add_stairs`, `update_stairs`, `set_exterior_finish`, `create_floor` |
+| Inspect | 8 | `inspect_project`, `inspect_plot`, `inspect_exterior`, `inspect_floor`, `inspect_room`, `inspect_wall`, `inspect_opening`, `inspect_circulation` |
+| Edit | 32 | Existing room/wall/opening/stair/floor tools plus `configure_plot`, `set_wall_finish`, `set_roof`, `configure_site_boundary`, balcony CRUD, and façade-feature CRUD |
 | Calculate/validate | 5 | `calculate_room_area`, `calculate_total_area`, `calculate_open_area`, `measure_distance`, `validate_layout` |
 | Present | 6 | `switch_view`, `set_camera`, `set_navigation_mode`, `focus_element`, `take_snapshot`, `export_plan` |
 
@@ -575,7 +575,7 @@ Repository snapshot: [Yousafkhanzadaa/ArchMorph](https://github.com/Yousafkhanza
 | Item | Status | Evidence / action |
 | --- | --- | --- |
 | Architecture-first product direction | Strong | Domain model, plan/3D synchronization, circulation, validation, stairs, and glazing are implemented |
-| Non-trivial WebMCP implementation | Strong foundation | 40 tools share the same operation pipeline as the human UI |
+| Non-trivial WebMCP implementation | Strong foundation | 51 tools share the same operation pipeline as the human UI |
 | Meaningful competition-period extension | Evidence exists | Preserve commits and clearly document prior versus new behavior |
 | Production UI free of developer clutter | Implemented | Developer console and internal values require explicit debug mode |
 | Deterministic domain verification | Implemented | Architecture regression script, lint, and production build have passed |
@@ -747,7 +747,7 @@ A focused under-three-minute demonstration could follow this sequence:
 7. Switch to 3D Walk Mode, enter the building, ascend the stair, and arrive on the upper level.
 8. Focus the final element or capture a snapshot while showing the validation summary.
 
-This proves page-state sharing, multi-tool reasoning, human-agent turn-taking, architectural value, and visible execution. Avoid spending demo time listing all 40 tools or showing the debug console.
+This proves page-state sharing, multi-tool reasoning, human-agent turn-taking, architectural value, and visible execution. Avoid spending demo time listing all 51 tools or showing the debug console.
 
 ## 15. Immediate recommended sequence
 

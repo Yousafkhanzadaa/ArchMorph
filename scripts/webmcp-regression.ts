@@ -37,11 +37,11 @@ const runtime: ToolRuntime = {
 const tools = createArchMorphTools(runtime);
 const names = tools.map((tool) => tool.name);
 
-assert.equal(tools.length, 40, "ArchMorph should expose exactly 40 submission tools");
+assert.equal(tools.length, 51, "ArchMorph should expose exactly 51 canonical tools");
 assert.equal(new Set(names).size, tools.length, "WebMCP tool names must be unique");
 assert.deepEqual(
   Object.fromEntries(["inspect", "edit", "calculate", "present"].map((category) => [category, tools.filter((tool) => tool.category === category).length])),
-  { inspect: 7, edit: 22, calculate: 5, present: 6 },
+  { inspect: 8, edit: 32, calculate: 5, present: 6 },
   "the documented category counts must match the live catalog",
 );
 
@@ -60,6 +60,7 @@ const expectedReadOnly = new Set([
   "inspect_wall",
   "inspect_opening",
   "inspect_circulation",
+  "inspect_exterior",
   "calculate_room_area",
   "calculate_total_area",
   "calculate_open_area",
@@ -90,7 +91,22 @@ await createRoom.execute({
 assert.equal(project.rooms.length, 1, "create_room should mutate the shared canonical project");
 assert.equal(project.rooms[0].name, "WebMCP Test Room");
 
+await tools.find((tool) => tool.name === "configure_plot")!.execute({ width: 40, length: 70, orientation: "West", frontSetback: 8, rearSetback: 6, leftSetback: 4, rightSetback: 4 });
+assert.equal(project.plot.width, 40, "configure_plot should edit per-project land geometry");
+assert.equal(project.plot.orientation, "West");
+
 const exteriorWall = project.walls.find((wall) => wall.exterior && wall.roomIds.includes(project.rooms[0].id))!;
+await tools.find((tool) => tool.name === "set_wall_finish")!.execute({ wallId: exteriorWall.id, finish: "brick" });
+await tools.find((tool) => tool.name === "set_roof")!.execute({ parapetEnabled: true, parapetHeight: 3.5, finish: "concrete" });
+await tools.find((tool) => tool.name === "configure_site_boundary")!.execute({ enabled: true, height: 5, gateOffset: 20, gateWidth: 10, gateStyle: "slatted" });
+const balconyResult = await tools.find((tool) => tool.name === "add_balcony")!.execute({ floorId: project.view.activeFloorId, name: "WebMCP Terrace", kind: "terrace", x: 15, y: 1, width: 10, length: 6, railingStyle: "horizontal" }) as { balcony: { id: string } };
+await tools.find((tool) => tool.name === "update_balcony")!.execute({ balconyId: balconyResult.balcony.id, railingHeight: 4, finish: "concrete" });
+const featureResult = await tools.find((tool) => tool.name === "add_facade_feature")!.execute({ kind: "canopy", wallId: exteriorWall.id, offset: 5, width: 4, projection: 3 }) as { facadeFeature: { id: string } };
+await tools.find((tool) => tool.name === "update_facade_feature")!.execute({ featureId: featureResult.facadeFeature.id, finish: "metal" });
+const exteriorInspection = await tools.find((tool) => tool.name === "inspect_exterior")!.execute({}) as { balconies: unknown[]; facadeFeatures: unknown[]; siteBoundary: { enabled: boolean } };
+assert.equal(exteriorInspection.balconies.length, 1);
+assert.equal(exteriorInspection.facadeFeatures.length, 1);
+assert.equal(exteriorInspection.siteBoundary.enabled, true);
 const addWindow = tools.find((tool) => tool.name === "add_window")!;
 const addedWindow = await addWindow.execute({
   wallId: exteriorWall.id,
