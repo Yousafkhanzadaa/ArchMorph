@@ -25,7 +25,7 @@ const OPENING: HeroSignal = {
   actor: "system",
   code: "01",
   note: "Site set out",
-  value: "5640",
+  value: "3550",
   progress: 0,
   elevation: 0,
 };

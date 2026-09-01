@@ -60,6 +60,65 @@ const pulse = (t: number, start: number, up: number, hold: number, down: number)
   return 1 - easeInOut((t - start - up - hold) / down);
 };
 
+/**
+ * A box with a chamfered arris. Every face, chamfer and corner is a flat facet
+ * with its own normal, so edges stay crisp while catching a separate highlight —
+ * the way a cast concrete or stone edge behaves under daylight.
+ */
+function chamferedBox(width: number, height: number, depth: number, chamfer: number) {
+  const x = width / 2;
+  const y = height / 2;
+  const z = depth / 2;
+  const t = Math.max(0.0004, Math.min(chamfer, width * 0.24, height * 0.24, depth * 0.24));
+
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const edge = new THREE.Vector3();
+  const other = new THREE.Vector3();
+  const facing = new THREE.Vector3();
+
+  const onX = (i: number, j: number, k: number) => [i * x, j * (y - t), k * (z - t)] as const;
+  const onY = (i: number, j: number, k: number) => [i * (x - t), j * y, k * (z - t)] as const;
+  const onZ = (i: number, j: number, k: number) => [i * (x - t), j * (y - t), k * z] as const;
+
+  /** Winding is derived from the intended normal, so no facet can end up inside out. */
+  const facet = (points: (readonly number[])[], nx: number, ny: number, nz: number) => {
+    facing.set(nx, ny, nz).normalize();
+    edge.set(points[1][0] - points[0][0], points[1][1] - points[0][1], points[1][2] - points[0][2]);
+    other.set(points[2][0] - points[0][0], points[2][1] - points[0][1], points[2][2] - points[0][2]);
+    edge.cross(other);
+    const ordered = edge.dot(facing) < 0 ? [...points].reverse() : points;
+    for (let i = 1; i < ordered.length - 1; i += 1) {
+      for (const point of [ordered[0], ordered[i], ordered[i + 1]]) {
+        positions.push(point[0], point[1], point[2]);
+        normals.push(facing.x, facing.y, facing.z);
+      }
+    }
+  };
+
+  for (const i of [-1, 1]) facet([onX(i, -1, -1), onX(i, 1, -1), onX(i, 1, 1), onX(i, -1, 1)], i, 0, 0);
+  for (const j of [-1, 1]) facet([onY(-1, j, -1), onY(1, j, -1), onY(1, j, 1), onY(-1, j, 1)], 0, j, 0);
+  for (const k of [-1, 1]) facet([onZ(-1, -1, k), onZ(1, -1, k), onZ(1, 1, k), onZ(-1, 1, k)], 0, 0, k);
+
+  for (const i of [-1, 1]) {
+    for (const j of [-1, 1]) facet([onX(i, j, -1), onX(i, j, 1), onY(i, j, 1), onY(i, j, -1)], i, j, 0);
+    for (const k of [-1, 1]) facet([onX(i, -1, k), onX(i, 1, k), onZ(i, 1, k), onZ(i, -1, k)], i, 0, k);
+  }
+  for (const j of [-1, 1]) {
+    for (const k of [-1, 1]) facet([onY(-1, j, k), onY(1, j, k), onZ(1, j, k), onZ(-1, j, k)], 0, j, k);
+  }
+  for (const i of [-1, 1]) {
+    for (const j of [-1, 1]) {
+      for (const k of [-1, 1]) facet([onX(i, j, k), onY(i, j, k), onZ(i, j, k)], i, j, k);
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+  return geometry;
+}
+
 type TrackedMaterial = { material: THREE.Material; base: number };
 
 type Part = {
@@ -86,6 +145,7 @@ type BoxOptions = {
   level: Level;
   layer: PartLayer;
   rise?: boolean;
+  /** Opt in: a drawn arris belongs on primary masses, not on every mullion. */
   edges?: boolean;
   edgeColor?: number;
   edgeOpacity?: number;
@@ -199,6 +259,17 @@ function makeLabel(text: string, rotation = 0, width = 2.15): Label {
  * Everything is registered with the stage it belongs to so the entrance sequence
  * can draw, raise and assemble it in the order an architect would.
  */
+/**
+ * Villa AM-06 — a two-storey residence set out on a 1350 mm façade module.
+ *
+ *   Plan grid   X  -6.75 … 6.75 (13 500)      Z  -4.50 … 4.50 (9 000)
+ *   Levels      ±0 ground · +3600 upper · +7200 roof datum
+ *   Structure   300 exterior walls · 200 partitions · 320 slabs
+ *
+ * The roof is a perimeter ring only, so the upper plan reads from above. Every
+ * element is registered with the stage that builds it, the level it belongs to
+ * and the layer it can be isolated by.
+ */
 function buildModel() {
   const rig = new THREE.Group();
 
@@ -211,37 +282,47 @@ function buildModel() {
   const parts: Part[] = [];
   const stageCounts = new Array(STAGES.length).fill(0);
 
-  const concrete = new THREE.MeshStandardMaterial({ color: 0xded9ce, roughness: 0.82, metalness: 0.02 });
-  const concreteLight = new THREE.MeshStandardMaterial({ color: 0xf0ece3, roughness: 0.76, metalness: 0.01 });
-  const concreteShade = new THREE.MeshStandardMaterial({ color: 0xbab8b0, roughness: 0.88, metalness: 0.01 });
-  const floorMaterial = new THREE.MeshStandardMaterial({ color: 0xd4cfc4, roughness: 0.94, metalness: 0 });
-  const frameMaterial = new THREE.MeshStandardMaterial({ color: 0x222b27, roughness: 0.55, metalness: 0.28 });
-  const glassMaterial = new THREE.MeshPhysicalMaterial({
-    color: 0x7f9188,
+  // ── materials ─────────────────────────────────────────────────────────────
+  const plaster = new THREE.MeshStandardMaterial({ color: 0xe9e4d9, roughness: 0.88, metalness: 0 });
+  const plasterWarm = new THREE.MeshStandardMaterial({ color: 0xf2eee4, roughness: 0.85, metalness: 0 });
+  const plasterShade = new THREE.MeshStandardMaterial({ color: 0xd8d3c7, roughness: 0.9, metalness: 0 });
+  const stonePanel = new THREE.MeshStandardMaterial({ color: 0xe2ddd2, roughness: 0.72, metalness: 0.02 });
+  const stoneFloor = new THREE.MeshStandardMaterial({ color: 0xdbd6ca, roughness: 0.82, metalness: 0 });
+  const interiorFloor = new THREE.MeshStandardMaterial({ color: 0xb3ada0, roughness: 0.93, metalness: 0 });
+  const bronze = new THREE.MeshStandardMaterial({ color: 0x5a544b, roughness: 0.58, metalness: 0.18 });
+  const timber = new THREE.MeshStandardMaterial({ color: 0x9a6f45, roughness: 0.68, metalness: 0 });
+  const glass = new THREE.MeshPhysicalMaterial({
+    color: 0xe6e7e3,
     transparent: true,
-    opacity: 0.34,
-    roughness: 0.14,
-    metalness: 0.08,
-    transmission: 0.12,
-    thickness: 0.08,
+    opacity: 0.3,
+    roughness: 0.05,
+    metalness: 0,
+    transmission: 0.34,
+    thickness: 0.02,
+    ior: 1.46,
+    reflectivity: 0.62,
+    specularIntensity: 0.9,
     depthWrite: false,
     side: THREE.DoubleSide,
   });
-  const interiorDark = new THREE.MeshStandardMaterial({ color: 0x303a35, roughness: 0.86 });
-  const timber = new THREE.MeshStandardMaterial({ color: 0x795735, roughness: 0.72, metalness: 0.02 });
-  const garage = new THREE.MeshStandardMaterial({ color: 0x303632, roughness: 0.58, metalness: 0.22 });
 
-  function addBox(
-    size: [number, number, number],
-    position: [number, number, number],
+  /**
+   * Elements are given as bounds, not centres — junctions then meet exactly and
+   * nothing overlaps by a stray millimetre.
+   */
+  function box(
+    bounds: readonly [number, number, number, number, number, number],
     source: THREE.Material,
     options: BoxOptions,
   ) {
-    const geometry = new THREE.BoxGeometry(...size);
-    // Cloned so every element can fade and highlight on its own schedule.
+    const [x1, x2, y1, y2, z1, z2] = bounds;
+    const width = x2 - x1;
+    const height = y2 - y1;
+    const depth = z2 - z1;
+    const geometry = chamferedBox(width, height, depth, 0.013);
     const material = source.clone();
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.set(...position);
+    mesh.position.set((x1 + x2) / 2, (y1 + y2) / 2, (z1 + z2) / 2);
     mesh.castShadow = options.castShadow ?? true;
     mesh.receiveShadow = true;
     mesh.visible = false;
@@ -250,14 +331,17 @@ function buildModel() {
     const tracked: TrackedMaterial[] = [{ material, base: material.opacity }];
     const standard = material instanceof THREE.MeshStandardMaterial ? [material] : [];
 
-    if (options.edges !== false) {
+    if (options.edges) {
+      // Drawn from the unbevelled form, so the line follows the true arris.
+      const outline = new THREE.BoxGeometry(width, height, depth);
       const edgeMaterial = new THREE.LineBasicMaterial({
-        color: options.edgeColor ?? 0x303934,
+        color: options.edgeColor ?? 0x38423b,
         transparent: true,
-        opacity: options.edgeOpacity ?? 0.62,
+        opacity: options.edgeOpacity ?? 0.3,
       });
-      const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 24), edgeMaterial);
+      const edges = new THREE.LineSegments(new THREE.EdgesGeometry(outline, 20), edgeMaterial);
       mesh.add(edges);
+      outline.dispose();
       tracked.push({ material: edgeMaterial, base: edgeMaterial.opacity });
     }
 
@@ -270,9 +354,9 @@ function buildModel() {
       stage: options.stage,
       seq: stageCounts[options.stage],
       rise: options.rise ?? false,
-      restY: position[1],
-      restX: position[0],
-      height: size[1],
+      restY: (y1 + y2) / 2,
+      restX: (x1 + x2) / 2,
+      height,
       level: options.level,
       layer: options.layer,
       sectionOpacity: options.section ?? 1,
@@ -287,236 +371,315 @@ function buildModel() {
     return part;
   }
 
+  // Levels and thicknesses, named once so the whole building stays coordinated.
+  const GF = 0;
+  const UF = 3.6;
+  const RF = 7.2;
+  const CLEAR = 3.28;
+  const EXT = 0.3;
+  const INT = 0.2;
+  const GLAZE_Z = 4.35;
+
   // ── Stage 0 · the site ────────────────────────────────────────────────────
   const groundShadow = new THREE.Mesh(
-    new THREE.PlaneGeometry(34, 34),
-    new THREE.ShadowMaterial({ color: 0x263029, opacity: 0, transparent: true }),
+    new THREE.PlaneGeometry(38, 38),
+    new THREE.ShadowMaterial({ color: 0x2b332c, opacity: 0, transparent: true }),
   );
   groundShadow.rotation.x = -Math.PI / 2;
-  groundShadow.position.y = -0.34;
+  groundShadow.position.y = -0.67;
   groundShadow.receiveShadow = true;
   site.add(groundShadow);
 
-  const grid = new THREE.GridHelper(26, 26, 0x59645d, 0x8b948d);
-  grid.position.y = -0.32;
+  const grid = new THREE.GridHelper(27, 20, 0x5b665e, 0x8d968f);
+  grid.position.y = -0.66;
   const gridMaterial = grid.material as THREE.LineBasicMaterial;
   gridMaterial.transparent = true;
   gridMaterial.opacity = 0;
   site.add(grid);
 
-  // Setting-out marks: the coordinate crosses a surveyor leaves on a site plan.
   const siteMarkMaterial = new THREE.LineBasicMaterial({ color: 0x6d766e, transparent: true, opacity: 0 });
   const siteMarks: DrawnLine[] = [];
-  for (const [x, z] of [[-9.4, -6.4], [9.4, -6.4], [-9.4, 7], [9.4, 7]] as const) {
-    siteMarks.push(
-      drawnLine(site, [new THREE.Vector3(x - 0.55, -0.31, z), new THREE.Vector3(x + 0.55, -0.31, z)], siteMarkMaterial.clone(), 8),
-    );
-    siteMarks.push(
-      drawnLine(site, [new THREE.Vector3(x, -0.31, z - 0.55), new THREE.Vector3(x, -0.31, z + 0.55)], siteMarkMaterial.clone(), 8),
-    );
+  for (const [x, z] of [[-9.9, -7.2], [9.9, -7.2], [-9.9, 8.1], [9.9, 8.1]] as const) {
+    siteMarks.push(drawnLine(site, [new THREE.Vector3(x - 0.6, -0.65, z), new THREE.Vector3(x + 0.6, -0.65, z)], siteMarkMaterial.clone(), 8));
+    siteMarks.push(drawnLine(site, [new THREE.Vector3(x, -0.65, z - 0.6), new THREE.Vector3(x, -0.65, z + 0.6)], siteMarkMaterial.clone(), 8));
   }
-  // Two long setting-out axes running past the footprint.
-  siteMarks.push(
-    drawnLine(site, [new THREE.Vector3(-10.5, -0.31, -3.72), new THREE.Vector3(10.5, -0.31, -3.72)], new THREE.LineDashedMaterial({ color: 0x6d766e, transparent: true, opacity: 0, dashSize: 0.3, gapSize: 0.24 }), 120),
-  );
-  siteMarks.push(
-    drawnLine(site, [new THREE.Vector3(-6.05, -0.31, -7.4), new THREE.Vector3(-6.05, -0.31, 8)], new THREE.LineDashedMaterial({ color: 0x6d766e, transparent: true, opacity: 0, dashSize: 0.3, gapSize: 0.24 }), 120),
-  );
+  const axisMaterial = new THREE.LineDashedMaterial({ color: 0x6d766e, transparent: true, opacity: 0, dashSize: 0.32, gapSize: 0.26 });
+  siteMarks.push(drawnLine(site, [new THREE.Vector3(-11, -0.65, -4.5), new THREE.Vector3(11, -0.65, -4.5)], axisMaterial.clone(), 130));
+  siteMarks.push(drawnLine(site, [new THREE.Vector3(-6.75, -0.65, -8), new THREE.Vector3(-6.75, -0.65, 9)], axisMaterial.clone(), 130));
 
   // ── Stage 1 · the floor plan, drawn line by line ──────────────────────────
   const planMaterial = new THREE.LineBasicMaterial({ color: 0x46514a, transparent: true, opacity: 0 });
-  const planY = 0.24;
+  const dashPlan = new THREE.LineDashedMaterial({ color: 0x5b655d, transparent: true, opacity: 0, dashSize: 0.22, gapSize: 0.18 });
+  const py = 0.03;
   const planLines: DrawnLine[] = [
-    drawnLine(
-      house,
-      [
-        new THREE.Vector3(-6.22, planY, -3.82),
-        new THREE.Vector3(6.2, planY, -3.82),
-        new THREE.Vector3(6.2, planY, 3.98),
-        new THREE.Vector3(-6.22, planY, 3.98),
-        new THREE.Vector3(-6.22, planY, -3.82),
-      ],
-      planMaterial.clone(),
-      190,
-    ),
-    drawnLine(
-      house,
-      [
-        new THREE.Vector3(-6.3, planY, 3.98),
-        new THREE.Vector3(-6.3, planY, 5.62),
-        new THREE.Vector3(2.9, planY, 5.62),
-        new THREE.Vector3(2.9, planY, 3.98),
-      ],
-      planMaterial.clone(),
-      120,
-    ),
-    drawnLine(
-      house,
-      [new THREE.Vector3(-5.4, planY, 0.42), new THREE.Vector3(0.15, planY, 0.42), new THREE.Vector3(0.15, planY, -3.3)],
-      planMaterial.clone(),
-      110,
-    ),
-    drawnLine(
-      house,
-      [new THREE.Vector3(2.25, planY, 2.6), new THREE.Vector3(2.25, planY, -0.55), new THREE.Vector3(5.9, planY, -0.55)],
-      planMaterial.clone(),
-      110,
-    ),
-    drawnLine(
-      house,
-      [new THREE.Vector3(5.86, planY, -3.1), new THREE.Vector3(5.86, planY, 1.05)],
-      new THREE.LineDashedMaterial({ color: 0x5b655d, transparent: true, opacity: 0, dashSize: 0.2, gapSize: 0.16 }),
-      80,
-    ),
-    // Stair run, read as treads on the plan.
-    drawnLine(
-      house,
-      [
-        new THREE.Vector3(-4.12, planY, 1.3),
-        new THREE.Vector3(-2.38, planY, 1.3),
-        new THREE.Vector3(-2.38, planY, -0.86),
-        new THREE.Vector3(-4.12, planY, -0.86),
-        new THREE.Vector3(-4.12, planY, 1.3),
-      ],
-      planMaterial.clone(),
-      130,
-    ),
+    // Platform edge.
+    drawnLine(house, [
+      new THREE.Vector3(-7.35, -0.39, -5.1), new THREE.Vector3(7.35, -0.39, -5.1),
+      new THREE.Vector3(7.35, -0.39, 5.1), new THREE.Vector3(-7.35, -0.39, 5.1),
+      new THREE.Vector3(-7.35, -0.39, -5.1),
+    ], planMaterial.clone(), 210),
+    // Ground floor outline, porch notch included.
+    drawnLine(house, [
+      new THREE.Vector3(-6.75, py, 2.9), new THREE.Vector3(-6.75, py, -4.5),
+      new THREE.Vector3(6.75, py, -4.5), new THREE.Vector3(6.75, py, 4.5),
+      new THREE.Vector3(-4.05, py, 4.5), new THREE.Vector3(-4.05, py, 2.9),
+      new THREE.Vector3(-6.75, py, 2.9),
+    ], planMaterial.clone(), 210),
+    // Hall / living and kitchen partitions.
+    drawnLine(house, [
+      new THREE.Vector3(-4.05, py, -4.5), new THREE.Vector3(-4.05, py, 2.9),
+    ], planMaterial.clone(), 70),
+    drawnLine(house, [
+      new THREE.Vector3(4.05, py, -4.5), new THREE.Vector3(4.05, py, 0.15),
+      new THREE.Vector3(6.75, py, 0.15),
+    ], planMaterial.clone(), 90),
+    // Stair.
+    drawnLine(house, [
+      new THREE.Vector3(-6.05, py, -2.4), new THREE.Vector3(-4.45, py, -2.4),
+      new THREE.Vector3(-4.45, py, 2.1), new THREE.Vector3(-6.05, py, 2.1),
+      new THREE.Vector3(-6.05, py, -2.4),
+    ], planMaterial.clone(), 120),
+    // Glazing line and the entrance approach.
+    drawnLine(house, [
+      new THREE.Vector3(-4.05, py, GLAZE_Z), new THREE.Vector3(4.05, py, GLAZE_Z),
+    ], dashPlan.clone(), 70),
+    drawnLine(house, [
+      new THREE.Vector3(-6.75, -0.39, 5.1), new THREE.Vector3(-6.75, -0.39, 6.45),
+      new THREE.Vector3(1.35, -0.39, 6.45), new THREE.Vector3(1.35, -0.39, 5.1),
+    ], planMaterial.clone(), 120),
   ];
 
-  // ── Stage 2 · ground slab, terrace and approach ───────────────────────────
-  addBox([13.5, 0.26, 8.4], [0, 0.05, 0], floorMaterial, {
-    stage: 2, level: 0, layer: "structure", edgeOpacity: 0.72,
-    tag: "Ground slab", spec: "13 500 × 8 400 · ±0",
-  });
-  addBox([9.2, 0.18, 2.15], [-1.7, 0.18, 4.55], concreteLight, {
-    stage: 2, level: 0, layer: "structure", edgeOpacity: 0.48,
-    tag: "Entry terrace", spec: "9 200 × 2 150 · south",
-  });
-  addBox([3.35, 0.17, 0.68], [-3.75, 0.08, 5.65], concrete, { stage: 2, level: 0, layer: "structure", edgeOpacity: 0.48 });
-  addBox([3.05, 0.17, 0.62], [-3.75, -0.08, 5.98], concreteShade, { stage: 2, level: 0, layer: "structure", edgeOpacity: 0.4 });
-  addBox([2.75, 0.17, 0.58], [-3.75, -0.24, 6.28], concreteShade, { stage: 2, level: 0, layer: "structure", edgeOpacity: 0.36 });
-
-  const jointMaterial = new THREE.LineBasicMaterial({ color: 0x667068, transparent: true, opacity: 0 });
+  const jointMaterial = new THREE.LineBasicMaterial({ color: 0x6b756c, transparent: true, opacity: 0 });
   const slabJoints: DrawnLine[] = [];
-  for (let x = -6; x <= 6; x += 1.5) {
-    slabJoints.push(drawnLine(house, [new THREE.Vector3(x, 0.2, -4), new THREE.Vector3(x, 0.2, 5.55)], jointMaterial.clone(), 48));
+  for (let x = -6.75; x <= 6.76; x += 1.35) {
+    slabJoints.push(drawnLine(house, [new THREE.Vector3(x, 0.02, -5.05), new THREE.Vector3(x, 0.02, 5.05)], jointMaterial.clone(), 48));
   }
-  for (let z = -3.75; z <= 5.5; z += 1.35) {
-    slabJoints.push(drawnLine(house, [new THREE.Vector3(-6.5, 0.2, z), new THREE.Vector3(6.5, 0.2, z)], jointMaterial.clone(), 48));
-  }
-
-  // ── Stage 3 · ground walls rise from the plan ─────────────────────────────
-  addBox([11.9, 3.08, 0.2], [-0.2, 1.75, -3.72], concreteShade, {
-    stage: 3, level: 0, layer: "structure", rise: true, edgeOpacity: 0.45,
-    tag: "North wall", spec: "11 900 × 3 080 · solid",
-  });
-  addBox([0.34, 3.08, 7.55], [-6.05, 1.75, 0], concreteLight, { stage: 3, level: 0, layer: "structure", rise: true, edgeOpacity: 0.52 });
-  addBox([0.36, 3.08, 2.1], [6.02, 1.75, 2.72], concrete, { stage: 3, level: 0, layer: "structure", rise: true, edgeOpacity: 0.55 });
-  addBox([0.36, 3.08, 1.35], [6.02, 1.75, -3.12], concreteShade, { stage: 3, level: 0, layer: "structure", rise: true, edgeOpacity: 0.55 });
-
-  // ── Stage 4 · openings, glazing, timber, garage ───────────────────────────
-  addBox([0.34, 0.46, 3.9], [6.02, 3.06, -0.84], concrete, { stage: 4, level: 0, layer: "structure", edgeOpacity: 0.48 });
-  addBox([0.16, 2.45, 3.75], [5.96, 1.57, -0.82], garage, {
-    stage: 4, level: 0, layer: "envelope", edges: false, castShadow: false,
-    tag: "Vehicle bay", spec: "3 750 clear opening",
-  });
-  for (let z = -2.52; z <= 0.88; z += 0.38) {
-    addBox([0.025, 2.26, 0.025], [5.84, 1.57, z], concreteShade, { stage: 4, level: 0, layer: "envelope", edges: false, castShadow: false });
+  for (let z = -4.5; z <= 4.51; z += 1.5) {
+    slabJoints.push(drawnLine(house, [new THREE.Vector3(-7.3, 0.02, z), new THREE.Vector3(7.3, 0.02, z)], jointMaterial.clone(), 48));
   }
 
-  addBox([10.9, 2.72, 0.1], [-0.55, 1.68, 3.78], interiorDark, {
-    stage: 4, level: 0, layer: "envelope", edges: false, castShadow: false, section: 0.2,
+  /** A glazed bay: sill, head, mullions on the module, panes set between them. */
+  function glazing(
+    axis: "x" | "z",
+    plane: number,
+    mullions: number[],
+    y1: number,
+    y2: number,
+    options: { stage: number; level: Level; section: number; tag?: string; spec?: string },
+  ) {
+    const from = mullions[0];
+    const to = mullions[mullions.length - 1];
+    const half = 0.027;
+    const depth = 0.05;
+    const frame = { stage: options.stage, level: options.level, layer: "envelope" as PartLayer, section: options.section, castShadow: false };
+
+    const span = (a: number, b: number, ya: number, yb: number, d: number, material: THREE.Material, extra = {}) =>
+      axis === "z"
+        ? box([a, b, ya, yb, plane - d, plane + d], material, { ...frame, ...extra })
+        : box([plane - d, plane + d, ya, yb, a, b], material, { ...frame, ...extra });
+
+    span(from, to, y1, y1 + 0.06, depth, bronze);
+    span(from, to, y2 - 0.06, y2, depth, bronze);
+    for (const m of mullions) span(m - half, m + half, y1, y2, depth, bronze);
+    for (let i = 0; i < mullions.length - 1; i += 1) {
+      span(mullions[i] + half, mullions[i + 1] - half, y1 + 0.06, y2 - 0.06, 0.012, glass, {
+        tag: options.tag,
+        spec: options.spec,
+      });
+    }
+  }
+
+  // ── Stage 2 · platform, approach and floor finishes ───────────────────────
+  box([-7.35, 7.35, -0.42, GF, -5.1, 5.1], stoneFloor, {
+    stage: 2, level: 0, layer: "structure", edges: true, edgeOpacity: 0.34,
+    tag: "Base platform", spec: "14 700 × 10 200 · ±0",
   });
-  const groundWindows = [[-5.28, 1.42], [-3.76, 1.42], [-2.24, 1.42], [-0.72, 1.42], [0.8, 1.42], [4.62, 1.4]] as const;
-  for (const [x, width] of groundWindows) {
-    addBox([width, 2.7, 0.09], [x, 1.67, 3.9], glassMaterial, {
-      stage: 4, level: 0, layer: "envelope", edgeColor: 0x202b26, edgeOpacity: 0.82, castShadow: false, section: 0.1,
-      tag: "Glazed façade", spec: "11 900 × 3 080 · south",
+  box([-6.75, 1.35, -0.42, -0.2, 5.1, 6.45], stoneFloor, { stage: 2, level: 0, layer: "structure", edges: true, edgeOpacity: 0.26 });
+  box([-6.0, -4.2, -0.64, -0.42, 6.45, 6.9], stoneFloor, { stage: 2, level: 0, layer: "structure", edges: true, edgeOpacity: 0.22 });
+  box([-6.45, 4.05, GF, 0.03, -4.2, 4.35], interiorFloor, { stage: 2, level: 0, layer: "structure", castShadow: false });
+  box([4.05, 6.75, GF, 0.03, 0.15, 4.5], stoneFloor, {
+    stage: 2, level: 0, layer: "structure", castShadow: false,
+    tag: "Covered loggia", spec: "2 700 × 4 350 · under cantilever",
+  });
+  box([-6.45, -4.05, GF, 0.03, 2.9, 4.5], stoneFloor, {
+    stage: 2, level: 0, layer: "structure", castShadow: false,
+    tag: "Entrance porch", spec: "2 700 × 1 600 · recessed",
+  });
+
+  // ── Stage 3 · ground walls ────────────────────────────────────────────────
+  box([-6.75, 6.75, GF, CLEAR, -4.5, -4.5 + EXT], plasterShade, {
+    stage: 3, level: 0, layer: "structure", rise: true, edges: true, edgeOpacity: 0.3,
+    tag: "North wall", spec: "13 500 × 3 280 · 300 solid",
+  });
+  box([-6.75, -6.75 + EXT, GF, CLEAR, -4.2, 4.5], plasterWarm, { stage: 3, level: 0, layer: "structure", rise: true, edges: true, edgeOpacity: 0.3 });
+  box([6.75 - EXT, 6.75, GF, CLEAR, -4.2, -3.6], stonePanel, { stage: 3, level: 0, layer: "structure", rise: true, edges: true, edgeOpacity: 0.3 });
+  box([6.75 - EXT, 6.75, GF, CLEAR, -2.25, -0.15], stonePanel, { stage: 3, level: 0, layer: "structure", rise: true, edges: true, edgeOpacity: 0.3 });
+  box([4.05, 6.75, GF, CLEAR, -0.15, 0.15], plaster, { stage: 3, level: 0, layer: "structure", rise: true, edges: true, edgeOpacity: 0.3 });
+  box([-6.75, -5.55, GF, CLEAR, 2.6, 2.9], plasterWarm, { stage: 3, level: 0, layer: "structure", rise: true, edges: true, edgeOpacity: 0.26 });
+  box([-4.65, -4.05, GF, CLEAR, 2.6, 2.9], plasterWarm, { stage: 3, level: 0, layer: "structure", rise: true, edges: true, edgeOpacity: 0.26 });
+  box([-5.55, -4.65, 2.4, CLEAR, 2.6, 2.9], plasterWarm, { stage: 3, level: 0, layer: "structure", edges: true, edgeOpacity: 0.22 });
+
+  box([-4.05, -4.05 + INT, GF, CLEAR, -4.2, 0.2], plasterShade, { stage: 3, level: 0, layer: "structure", rise: true, edges: true, edgeOpacity: 0.22 });
+  box([-4.05, -4.05 + INT, GF, CLEAR, 1.2, 2.9], plasterShade, { stage: 3, level: 0, layer: "structure", rise: true, edges: true, edgeOpacity: 0.22 });
+  box([-6.45, -4.05, GF, CLEAR, -1.9, -1.7], plasterShade, { stage: 3, level: 0, layer: "structure", rise: true, edges: true, edgeOpacity: 0.22 });
+  box([4.05, 4.05 + INT, GF, CLEAR, -4.2, -2.6], plasterShade, { stage: 3, level: 0, layer: "structure", rise: true, edges: true, edgeOpacity: 0.22 });
+  box([4.05, 4.05 + INT, GF, CLEAR, -1.6, -0.15], plasterShade, { stage: 3, level: 0, layer: "structure", rise: true, edges: true, edgeOpacity: 0.22 });
+  // Door heads: an opening in a wall, not a break in it.
+  box([-4.05, -4.05 + INT, 2.4, CLEAR, 0.2, 1.2], plasterShade, { stage: 3, level: 0, layer: "structure", edges: true, edgeOpacity: 0.2 });
+  box([4.05, 4.05 + INT, 2.4, CLEAR, -2.6, -1.6], plasterShade, { stage: 3, level: 0, layer: "structure", edges: true, edgeOpacity: 0.2 });
+
+  // ── Stage 4 · ground envelope, columns, screen, stair ─────────────────────
+  glazing("z", GLAZE_Z, [-4.05, -1.35, 1.35, 4.05], 0.02, CLEAR, {
+    stage: 4, level: 0, section: 0.1,
+    tag: "South glazing", spec: "8 100 × 3 260 · 3 bays",
+  });
+  glazing("x", 6.6, [-3.6, -2.25], 0.02, CLEAR, {
+    stage: 4, level: 0, section: 0.12,
+    tag: "East slot", spec: "1 350 × 3 260 · aligned over two floors",
+  });
+  box([-5.55, -4.65, GF, 2.4, 2.63, 2.87], bronze, {
+    stage: 4, level: 0, layer: "envelope", section: 0.2,
+    tag: "Entrance door", spec: "900 × 2 400 · bronze",
+  });
+
+  for (const [cx, cz] of [[6.51, 4.26], [4.35, 4.26], [-4.29, 4.26]] as const) {
+    box([cx - 0.12, cx + 0.12, GF, CLEAR, cz - 0.12, cz + 0.12], stonePanel, {
+      stage: 4, level: 0, layer: "structure", edges: true, edgeOpacity: 0.3,
+      tag: "Column", spec: "240 × 240 · in-situ",
     });
   }
-  for (const x of [-6.02, -4.52, -3, -1.48, 0.05, 1.56, 3.77, 5.42]) {
-    addBox([0.16, 3.02, 0.2], [x, 1.74, 3.94], frameMaterial, { stage: 4, level: 0, layer: "envelope", edges: false, section: 0.14 });
-  }
-  addBox([12.5, 0.42, 0.52], [0, 3.26, 3.87], concreteLight, { stage: 4, level: 0, layer: "structure", edgeOpacity: 0.68 });
-  addBox([0.52, 3.2, 0.58], [2.62, 1.76, 3.84], concrete, { stage: 4, level: 0, layer: "structure", rise: true, edgeOpacity: 0.55 });
-  for (let index = 0; index < 12; index += 1) {
-    addBox([0.105, 2.78, 0.16], [1.82 + index * 0.13, 1.7, 4.08], timber, {
-      stage: 4, level: 0, layer: "envelope", rise: true, edges: false, section: 0.24,
-      tag: "Timber screen", spec: "12 × 105 louvres · larch",
+
+  for (let i = 0; i < 14; i += 1) {
+    const cx = -6.41 + i * 0.15;
+    box([cx - 0.035, cx + 0.035, GF, CLEAR, 4.29, 4.41], timber, {
+      stage: 4, level: 0, layer: "envelope", rise: true, section: 0.25,
+      tag: "Timber screen", spec: "larch louvres · 70 at 150",
     });
   }
 
-  // ── Stage 5 · the horizontal datum ────────────────────────────────────────
-  addBox([12.85, 0.28, 8.08], [0, 3.48, 0], concreteLight, {
-    stage: 5, level: 1, layer: "structure", edgeOpacity: 0.72,
-    tag: "Floor datum", spec: "+3 600 · 280 slab",
+  for (let i = 0; i < 17; i += 1) {
+    const z1 = -2.4 + i * 0.2647;
+    const top = (i + 1) * 0.2;
+    box([-6.45, -4.85, top - 0.05, top, z1, z1 + 0.2647], stonePanel, {
+      stage: 4, level: 0, layer: "structure", edges: i % 4 === 0, edgeOpacity: 0.2,
+      tag: "Stair flight", spec: "18 × 200 rise · 265 going",
+    });
+  }
+
+  // ── Stage 5 · the first-floor datum ───────────────────────────────────────
+  box([-6.75, -4.85, CLEAR, UF, -4.5, -0.4], plasterWarm, {
+    stage: 5, level: 1, layer: "structure", edges: true, edgeOpacity: 0.34,
+    tag: "Floor datum", spec: "+3 600 · 320 slab",
   });
-  addBox([9.35, 0.24, 1.35], [-1.15, 3.5, 4.43], concreteLight, { stage: 5, level: 1, layer: "structure", edgeOpacity: 0.58 });
-  addBox([12.65, 0.4, 0.54], [0, 3.64, 3.92], concrete, { stage: 5, level: 1, layer: "structure", edgeOpacity: 0.68 });
+  box([-4.85, 6.75, CLEAR, UF, -4.5, 4.5], plasterWarm, {
+    stage: 5, level: 1, layer: "structure", edges: true, edgeOpacity: 0.34,
+    tag: "Floor datum", spec: "+3 600 · 320 slab",
+  });
+  box([-6.75, -6.45, CLEAR, UF, -0.4, 4.5], plasterWarm, { stage: 5, level: 1, layer: "structure", edges: true, edgeOpacity: 0.34 });
+  box([-6.45, -4.85, CLEAR, UF, 2.1, 4.5], plasterWarm, { stage: 5, level: 1, layer: "structure", edges: true, edgeOpacity: 0.34 });
+  box([-4.05, 6.75, CLEAR, UF, 4.5, 4.95], plasterWarm, {
+    stage: 5, level: 1, layer: "structure", edges: true, edgeOpacity: 0.3,
+    tag: "Eaves", spec: "450 overhang · shading",
+  });
 
   // ── Stage 6 · upper walls ─────────────────────────────────────────────────
-  addBox([11.85, 3.08, 0.22], [-0.2, 5.15, -3.72], concrete, {
-    stage: 6, level: 1, layer: "structure", rise: true, edgeOpacity: 0.5,
-    tag: "Service wall", spec: "11 850 × 3 080 · north",
+  box([-6.75, 6.75, UF, 6.88, -4.5, -4.5 + EXT], plasterShade, {
+    stage: 6, level: 1, layer: "structure", rise: true, edges: true, edgeOpacity: 0.3,
+    tag: "Service wall", spec: "13 500 × 3 280 · north",
   });
-  addBox([0.34, 3.08, 7.55], [-6.04, 5.15, 0], concreteLight, { stage: 6, level: 1, layer: "structure", rise: true, edgeOpacity: 0.58 });
-  addBox([0.36, 3.08, 3.78], [6.02, 5.15, -1.9], concrete, { stage: 6, level: 1, layer: "structure", rise: true, edgeOpacity: 0.58 });
-
-  // ── Stage 7 · upper envelope, partitions, stair ───────────────────────────
-  addBox([0.36, 0.42, 3.45], [6.02, 6.48, 1.83], concreteLight, { stage: 7, level: 1, layer: "structure", edgeOpacity: 0.56 });
-  addBox([0.11, 2.55, 3.28], [5.92, 5.12, 1.82], interiorDark, { stage: 7, level: 1, layer: "envelope", edges: false, castShadow: false, section: 0.2 });
-  addBox([0.065, 2.55, 3.28], [6.01, 5.12, 1.82], glassMaterial, {
-    stage: 7, level: 1, layer: "envelope", edgeColor: 0x202b26, edgeOpacity: 0.76, castShadow: false, section: 0.12,
-    tag: "Corner window", spec: "3 280 × 2 550 · east",
+  box([-6.75, -6.75 + EXT, UF, 6.88, -4.2, 2.1], plasterWarm, { stage: 6, level: 1, layer: "structure", rise: true, edges: true, edgeOpacity: 0.3 });
+  box([-6.75, -3.75, UF, 6.88, 2.1, 2.4], plasterWarm, { stage: 6, level: 1, layer: "structure", rise: true, edges: true, edgeOpacity: 0.3 });
+  box([-4.05, -3.75, UF, 6.88, 2.4, 4.5], plasterWarm, { stage: 6, level: 1, layer: "structure", rise: true, edges: true, edgeOpacity: 0.3 });
+  box([-3.75, -2.7, UF, 6.88, 4.2, 4.5], stonePanel, { stage: 6, level: 1, layer: "structure", rise: true, edges: true, edgeOpacity: 0.3 });
+  box([1.35, 2.7, UF, 6.88, 4.2, 4.5], stonePanel, {
+    stage: 6, level: 1, layer: "structure", rise: true, edges: true, edgeOpacity: 0.3,
+    tag: "Façade pier", spec: "1 350 · one module",
   });
-  for (const z of [0.32, 1.42, 2.52, 3.32]) {
-    addBox([0.1, 2.64, 0.12], [5.86, 5.12, z], frameMaterial, { stage: 7, level: 1, layer: "envelope", edges: false, section: 0.16 });
-  }
-  addBox([10.75, 2.68, 0.1], [-0.6, 5.1, 3.75], interiorDark, { stage: 7, level: 1, layer: "envelope", edges: false, castShadow: false, section: 0.2 });
-  const upperWindows = [[-5.25, 1.46], [-3.7, 1.46], [-2.15, 1.46], [-0.6, 1.46], [0.95, 1.46], [4.62, 1.5]] as const;
-  for (const [x, width] of upperWindows) {
-    addBox([width, 2.62, 0.09], [x, 5.08, 3.88], glassMaterial, {
-      stage: 7, level: 1, layer: "envelope", edgeColor: 0x202b26, edgeOpacity: 0.84, castShadow: false, section: 0.1,
-      tag: "Upper glazing", spec: "6 bays · 1 460 module",
-    });
-  }
-  for (const x of [-6.02, -4.48, -2.92, -1.38, 0.18, 1.72, 3.78, 5.42]) {
-    addBox([0.15, 2.92, 0.2], [x, 5.13, 3.93], frameMaterial, { stage: 7, level: 1, layer: "envelope", edges: false, section: 0.14 });
-  }
-  addBox([0.55, 3.04, 0.6], [2.66, 5.15, 3.82], concreteLight, { stage: 7, level: 1, layer: "structure", rise: true, edgeOpacity: 0.56 });
-  for (let index = 0; index < 12; index += 1) {
-    addBox([0.105, 2.66, 0.16], [1.82 + index * 0.13, 5.1, 4.08], timber, { stage: 7, level: 1, layer: "envelope", rise: true, edges: false, section: 0.24 });
-  }
+  box([6.75 - EXT, 6.75, UF, 6.88, -4.2, -3.6], stonePanel, { stage: 6, level: 1, layer: "structure", rise: true, edges: true, edgeOpacity: 0.3 });
+  box([6.75 - EXT, 6.75, UF, 6.88, -2.25, -1.35], stonePanel, { stage: 6, level: 1, layer: "structure", rise: true, edges: true, edgeOpacity: 0.3 });
 
-  const partitions = [
-    addBox([5.65, 2.9, 0.16], [-2.65, 5.12, 0.42], concreteLight, {
-      stage: 7, level: 1, layer: "structure", rise: true, edgeOpacity: 0.5,
-      tag: "Partition P-07", spec: "5 650 × 2 900",
+  // ── Stage 7 · upper envelope, partitions, terrace ─────────────────────────
+  glazing("z", GLAZE_Z, [-2.7, -1.35, 0, 1.35], UF + 0.08, 6.76, {
+    stage: 7, level: 1, section: 0.1,
+    tag: "Bedroom glazing", spec: "4 050 × 3 080 · 3 bays",
+  });
+  glazing("z", GLAZE_Z, [2.7, 4.05, 5.4, 6.6], UF + 0.08, 6.76, {
+    stage: 7, level: 1, section: 0.1,
+    tag: "Master glazing", spec: "3 900 × 3 080 · south",
+  });
+  glazing("x", 6.6, [-1.35, 0, 1.35, 2.7, 4.35], UF + 0.08, 6.76, {
+    stage: 7, level: 1, section: 0.12,
+    tag: "Corner window", spec: "5 700 × 3 080 · east return",
+  });
+  glazing("x", 6.6, [-3.6, -2.25], UF + 0.08, 6.76, {
+    stage: 7, level: 1, section: 0.12,
+    tag: "East slot", spec: "1 350 × 3 080 · aligned over two floors",
+  });
+
+  const movingWalls = [
+    box([2.7, 2.7 + INT, UF, 6.88, -4.2, -0.6], plasterShade, {
+      stage: 7, level: 1, layer: "structure", rise: true, edges: true, edgeOpacity: 0.24,
+      tag: "Master suite", spec: "3 550 × 8 700 · east wing",
     }),
-    addBox([0.16, 2.9, 3.8], [-0.15, 5.12, -1.42], concrete, {
-      stage: 7, level: 1, layer: "structure", rise: true, edgeOpacity: 0.5,
-      tag: "Partition P-04", spec: "3 800 × 2 900 · set out from grid A",
+    box([2.7, 2.7 + INT, UF, 6.88, 0.3, 4.5], plasterShade, {
+      stage: 7, level: 1, layer: "structure", rise: true, edges: true, edgeOpacity: 0.24,
+      tag: "Master suite", spec: "3 550 × 8 700 · east wing",
     }),
-    addBox([4.15, 2.9, 0.16], [3.85, 5.12, -0.55], concreteLight, { stage: 7, level: 1, layer: "structure", rise: true, edgeOpacity: 0.5 }),
-    addBox([0.16, 2.9, 2.15], [2.25, 5.12, 1.56], concrete, { stage: 7, level: 1, layer: "structure", rise: true, edgeOpacity: 0.5 }),
+    box([2.7, 2.7 + INT, 6.0, 6.88, -0.6, 0.3], plasterShade, {
+      stage: 7, level: 1, layer: "structure", edges: true, edgeOpacity: 0.2,
+      tag: "Master suite", spec: "3 550 × 8 700 · east wing",
+    }),
   ];
-  addBox([3.0, 1.28, 0.16], [4.52, 4.32, 2.42], concreteLight, { stage: 7, level: 1, layer: "structure", rise: true, edgeOpacity: 0.42 });
 
-  for (let index = 0; index < 8; index += 1) {
-    addBox([1.75, 0.12, 0.33], [-3.25, 3.7 + index * 0.23, 1.15 - index * 0.31], concreteShade, {
-      stage: 7, level: 1, layer: "structure", edgeOpacity: 0.35,
-      tag: "Stair run", spec: "8 × 230 rise · 310 going",
+  box([-3.95, -3.75, UF, 6.88, -4.2, -1.6], plasterShade, { stage: 7, level: 1, layer: "structure", rise: true, edges: true, edgeOpacity: 0.24 });
+  box([-3.95, -3.75, UF, 6.88, -0.6, 2.1], plasterShade, { stage: 7, level: 1, layer: "structure", rise: true, edges: true, edgeOpacity: 0.24 });
+  for (const [a, b] of [[-3.75, -2.3], [-1.4, 0.3], [1.2, 2.7]] as const) {
+    box([a, b, UF, 6.88, -1.1, -0.9], plasterShade, {
+      stage: 7, level: 1, layer: "structure", rise: true, edges: true, edgeOpacity: 0.24,
+      tag: "Circulation", spec: "1 200 corridor · stair to master",
+    });
+  }
+  for (const [a, b] of [[-3.75, -1.6], [-0.7, 2.7]] as const) {
+    box([a, b, UF, 6.88, 0.3, 0.5], plasterShade, {
+      stage: 7, level: 1, layer: "structure", rise: true, edges: true, edgeOpacity: 0.24,
+      tag: "Circulation", spec: "1 200 corridor · stair to master",
+    });
+  }
+  // Door heads on the upper floor, tying every wall run together.
+  box([-3.95, -3.75, 6.0, 6.88, -1.6, -0.6], plasterShade, { stage: 7, level: 1, layer: "structure", edges: true, edgeOpacity: 0.2 });
+  for (const [a, b] of [[-2.3, -1.4], [0.3, 1.2]] as const) {
+    box([a, b, 6.0, 6.88, -1.1, -0.9], plasterShade, { stage: 7, level: 1, layer: "structure", edges: true, edgeOpacity: 0.2 });
+  }
+  box([-1.6, -0.7, 6.0, 6.88, 0.3, 0.5], plasterShade, { stage: 7, level: 1, layer: "structure", edges: true, edgeOpacity: 0.2 });
+
+  box([-6.75, -4.05, UF, 4.65, 4.3, 4.5], plasterWarm, { stage: 7, level: 1, layer: "structure", rise: true, edges: true, edgeOpacity: 0.3 });
+  box([-6.75, -6.55, UF, 4.65, 2.4, 4.3], plasterWarm, { stage: 7, level: 1, layer: "structure", rise: true, edges: true, edgeOpacity: 0.3 });
+  box([-6.75, -4.05, UF, UF + 0.03, 2.4, 4.5], stoneFloor, {
+    stage: 7, level: 1, layer: "structure", castShadow: false,
+    tag: "Roof terrace", spec: "2 700 × 2 100 · +3 600",
+  });
+  box([-3.75, 6.45, UF, UF + 0.03, -4.2, 4.35], interiorFloor, { stage: 7, level: 1, layer: "structure", castShadow: false });
+  box([-6.45, -3.95, UF, UF + 0.03, -4.2, -0.4], interiorFloor, { stage: 7, level: 1, layer: "structure", castShadow: false });
+
+  for (let i = 0; i < 14; i += 1) {
+    const cx = -6.41 + i * 0.15;
+    box([cx - 0.035, cx + 0.035, 4.65, 6.3, 4.29, 4.41], timber, {
+      stage: 7, level: 1, layer: "envelope", rise: true, section: 0.25,
+      tag: "Terrace screen", spec: "larch louvres · above porch",
     });
   }
 
-  // ── Stage 8 · roof frame ──────────────────────────────────────────────────
-  addBox([12.65, 0.42, 0.5], [0, 6.68, 3.88], concreteLight, {
-    stage: 8, level: 2, layer: "structure", edgeOpacity: 0.76,
-    tag: "Roof datum", spec: "+7 200 · parapet 420",
+  // ── Stage 8 · the roof ring ───────────────────────────────────────────────
+  const roofEdges = { stage: 8, level: 2 as Level, layer: "structure" as PartLayer, edges: true, edgeOpacity: 0.36 };
+  box([-6.75, 6.75, 6.88, RF, -4.5, -4.2], stonePanel, {
+    ...roofEdges,
+    tag: "Roof datum", spec: "+7 200 · 320 ring beam",
   });
-  addBox([12.65, 0.42, 0.5], [0, 6.68, -3.84], concreteLight, { stage: 8, level: 2, layer: "structure", edgeOpacity: 0.76 });
-  addBox([0.5, 0.42, 7.25], [-6.08, 6.68, 0], concreteLight, { stage: 8, level: 2, layer: "structure", edgeOpacity: 0.76 });
-  addBox([0.5, 0.42, 7.25], [6.08, 6.68, 0], concrete, { stage: 8, level: 2, layer: "structure", edgeOpacity: 0.76 });
+  box([6.45, 6.75, 6.88, RF, -4.2, 4.5], stonePanel, { ...roofEdges });
+  box([-4.05, 6.45, 6.88, RF, 4.2, 4.5], stonePanel, { ...roofEdges });
+  box([-4.05, -3.75, 6.88, RF, 2.4, 4.2], stonePanel, { ...roofEdges });
+  box([-6.75, -3.75, 6.88, RF, 2.1, 2.4], stonePanel, { ...roofEdges });
+  box([-6.75, -6.45, 6.88, RF, -4.2, 2.1], stonePanel, { ...roofEdges });
 
   // ── Stage 9 · the dimension set ───────────────────────────────────────────
   const dimensionMaterial = new THREE.LineBasicMaterial({ color: 0x3e4942, transparent: true, opacity: 0 });
@@ -548,17 +711,17 @@ function buildModel() {
 
     const main = dimensionMaterial.clone();
     const lines = [drawnLine(group, [from, to], main, 90)];
-    const materials: TrackedMaterial[] = [{ material: main, base: 0.66 }];
+    const materials: TrackedMaterial[] = [{ material: main, base: 0.62 }];
 
     for (const [start, end] of extensions) {
       const extension = extensionMaterial.clone();
       lines.push(drawnLine(group, [start, end], extension, 40));
-      materials.push({ material: extension, base: 0.42 });
+      materials.push({ material: extension, base: 0.38 });
     }
 
     const nodes: THREE.Mesh[] = [];
     for (const point of [from, to]) {
-      const node = new THREE.Mesh(new THREE.SphereGeometry(0.085, 16, 16), nodeMaterial.clone());
+      const node = new THREE.Mesh(new THREE.SphereGeometry(0.075, 16, 16), nodeMaterial.clone());
       node.position.copy(point);
       node.visible = false;
       group.add(node);
@@ -574,68 +737,126 @@ function buildModel() {
     return dimension;
   }
 
+  // Overall width, taken clear of the roof ring.
   const widthDimension = addDimension(
-    new THREE.Vector3(-6.3, 8.05, -4.7),
-    new THREE.Vector3(6.3, 8.05, -4.7),
+    new THREE.Vector3(-6.75, 8.35, -5.85),
+    new THREE.Vector3(6.75, 8.35, -5.85),
     [
-      [new THREE.Vector3(-6.3, 6.8, -3.85), new THREE.Vector3(-6.3, 8.05, -4.7)],
-      [new THREE.Vector3(6.3, 6.8, -3.85), new THREE.Vector3(6.3, 8.05, -4.7)],
+      [new THREE.Vector3(-6.75, RF, -4.35), new THREE.Vector3(-6.75, 8.35, -5.85)],
+      [new THREE.Vector3(6.75, RF, -4.35), new THREE.Vector3(6.75, 8.35, -5.85)],
     ],
-    makeLabel("12600"),
-    new THREE.Vector3(0, 8.44, -4.7),
+    makeLabel("13500"),
+    new THREE.Vector3(0, 8.74, -5.85),
   );
   // The overall envelope is not what a section is about; it steps back instead.
   widthDimension.sectionFade = 0;
 
   addDimension(
-    new THREE.Vector3(7.35, 0, -3.95),
-    new THREE.Vector3(7.35, MODEL_HEIGHT, -3.95),
+    new THREE.Vector3(8.35, GF, -4.9),
+    new THREE.Vector3(8.35, RF, -4.9),
     [
-      [new THREE.Vector3(6.25, 0, -3.8), new THREE.Vector3(7.35, 0, -3.95)],
-      [new THREE.Vector3(6.25, 6.75, -3.8), new THREE.Vector3(7.35, MODEL_HEIGHT, -3.95)],
+      [new THREE.Vector3(6.9, GF, -4.35), new THREE.Vector3(8.35, GF, -4.9)],
+      [new THREE.Vector3(6.9, RF, -4.35), new THREE.Vector3(8.35, RF, -4.9)],
     ],
     makeLabel("7200", Math.PI / 2),
-    new THREE.Vector3(7.74, 3.6, -3.95),
+    new THREE.Vector3(8.74, 3.6, -4.9),
   );
 
   addDimension(
-    new THREE.Vector3(7.18, -0.2, -2.7),
-    new THREE.Vector3(7.18, -0.2, 2.7),
+    new THREE.Vector3(8.15, -0.8, -4.5),
+    new THREE.Vector3(8.15, -0.8, 4.5),
     [
-      [new THREE.Vector3(6.35, 0, -2.7), new THREE.Vector3(7.18, -0.2, -2.7)],
-      [new THREE.Vector3(6.35, 0, 2.7), new THREE.Vector3(7.18, -0.2, 2.7)],
+      [new THREE.Vector3(6.9, -0.42, -4.5), new THREE.Vector3(8.15, -0.8, -4.5)],
+      [new THREE.Vector3(6.9, -0.42, 4.5), new THREE.Vector3(8.15, -0.8, 4.5)],
     ],
-    makeLabel("5400"),
-    new THREE.Vector3(7.22, -0.52, 0),
+    makeLabel("9000"),
+    new THREE.Vector3(8.19, -1.14, 0),
   );
 
-  // The terrace bay, dimensioned the way a ground-floor plan would be.
+  // The entrance bay, dimensioned off the platform as a ground-floor plan would be.
   addDimension(
-    new THREE.Vector3(-6.05, -0.26, 5.3),
-    new THREE.Vector3(-1.55, -0.26, 5.3),
+    new THREE.Vector3(-6.75, -0.84, 5.65),
+    new THREE.Vector3(-4.05, -0.84, 5.65),
     [
-      [new THREE.Vector3(-6.05, 0, 4.15), new THREE.Vector3(-6.05, -0.26, 5.3)],
-      [new THREE.Vector3(-1.55, 0, 4.15), new THREE.Vector3(-1.55, -0.26, 5.3)],
+      [new THREE.Vector3(-6.75, -0.42, 4.6), new THREE.Vector3(-6.75, -0.84, 5.65)],
+      [new THREE.Vector3(-4.05, -0.42, 4.6), new THREE.Vector3(-4.05, -0.84, 5.65)],
     ],
-    makeLabel("4500"),
-    new THREE.Vector3(-3.8, -0.6, 5.3),
+    makeLabel("2700"),
+    new THREE.Vector3(-5.4, -1.18, 5.65),
   );
 
   // Level marks, one per floor, so they travel with the slabs when the model opens up.
   const elevations: { level: Level; line: DrawnLine; node: THREE.Mesh; restY: number }[] = [];
-  for (const [y, level] of [[0.12, 0], [3.58, 1], [6.88, 2]] as const) {
+  for (const [y, level] of [[GF, 0], [UF, 1], [RF, 2]] as const) {
     const line = drawnLine(
       dimensions,
-      [new THREE.Vector3(-7.45, y, 3.86), new THREE.Vector3(-6.28, y, 3.86)],
+      [new THREE.Vector3(-8.2, y, 4.7), new THREE.Vector3(-6.95, y, 4.7)],
       dimensionMaterial.clone(),
       16,
     );
     const node = new THREE.Mesh(new THREE.SphereGeometry(0.07, 14, 14), nodeMaterial.clone());
-    node.position.set(-7.45, y, 3.86);
+    node.position.set(-8.2, y, 4.7);
     node.visible = false;
     dimensions.add(node);
     elevations.push({ level, line, node, restY: y });
   }
+
+  // A dimension that genuinely measures the wall the agent keeps re-checking:
+  // its end follows the partition, and its value is read off the geometry.
+  const liveGroup = new THREE.Group();
+  dimensions.add(liveGroup);
+
+  const LIVE_SAMPLES = 64;
+  const LIVE_ORIGIN = new THREE.Vector3(6.45, 7.62, 5.15);
+  const LIVE_END = 2.9;
+  const liveMaterial = dimensionMaterial.clone();
+  const liveGeometry = new THREE.BufferGeometry().setFromPoints(
+    resamplePolyline([LIVE_ORIGIN, new THREE.Vector3(LIVE_END, LIVE_ORIGIN.y, LIVE_ORIGIN.z)], LIVE_SAMPLES),
+  );
+  liveGeometry.setDrawRange(0, 0);
+  const liveLine = new THREE.Line(liveGeometry, liveMaterial);
+  liveGroup.add(liveLine);
+
+  const livePositions = liveGeometry.getAttribute("position") as THREE.BufferAttribute;
+  const liveTickMaterial = dimensionMaterial.clone();
+  const liveTicks = [LIVE_ORIGIN.x, LIVE_END].map((x) => {
+    const tick = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(x, LIVE_ORIGIN.y - 0.14, LIVE_ORIGIN.z),
+        new THREE.Vector3(x, LIVE_ORIGIN.y + 0.3, LIVE_ORIGIN.z),
+      ]),
+      liveTickMaterial,
+    );
+    liveGroup.add(tick);
+    return tick;
+  });
+
+  const liveLabel = makeLabel("3550", 0, 1.85);
+  liveLabel.sprite.position.set((LIVE_ORIGIN.x + LIVE_END) / 2, LIVE_ORIGIN.y + 0.52, LIVE_ORIGIN.z);
+  liveGroup.add(liveLabel.sprite);
+
+  const liveDimension = {
+    group: liveGroup,
+    material: liveMaterial,
+    tickMaterial: liveTickMaterial,
+    label: liveLabel,
+    origin: LIVE_ORIGIN,
+    setProgress: (value: number) => {
+      const drawn = Math.floor(clamp01(value) * LIVE_SAMPLES);
+      liveGeometry.setDrawRange(0, drawn < 2 ? 0 : drawn);
+    },
+    setEnd: (x: number) => {
+      for (let index = 0; index < LIVE_SAMPLES; index += 1) {
+        const ratio = index / (LIVE_SAMPLES - 1);
+        livePositions.setXYZ(index, LIVE_ORIGIN.x + (x - LIVE_ORIGIN.x) * ratio, LIVE_ORIGIN.y, LIVE_ORIGIN.z);
+      }
+      livePositions.needsUpdate = true;
+      liveTicks[1].position.x = x - LIVE_END;
+      liveLabel.sprite.position.x = (LIVE_ORIGIN.x + x) / 2;
+    },
+    read: (x: number) => String(Math.round((Math.abs(LIVE_ORIGIN.x - x) * 1000) / 10) * 10),
+    end: LIVE_END,
+  };
 
   // ── Stage 10 · the two working markers ────────────────────────────────────
   const agent = new THREE.Group();
@@ -744,70 +965,13 @@ function buildModel() {
   penStroke.position.y = 0.3;
   actors.add(penStroke);
 
-  // A dimension that genuinely measures the wall the agent keeps re-checking:
-  // its end follows the partition, and its value is read off the geometry.
-  const liveGroup = new THREE.Group();
-  dimensions.add(liveGroup);
-
-  const LIVE_SAMPLES = 64;
-  const LIVE_ORIGIN = new THREE.Vector3(-5.87, 3.66, -2.6);
-  const LIVE_END = -0.23;
-  const liveMaterial = dimensionMaterial.clone();
-  const liveGeometry = new THREE.BufferGeometry().setFromPoints(
-    resamplePolyline([LIVE_ORIGIN, new THREE.Vector3(LIVE_END, LIVE_ORIGIN.y, LIVE_ORIGIN.z)], LIVE_SAMPLES),
-  );
-  liveGeometry.setDrawRange(0, 0);
-  const liveLine = new THREE.Line(liveGeometry, liveMaterial);
-  liveGroup.add(liveLine);
-
-  const livePositions = liveGeometry.getAttribute("position") as THREE.BufferAttribute;
-  const liveTickMaterial = dimensionMaterial.clone();
-  const liveTicks = [LIVE_ORIGIN.x, LIVE_END].map((x) => {
-    const tick = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(x, LIVE_ORIGIN.y - 0.16, LIVE_ORIGIN.z),
-        new THREE.Vector3(x, LIVE_ORIGIN.y + 0.3, LIVE_ORIGIN.z),
-      ]),
-      liveTickMaterial,
-    );
-    liveGroup.add(tick);
-    return tick;
-  });
-
-  const liveLabel = makeLabel("5640", 0, 1.85);
-  liveLabel.sprite.position.set((LIVE_ORIGIN.x + LIVE_END) / 2, LIVE_ORIGIN.y + 0.5, LIVE_ORIGIN.z);
-  liveGroup.add(liveLabel.sprite);
-
-  const liveDimension = {
-    group: liveGroup,
-    material: liveMaterial,
-    tickMaterial: liveTickMaterial,
-    label: liveLabel,
-    origin: LIVE_ORIGIN,
-    setProgress: (value: number) => {
-      const drawn = Math.floor(clamp01(value) * LIVE_SAMPLES);
-      liveGeometry.setDrawRange(0, drawn < 2 ? 0 : drawn);
-    },
-    setEnd: (x: number) => {
-      for (let index = 0; index < LIVE_SAMPLES; index += 1) {
-        const ratio = index / (LIVE_SAMPLES - 1);
-        livePositions.setXYZ(index, LIVE_ORIGIN.x + (x - LIVE_ORIGIN.x) * ratio, LIVE_ORIGIN.y, LIVE_ORIGIN.z);
-      }
-      livePositions.needsUpdate = true;
-      liveTicks[1].position.x = x - LIVE_END;
-      liveLabel.sprite.position.x = (LIVE_ORIGIN.x + x) / 2;
-    },
-    read: (x: number) => String(Math.round(((x - LIVE_ORIGIN.x) * 1000) / 10) * 10),
-    end: LIVE_END,
-  };
-
   return {
     rig, site,
     parts, planLines, slabJoints, siteMarks, gridMaterial, groundShadow,
     dimensionSet, elevations, liveDimension,
     agent, agentMaterial, stemMaterial, reticle, scanMaterial, scanRing, checkMaterial, check, head,
     human, humanMaterial, nib, penMaterial, penGeometry, penStroke,
-    partitions,
+    movingWalls,
   };
 }
 
@@ -831,52 +995,52 @@ type Episode = {
   scan: number;
 };
 
-const REST_STATION = new THREE.Vector3(4.4, 0.08, 5.25);
+const REST_STATION = new THREE.Vector3(5.4, 0.09, 4.8);
 
 const EPISODES: Episode[] = [
   {
     code: "P-04",
     humanNote: "Partition moved",
     agentNote: "Alignment checked",
-    station: new THREE.Vector3(0.55, 3.72, -1.4),
+    station: new THREE.Vector3(3.9, 3.78, 1.6),
     path: [
       REST_STATION,
-      new THREE.Vector3(5.2, 1.7, 4.7),
-      new THREE.Vector3(3.4, 3.85, 0.9),
-      new THREE.Vector3(0.55, 3.72, -1.4),
+      new THREE.Vector3(6.1, 1.7, 5.3),
+      new THREE.Vector3(5.4, 3.85, 3.4),
+      new THREE.Vector3(3.9, 3.78, 1.6),
     ],
-    pen: [new THREE.Vector3(0.55, 3.72, -3.0), new THREE.Vector3(0.55, 3.72, 0.3)],
-    targetTag: "Partition P-04",
-    shift: 0.18,
+    pen: [new THREE.Vector3(3.9, 3.78, -1.0), new THREE.Vector3(3.9, 3.78, 3.9)],
+    targetTag: "Master suite",
+    shift: -0.3,
     values: ["4500", "4650"],
-    scan: 1.9,
+    scan: 1.15,
   },
   {
     code: "F-01",
     humanNote: "Opening extended",
     agentNote: "Daylight evaluated",
-    station: new THREE.Vector3(-1.4, 0.36, 4.62),
-    path: [REST_STATION, new THREE.Vector3(2.4, 0.36, 5.3), new THREE.Vector3(-1.4, 0.36, 4.62)],
-    pen: [new THREE.Vector3(-5.4, 0.36, 4.62), new THREE.Vector3(1.6, 0.36, 4.62)],
-    targetTag: "Glazed façade",
+    station: new THREE.Vector3(-0.6, 0.14, 5.55),
+    path: [REST_STATION, new THREE.Vector3(3.0, 0.14, 5.75), new THREE.Vector3(-0.6, 0.14, 5.55)],
+    pen: [new THREE.Vector3(-4.5, 0.14, 5.55), new THREE.Vector3(1.2, 0.14, 5.55)],
+    targetTag: "South glazing",
     shift: 0,
-    scan: 3.1,
+    scan: 1.5,
   },
   {
     code: "S-01",
     humanNote: "Stair set out",
     agentNote: "Circulation validated",
-    station: new THREE.Vector3(-3.25, 3.74, 2.55),
+    station: new THREE.Vector3(-5.4, 3.81, 3.6),
     path: [
       REST_STATION,
-      new THREE.Vector3(0.8, 0.36, 5.2),
-      new THREE.Vector3(-2.0, 3.8, 3.4),
-      new THREE.Vector3(-3.25, 3.74, 2.55),
+      new THREE.Vector3(0.6, 0.14, 5.9),
+      new THREE.Vector3(-5.6, 1.9, 5.7),
+      new THREE.Vector3(-5.4, 3.81, 3.6),
     ],
-    pen: [new THREE.Vector3(-4.15, 3.74, 2.28), new THREE.Vector3(-2.35, 3.74, 2.28)],
-    targetTag: "Stair run",
+    pen: [new THREE.Vector3(-6.35, 3.81, 3.6), new THREE.Vector3(-4.35, 3.81, 3.6)],
+    targetTag: "Roof terrace",
     shift: 0,
-    scan: 1.6,
+    scan: 1.05,
   },
 ];
 
@@ -947,30 +1111,40 @@ export default function HeroBuilding({ mode = "idle", onSignal }: HeroBuildingPr
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.7));
     renderer.setClearColor(0x000000, 0);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.06;
+    // Neutral keeps the warm whites warm instead of rolling them toward cream.
+    renderer.toneMapping = THREE.NeutralToneMapping;
+    renderer.toneMappingExposure = 1.16;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.domElement.setAttribute("aria-hidden", "true");
     mount.appendChild(renderer.domElement);
 
-    scene.add(new THREE.HemisphereLight(0xfffbf2, 0x8b928c, 2.15));
-    const keyLight = new THREE.DirectionalLight(0xfff5df, 4.8);
-    keyLight.position.set(-8, 18, 12);
+    // Studio daylight: a soft sky, one key from above and front-left, a cool
+    // bounce from behind, and a low warm bounce so soffits never go black.
+    scene.add(new THREE.HemisphereLight(0xfffaf0, 0xa5a29a, 2.1));
+
+    const keyLight = new THREE.DirectionalLight(0xfff4e2, 2.8);
+    keyLight.position.set(-9.5, 19, 13);
     keyLight.castShadow = true;
-    keyLight.shadow.mapSize.set(2048, 2048);
-    keyLight.shadow.camera.left = -14;
-    keyLight.shadow.camera.right = 14;
-    keyLight.shadow.camera.top = 14;
-    keyLight.shadow.camera.bottom = -14;
-    keyLight.shadow.camera.near = 1;
-    keyLight.shadow.camera.far = 52;
-    keyLight.shadow.bias = -0.0008;
+    keyLight.shadow.mapSize.set(2560, 2560);
+    keyLight.shadow.camera.left = -13;
+    keyLight.shadow.camera.right = 13;
+    keyLight.shadow.camera.top = 13;
+    keyLight.shadow.camera.bottom = -13;
+    keyLight.shadow.camera.near = 6;
+    keyLight.shadow.camera.far = 46;
+    keyLight.shadow.bias = -0.0004;
+    keyLight.shadow.normalBias = 0.018;
+    keyLight.shadow.radius = 3.4;
     scene.add(keyLight);
 
-    const fillLight = new THREE.DirectionalLight(0xaec0b7, 1.35);
-    fillLight.position.set(10, 8, -12);
+    const fillLight = new THREE.DirectionalLight(0xc3cfcb, 0.72);
+    fillLight.position.set(11, 9, -13);
     scene.add(fillLight);
+
+    const bounceLight = new THREE.DirectionalLight(0xf3e6d4, 0.34);
+    bounceLight.position.set(4, -6, 9);
+    scene.add(bounceLight);
 
     const model = buildModel();
     scene.add(model.rig);
@@ -1035,7 +1209,7 @@ export default function HeroBuilding({ mode = "idle", onSignal }: HeroBuildingPr
       const aspect = width / height;
       // The drawing, its dimension set and its level marks span ~21.6 units across.
       // Fit that first, then hold a sensible floor and ceiling on the zoom.
-      const vertical = clamp(21.6 / aspect, 15.4, 23.5);
+      const vertical = clamp(25.0 / aspect, 17.6, 27.0);
       camera.left = (-vertical * aspect) / 2;
       camera.right = (vertical * aspect) / 2;
       camera.top = vertical / 2;
@@ -1063,7 +1237,7 @@ export default function HeroBuilding({ mode = "idle", onSignal }: HeroBuildingPr
       penPositions.needsUpdate = true;
     };
 
-    const movingPart = model.partitions[1];
+    const movingWalls = model.movingWalls;
     const liveDimension = model.liveDimension;
     let penEpisode = -1;
     let liveReading = "";
@@ -1094,7 +1268,7 @@ export default function HeroBuilding({ mode = "idle", onSignal }: HeroBuildingPr
       const siteReveal = easeOut(stageProgress(0, 0, 1, elapsed));
       model.gridMaterial.opacity = (0.1 + studioAmount * 0.16) * siteReveal * planOn;
       (workPlane.material as THREE.MeshBasicMaterial).opacity = studioAmount * 0.055 * planOn;
-      (model.groundShadow.material as THREE.ShadowMaterial).opacity = 0.17 * siteReveal;
+      (model.groundShadow.material as THREE.ShadowMaterial).opacity = 0.22 * siteReveal;
 
       model.siteMarks.forEach((mark, index) => {
         const progress = easeOut(stageProgress(0, index, model.siteMarks.length, elapsed));
@@ -1160,9 +1334,11 @@ export default function HeroBuilding({ mode = "idle", onSignal }: HeroBuildingPr
       }
 
       // The one element the pair keeps working on; its dimension follows it.
-      if (episode.shift > 0 && adjusting) {
+      if (episode.shift !== 0 && adjusting) {
         const target = entrance ? episode.shift : repetition % 2 === 0 ? 0 : episode.shift;
-        movingPart.offsetX = damp(movingPart.offsetX, target, 2.6, delta);
+        const moved = damp(movingWalls[0].offsetX, target, 2.6, delta);
+        // Both segments of the wall travel together, so the opening stays put.
+        for (const wall of movingWalls) wall.offsetX = moved;
       }
 
       const activeTag = episode.targetTag;
@@ -1218,7 +1394,7 @@ export default function HeroBuilding({ mode = "idle", onSignal }: HeroBuildingPr
       });
 
       const liveProgress = easeOut(stageProgress(9, dimensionSlots - 1, dimensionSlots, elapsed));
-      const liveEnd = liveDimension.end + movingPart.offsetX;
+      const liveEnd = liveDimension.end + movingWalls[0].offsetX;
       liveDimension.setProgress(liveProgress);
       liveDimension.setEnd(liveEnd);
       liveDimension.group.position.y = EXPLODE[1] * sectionAmount;
@@ -1252,7 +1428,7 @@ export default function HeroBuilding({ mode = "idle", onSignal }: HeroBuildingPr
           (0.6 + 0.3 * Math.sin(elapsed * 1.5) * 0.5 + 0.25 * activeAmount) * presence;
         model.reticle.scale.setScalar(1 + scanAmount * 0.22);
         model.scanRing.scale.setScalar(0.34 + easeOut(scanSweep) * episode.scan);
-        model.scanMaterial.opacity = 0.5 * scanAmount * (1 - scanSweep * 0.55);
+        model.scanMaterial.opacity = 0.38 * scanAmount * (1 - scanSweep * 0.5);
         model.checkMaterial.opacity = confirmAmount;
         model.check.scale.setScalar(0.58 + confirmAmount * 0.16);
       }
@@ -1291,9 +1467,9 @@ export default function HeroBuilding({ mode = "idle", onSignal }: HeroBuildingPr
       model.rig.rotation.x = pitch;
 
       const sun = elapsed * 0.03;
-      keyLight.position.set(-7 + Math.sin(sun) * 5.5, 17.5 + Math.sin(sun * 0.6) * 1.6, 11 + Math.cos(sun) * 4.5);
-      keyLight.intensity = 4.5 + Math.sin(sun * 0.8) * 0.3 + studioAmount * 0.5;
-      renderer.toneMappingExposure = 1.06 + studioAmount * 0.05;
+      keyLight.position.set(-8.5 + Math.sin(sun) * 5, 19 + Math.sin(sun * 0.6) * 1.4, 12.5 + Math.cos(sun) * 4);
+      keyLight.intensity = 2.8 + Math.sin(sun * 0.8) * 0.2 + studioAmount * 0.32;
+      renderer.toneMappingExposure = 1.16 + studioAmount * 0.05;
 
       // ── inspection ────────────────────────────────────────────────────────
       let hovered: Part | null = null;
