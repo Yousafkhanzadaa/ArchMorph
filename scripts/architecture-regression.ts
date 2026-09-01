@@ -3,12 +3,17 @@ import {
   applyOperation,
   buildCirculationGraph,
   createInitialProject,
+  inspectFloor,
   inspectRoom,
   migrateProject,
   projectMetrics,
   recommendedStairRun,
   round,
   roomArea,
+  roomCarpetArea,
+  roomCentroid,
+  roomContainsPoint,
+  roomInteriorPoint,
   roomPerimeter,
   roomVertices,
   stairFootprint,
@@ -472,6 +477,214 @@ assert.deepEqual(
   "the spatial model should expose opening frames from every floor while walking",
 );
 
+// ---------------------------------------------------------------------------
+// Habitability, interior anchors, and measurement scoping
+// ---------------------------------------------------------------------------
+let habitat = createInitialProject();
+const performHabitat = (operation: ArchitectureOperation) => {
+  habitat = applyOperation(habitat, operation, "human").project;
+};
+performHabitat({ type: "create_room", floorId: "floor-ground", name: "Lounge", roomType: "Living Room", x: 3, y: 10, width: 14, length: 16 });
+performHabitat({ type: "create_room", floorId: "floor-ground", name: "Bedroom 1", roomType: "Bedroom", x: 17, y: 10, width: 10, length: 13 });
+performHabitat({ type: "create_room", floorId: "floor-ground", name: "Bath 1", roomType: "Bathroom", x: 17, y: 23, width: 10, length: 5 });
+const habitatCodes = () => new Set(validateLayout(habitat).issues.map((issue) => issue.code));
+
+assert.ok(habitatCodes().has("ROOM_DAYLIGHT_SHORTFALL"), "a room with no windows should fail the daylight guideline");
+assert.ok(habitatCodes().has("ROOM_NO_VENTILATION"), "a room with no openable window should fail the ventilation guideline");
+assert.ok(habitatCodes().has("BEDROOM_NO_EGRESS"), "a bedroom with no escape window should be reported");
+
+const loungeRoom = habitat.rooms.find((room) => room.name === "Lounge")!;
+const loungeWall = habitat.walls.find((wall) => wall.exterior && wall.roomIds.includes(loungeRoom.id))!;
+performHabitat({ type: "add_opening", kind: "window", wallId: loungeWall.id, offset: 7, width: 6, height: 5, sillHeight: 3, windowType: "casement", operable: true });
+const loungeIssues = validateLayout(habitat).issues.filter((issue) => issue.elementIds.includes(loungeRoom.id));
+assert.ok(!loungeIssues.some((issue) => issue.code === "ROOM_DAYLIGHT_SHORTFALL"), "30 sq ft of glazing satisfies 8% daylight for a 224 sq ft room");
+assert.ok(!loungeIssues.some((issue) => issue.code === "ROOM_NO_VENTILATION"), "an operable casement satisfies the 4% ventilation guideline");
+
+// A fixed window admits light but no air, which the checks must distinguish.
+const bedroom = habitat.rooms.find((room) => room.name === "Bedroom 1")!;
+const bedroomWall = habitat.walls.find((wall) => wall.exterior && wall.roomIds.includes(bedroom.id))!;
+performHabitat({ type: "add_opening", kind: "window", wallId: bedroomWall.id, offset: 5, width: 4, height: 4, sillHeight: 3, windowType: "fixed", operable: false });
+const bedroomIssues = validateLayout(habitat).issues.filter((issue) => issue.elementIds.includes(bedroom.id));
+assert.ok(!bedroomIssues.some((issue) => issue.code === "ROOM_DAYLIGHT_SHORTFALL"), "16 sq ft of glazing satisfies daylight for a 130 sq ft bedroom");
+assert.ok(bedroomIssues.some((issue) => issue.code === "ROOM_NO_VENTILATION"), "a fixed window contributes no openable area");
+assert.ok(!bedroomIssues.some((issue) => issue.code === "BEDROOM_NO_EGRESS"), "a 4 x 4 ft window with a 3 ft sill satisfies the escape concept");
+
+performHabitat({ type: "create_room", floorId: "floor-ground", name: "Box Room", roomType: "Bedroom", x: 3, y: 30, width: 6, length: 8 });
+assert.ok(
+  validateLayout(habitat).issues.some((issue) => issue.code === "ROOM_BELOW_HABITABLE_MINIMUM"),
+  "a 48 sq ft bedroom is below the habitable minimum",
+);
+
+// Non-habitable service space must not be dragged into the habitability rules.
+performHabitat({ type: "create_room", floorId: "floor-ground", name: "Store", roomType: "Storage", x: 3, y: 42, width: 6, length: 6 });
+const store = habitat.rooms.find((room) => room.name === "Store")!;
+assert.equal(
+  validateLayout(habitat).issues.filter((issue) => issue.elementIds.includes(store.id)
+    && ["ROOM_DAYLIGHT_SHORTFALL", "ROOM_NO_VENTILATION", "ROOM_BELOW_HABITABLE_MINIMUM"].includes(issue.code)).length,
+  0,
+  "storage is not a habitable room and must not raise habitability findings",
+);
+
+// A setback breach is a legal line, not a drawing hint.
+assert.equal(
+  validateLayout(habitat).issues.find((issue) => issue.code === "SETBACK_VIOLATION")?.severity ?? "error",
+  "error",
+  "a setback breach must be reported as an error",
+);
+
+// A U-shaped room's area centroid lands in its notch; anchors must stay inside the room.
+let anchors = createInitialProject();
+anchors = applyOperation(anchors, { type: "create_room", floorId: "floor-ground", name: "U Room", roomType: "Living Room", x: 4, y: 12, width: 20, length: 20, shape: "u-shape" }, "human").project;
+const uRoom = anchors.rooms[0];
+assert.equal(roomContainsPoint(uRoom, roomCentroid(uRoom)), false, "the U-shape centroid is expected to fall outside the room");
+assert.equal(roomContainsPoint(uRoom, roomInteriorPoint(uRoom)), true, "roomInteriorPoint must always land inside the room");
+for (const shape of ["rectangle", "l-shape", "t-shape", "u-shape"] as const) {
+  let sample = createInitialProject();
+  sample = applyOperation(sample, { type: "create_room", floorId: "floor-ground", name: shape, roomType: "Office", x: 4, y: 12, width: 18, length: 18, shape: shape === "rectangle" ? undefined : shape }, "human").project;
+  assert.ok(roomContainsPoint(sample.rooms[0], roomInteriorPoint(sample.rooms[0])), `${shape} interior point must be inside the room`);
+}
+
+// Carpet area is exact for orthogonal rooms of uniform wall thickness.
+let carpet = createInitialProject();
+carpet = applyOperation(carpet, { type: "create_room", floorId: "floor-ground", name: "Rect", roomType: "Living Room", x: 3, y: 12, width: 14, length: 16 }, "human").project;
+carpet = applyOperation(carpet, { type: "create_polygon_room", floorId: "floor-ground", name: "Ell", roomType: "Office", vertices: [{ x: 3, y: 32 }, { x: 23, y: 32 }, { x: 23, y: 44 }, { x: 15, y: 44 }, { x: 15, y: 52 }, { x: 3, y: 52 }] }, "human").project;
+assert.equal(roomCarpetArea(carpet, carpet.rooms[0]), 209.25, "a 14 x 16 ft room with 6 in walls has 13.5 x 15.5 ft of carpet");
+assert.equal(roomCarpetArea(carpet, carpet.rooms[1]), 316.25, "carpet area must stay exact across a reflex corner");
+assert.ok(roomCarpetArea(carpet, carpet.rooms[0]) < roomArea(carpet.rooms[0]), "carpet area is always smaller than centreline area");
+
+// Ground coverage and open site area are ground-floor ratios and must not follow the active floor.
+let scoped = createInitialProject();
+scoped = applyOperation(scoped, { type: "create_room", floorId: "floor-ground", name: "Ground", roomType: "Living Room", x: 3, y: 12, width: 24, length: 30 }, "human").project;
+scoped = applyOperation(scoped, { type: "create_floor", name: "Upper", height: 9 }, "human").project;
+const scopedUpper = scoped.floors[1].id;
+scoped = applyOperation(scoped, { type: "create_room", floorId: scopedUpper, name: "Upper", roomType: "Bedroom", x: 3, y: 12, width: 10, length: 10 }, "human").project;
+scoped = applyOperation(scoped, { type: "add_balcony", floorId: scopedUpper, name: "Balcony", kind: "balcony", x: 5, y: 6, width: 12, length: 5 }, "human").project;
+const groundMetrics = projectMetrics(scoped, "floor-ground");
+const upperMetrics = projectMetrics(scoped, scopedUpper);
+assert.equal(groundMetrics.groundCoveragePercent, upperMetrics.groundCoveragePercent, "ground coverage must not change with the selected floor");
+assert.equal(groundMetrics.openSiteArea, upperMetrics.openSiteArea, "open site area must not change with the selected floor");
+assert.equal(groundMetrics.openArea, groundMetrics.openSiteArea, "the openArea alias must agree with openSiteArea");
+assert.equal(groundMetrics.coveragePercent, groundMetrics.groundCoveragePercent, "the coveragePercent alias must be the ground coverage ratio");
+assert.equal(groundMetrics.projectBalconyArea, 60, "project balcony area must count balconies on every floor");
+assert.equal(groundMetrics.balconyArea, 0, "the floor-scoped balcony area stays floor-scoped");
+assert.equal(groundMetrics.floorAreaRatio, round(groundMetrics.totalGrossCoveredArea / groundMetrics.plotArea, 3), "FAR is total gross covered area over plot area");
+
+// The compact floor summary keeps stable IDs and areas while dropping derived geometry.
+const summaryFloor = inspectFloor(scoped, "floor-ground") as { rooms: Array<{ id: string; area: number; carpetArea: number }>; walls: Array<{ id: string }> };
+const fullFloor = inspectFloor(scoped, "floor-ground", "full");
+assert.ok(JSON.stringify(summaryFloor).length < JSON.stringify(fullFloor).length, "the floor summary must be smaller than full detail");
+assert.equal(summaryFloor.rooms.length, 1);
+assert.ok(summaryFloor.rooms[0].area > 0 && summaryFloor.rooms[0].carpetArea > 0, "the floor summary reports both area measures per room");
+assert.ok(summaryFloor.walls.every((wall) => wall.id.length > 0), "the floor summary keeps every stable wall ID");
+
+// Stair geometry is reported in the unit architects read.
+const stairUnits = stairConnection(multiFloor, multiFloor.stairs[0])!;
+// Converted from the exact rise, not from the display-rounded feet value, so it does not inherit that error.
+assert.equal(stairUnits.riserHeightInches, round((stairUnits.rise / stairUnits.riserCount) * 12, 2), "riser height must be reported in inches from the exact rise");
+assert.equal(stairUnits.treadDepthInches, round(stairUnits.treadDepth * 12, 2), "tread depth must also be reported in inches");
+assert.ok(stairUnits.riserHeightInches <= 7.75, "concept stair risers should not exceed 7 3/4 inches");
+
+// ---------------------------------------------------------------------------
+// Alignment, overlap prevention, and editable storey height
+// ---------------------------------------------------------------------------
+let align = createInitialProject();
+const performAlign = (operation: ArchitectureOperation) => {
+  align = applyOperation(align, operation, "human").project;
+};
+
+// Two rooms meant to share a party wall but drawn a near-miss apart must still produce one wall.
+performAlign({ type: "create_room", floorId: "floor-ground", name: "Left", roomType: "Custom", x: 3, y: 10, width: 14, length: 16 });
+performAlign({ type: "create_room", floorId: "floor-ground", name: "Right", roomType: "Custom", x: 17.1, y: 10, width: 9, length: 16 });
+assert.equal(align.walls.filter((wall) => wall.roomIds.length === 2).length, 1, "a near-miss edge must latch onto its neighbour and form one shared wall");
+assert.equal(align.walls.filter((wall) => wall.exterior).length, 6, "two tiled rooms have six exterior walls, not eight");
+assert.equal(align.rooms.find((room) => room.name === "Right")!.x, 17, "the latched edge must land exactly on its neighbour");
+assert.ok(
+  buildSpatialModel(align, { doorMode: "model" }).wallVolumes.length === 7,
+  "a cleanly shared wall must not produce a doubled 3D volume",
+);
+
+// A latch is reported, never silent.
+let reported = createInitialProject();
+reported = applyOperation(reported, { type: "create_room", floorId: "floor-ground", name: "A", roomType: "Custom", x: 3, y: 10, width: 12, length: 12 }, "agent").project;
+const latchOutcome = applyOperation(reported, { type: "create_room", floorId: "floor-ground", name: "B", roomType: "Custom", x: 15.03, y: 10.02, width: 9, length: 12 }, "agent");
+assert.ok(latchOutcome.result.alignment, "an applied alignment must be reported back to the caller");
+reported = latchOutcome.project;
+assert.equal(reported.walls.filter((wall) => wall.roomIds.length === 2).length, 1, "agent-supplied coordinates must align the same way as human drags");
+
+// An exact dimension is never silently snapped.
+const exact = applyOperation(align, { type: "resize_room", roomId: align.rooms[0].id, width: 13.75, length: 15.25 }, "human");
+assert.equal(exact.result.room && (exact.result.room as { width: number }).width, 13.75, "a stated exact dimension must be preserved");
+
+// Rooms may touch but never overlap, and a refusal must not mutate the project.
+const beforeOverlap = JSON.stringify(align);
+assert.throws(
+  () => applyOperation(align, { type: "create_room", floorId: "floor-ground", name: "Clash", roomType: "Custom", x: 8, y: 14, width: 10, length: 10 }, "human"),
+  /cannot occupy the same floor area/,
+  "an overlapping room must be refused at the operation",
+);
+assert.equal(JSON.stringify(align), beforeOverlap, "a refused overlap must leave the project untouched");
+assert.throws(
+  () => applyOperation(align, { type: "move_room", roomId: align.rooms[1].id, x: 5, y: 10 }, "human"),
+  /cannot occupy the same floor area/,
+  "a move that would overlap must be refused",
+);
+assert.doesNotThrow(
+  () => applyOperation(align, { type: "move_room", roomId: align.rooms[1].id, x: 17, y: 26 }, "human"),
+  "rooms that only touch remain legal",
+);
+assert.equal(validateLayout(align).issues.filter((issue) => issue.code === "ROOM_OVERLAP").length, 0, "prevention should make overlap findings unreachable in normal use");
+
+// A door must never open straight onto a flight or into the stairwell void.
+let hazard = createInitialProject();
+const performHazard = (operation: ArchitectureOperation) => { hazard = applyOperation(hazard, operation, "human").project; };
+performHazard({ type: "create_room", floorId: "floor-ground", name: "Lobby", roomType: "Custom", x: 3, y: 10, width: 12, length: 6 });
+performHazard({ type: "create_room", floorId: "floor-ground", name: "Stair Hall", roomType: "Custom", x: 3, y: 16, width: 12, length: 16 });
+performHazard({ type: "create_floor", name: "Upper", height: 9 });
+const hazardUpper = hazard.floors[1].id;
+performHazard({ type: "create_room", floorId: hazardUpper, name: "Upper Hall", roomType: "Custom", x: 3, y: 16, width: 12, length: 16 });
+performHazard({ type: "add_stairs", floorId: "floor-ground", x: 4, y: 16.5, width: 3.5, length: 7, direction: "up", stairType: "u-shaped", landingDepth: 3.5, wellWidth: 0.5, turnSide: "left" });
+const hazardWall = hazard.walls.find((wall) => wall.roomIds.length === 2 && Math.abs(wall.y1 - 16) < 0.01)!;
+// centred on the shared wall, this door lands square on the lower flight
+performHazard({ type: "add_opening", kind: "door", wallId: hazardWall.id, offset: 3, width: 3, height: 7 });
+assert.ok(
+  validateLayout(hazard).issues.some((issue) => issue.code === "DOOR_BLOCKED_BY_STAIR"),
+  "a door opening onto a stairwell must be reported",
+);
+// the same door moved to the clear end of the wall is fine
+const clearDoor = hazard.openings.find((opening) => opening.kind === "door")!;
+hazard = applyOperation(hazard, { type: "update_opening", openingId: clearDoor.id, offset: 10.5 }, "human").project;
+assert.equal(
+  validateLayout(hazard).issues.filter((issue) => issue.code === "DOOR_BLOCKED_BY_STAIR").length,
+  0,
+  "a door with clear floor in front of it must not be reported",
+);
+
+// Storey height is editable and re-levels everything above it.
+let storey = createInitialProject();
+storey = applyOperation(storey, { type: "create_room", floorId: "floor-ground", name: "Hall", roomType: "Custom", x: 3, y: 10, width: 10, length: 24 }, "human").project;
+storey = applyOperation(storey, { type: "create_floor", name: "Upper", height: 9 }, "human").project;
+const storeyUpper = storey.floors[1].id;
+storey = applyOperation(storey, { type: "create_room", floorId: storeyUpper, name: "Upper Hall", roomType: "Custom", x: 3, y: 10, width: 10, length: 24 }, "human").project;
+storey = applyOperation(storey, { type: "add_stairs", floorId: "floor-ground", x: 4, y: 12, width: 3.5, length: 11, direction: "up" }, "human").project;
+const beforeRise = stairConnection(storey, storey.stairs[0])!;
+storey = applyOperation(storey, { type: "set_floor_height", floorId: "floor-ground", height: 12 }, "human").project;
+const afterRise = stairConnection(storey, storey.stairs[0])!;
+assert.equal(storey.floors[0].height, 12, "the storey height must change");
+assert.equal(storey.floors.find((floor) => floor.id === storeyUpper)!.elevation, 12, "floors above must be re-levelled");
+assert.ok(afterRise.rise > beforeRise.rise, "a taller storey must increase the stair rise");
+assert.ok(afterRise.riserCount > beforeRise.riserCount, "a taller storey must add risers");
+assert.ok(afterRise.riserHeightInches <= 7.75, "risers must stay within the concept maximum after a height change");
+assert.ok(storey.walls.filter((wall) => wall.floorId === "floor-ground").every((wall) => wall.height === 12), "walls must follow their floor's height");
+assert.ok(
+  validateLayout(storey).issues.some((issue) => issue.code === "INVALID_STAIR_GEOMETRY"),
+  "a stair left too short for a taller storey must be reported rather than silently accepted",
+);
+assert.throws(
+  () => applyOperation(storey, { type: "set_floor_height", floorId: "floor-ground", height: 5 }, "human"),
+  /between 7 and 16 ft/,
+  "an unbuildable storey height must be refused",
+);
+
 console.log(JSON.stringify({
   project: { id: project.id, schemaVersion: project.schemaVersion, rooms: project.rooms.length, walls: project.walls.length, openings: project.openings.length },
   topology: { sharedWalls: project.walls.filter((wall) => wall.roomIds.length === 2).length, duplicateWallIds: project.walls.length - new Set(project.walls.map((wall) => wall.id)).size },
@@ -479,5 +692,9 @@ console.log(JSON.stringify({
   areas: { net: metrics.totalNetFloorArea, gross: metrics.grossCoveredArea, openSite: metrics.openSiteArea },
   persistence: { savedProjects: persistence.listSavedProjects().length, restoredVersion: restored.version, importedProjectId: imported.id },
   multiFloor: { floors: multiFloor.floors.length, firstFloorElevation: firstFloor.elevation, stairEdges: floorGraph.edges.filter((edge) => edge.type === "stair").length },
+  alignment: { sharedWalls: align.walls.filter((wall) => wall.roomIds.length === 2).length, exteriorWalls: align.walls.filter((wall) => wall.exterior).length },
+  storey: { groundHeight: storey.floors[0].height, upperElevation: storey.floors[1].elevation, rise: stairConnection(storey, storey.stairs[0])!.rise },
+  habitability: { codes: Array.from(new Set(validateLayout(habitat).issues.map((issue) => issue.code))) },
+  measurement: { carpet: roomCarpetArea(carpet, carpet.rooms[0]), net: roomArea(carpet.rooms[0]), far: groundMetrics.floorAreaRatio },
   spatial: { wallVolumes: walkSpatial.wallVolumes.length, designDoorBlocked: collisionAtDoor(designSpatial), walkDoorBlocked: collisionAtDoor(walkSpatial), renderedFloorIds: Array.from(new Set(multiFloorSpatial.openingFrames.map(({ opening }) => opening.floorId))) },
 }, null, 2));

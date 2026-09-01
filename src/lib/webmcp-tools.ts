@@ -23,6 +23,7 @@ import {
   projectInspection,
   projectMetrics,
   roomArea,
+  roomCarpetArea,
   validateLayout,
 } from "./architecture.ts";
 
@@ -169,6 +170,18 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
       }).result,
     },
     {
+      name: "rename_project",
+      category: "edit",
+      description: "Rename the live project. The new name appears in the product header and in every subsequent export filename.",
+      inputSchema: {
+        type: "object",
+        properties: { name: { type: "string", minLength: 1, maxLength: 120, description: "Visible project name." } },
+        required: ["name"],
+        additionalProperties: false,
+      },
+      execute: (input) => runtime.perform({ type: "rename_project", name: requiredString(input, "name") }).result,
+    },
+    {
       name: "inspect_exterior",
       category: "inspect",
       description: "Inspect the flat roof, parapet, site boundary, gate, balconies, terraces, façade features, and per-wall material overrides in the live project.",
@@ -190,15 +203,22 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
       name: "inspect_floor",
       category: "inspect",
       description:
-        "Inspect all rooms, room-boundary and independent walls, doors, windows, stairs, measurements, and validation findings on one floor.",
+        "Inspect the rooms, walls, doors, windows, stairs, areas, and findings on one floor. Returns a compact summary by default; ask for full detail only when you need wall connectivity or stair layout geometry.",
       inputSchema: {
         type: "object",
-        properties: { floorId },
+        properties: {
+          floorId,
+          detail: { type: "string", enum: ["summary", "full"], default: "summary", description: "summary keeps every stable ID and dimension; full adds derived geometry." },
+        },
         required: ["floorId"],
         additionalProperties: false,
       },
       annotations: readOnly,
-      execute: (input) => inspectFloor(runtime.getProject(), requiredString(input, "floorId")),
+      execute: (input) => inspectFloor(
+        runtime.getProject(),
+        requiredString(input, "floorId"),
+        input.detail === "full" ? "full" : "summary",
+      ),
     },
     {
       name: "set_plot_orientation",
@@ -388,6 +408,27 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
       },
     },
     {
+      name: "update_room",
+      category: "edit",
+      description: "Rename a room or change its programmatic type. Room type drives plan colour and the habitability checks, so keep it accurate.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          roomId,
+          name: { type: "string", description: "New visible room name." },
+          roomType: { type: "string", enum: ["Living Room", "Kitchen", "Bedroom", "Bathroom", "Garage", "Office", "Dining Room", "Storage", "Courtyard", "Custom"] },
+        },
+        required: ["roomId"],
+        additionalProperties: false,
+      },
+      execute: (input) => runtime.perform({
+        type: "update_room",
+        roomId: requiredString(input, "roomId"),
+        name: optionalString(input, "name"),
+        roomType: optionalString(input, "roomType") as RoomType | undefined,
+      }).result,
+    },
+    {
       name: "delete_room",
       category: "edit",
       description:
@@ -448,6 +489,18 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
         dx: requiredNumber(input, "dx"),
         dy: requiredNumber(input, "dy"),
       }).result,
+    },
+    {
+      name: "delete_wall",
+      category: "edit",
+      description: "Delete an independent wall and any openings it hosts. Canonical room-boundary walls cannot be deleted directly; change the room instead.",
+      inputSchema: { type: "object", properties: { wallId }, required: ["wallId"], additionalProperties: false },
+      execute: (input) => {
+        const id = requiredString(input, "wallId");
+        const wall = runtime.getProject().walls.find((item) => item.id === id);
+        if (!wall) throw new Error(`Wall ${id} does not exist.`);
+        return runtime.perform({ type: "delete_element", elementId: id }).result;
+      },
     },
     {
       name: "add_door",
@@ -790,6 +843,17 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
       }).result,
     },
     {
+      name: "delete_stairs",
+      category: "edit",
+      description: "Delete a staircase. Its plan symbol, 3D flights, stairwell void, circulation edge, and Walk Mode route are removed together.",
+      inputSchema: { type: "object", properties: { stairId: { type: "string", description: "Stable stair identifier returned by inspect_floor or add_stairs." } }, required: ["stairId"], additionalProperties: false },
+      execute: (input) => {
+        const id = requiredString(input, "stairId");
+        if (!runtime.getProject().stairs.some((item) => item.id === id)) throw new Error(`Stair ${id} does not exist.`);
+        return runtime.perform({ type: "delete_element", elementId: id }).result;
+      },
+    },
+    {
       name: "set_exterior_finish",
       category: "edit",
       description: "Set one lightweight, project-wide exterior facade finish. This changes 3D exterior wall appearance without adding heavy assembly simulation.",
@@ -932,6 +996,25 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
       }).result,
     },
     {
+      name: "set_floor_height",
+      category: "edit",
+      description: "Change one storey's floor-to-floor height. Every storey above is re-levelled and each connected stair's rise, riser count, and tread depth are recomputed from the new elevations.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          floorId,
+          height: { type: "number", minimum: 7, maximum: 16, description: "Floor-to-floor height in feet." },
+        },
+        required: ["floorId", "height"],
+        additionalProperties: false,
+      },
+      execute: (input) => runtime.perform({
+        type: "set_floor_height",
+        floorId: requiredString(input, "floorId"),
+        height: requiredNumber(input, "height"),
+      }).result,
+    },
+    {
       name: "calculate_room_area",
       category: "calculate",
       description: "Calculate the exact polygon area and bounding dimensions of one room from the live project model.",
@@ -940,7 +1023,7 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
       execute: (input) => {
         const room = runtime.getProject().rooms.find((item) => item.id === requiredString(input, "roomId"));
         if (!room) throw new Error("Room does not exist.");
-        return { roomId: room.id, name: room.name, shape: room.shape ?? "rectangle", vertices: room.vertices, width: room.width, length: room.length, netRoomArea: roomArea(room), area: roomArea(room), areaDefinition: "Usable internal room-polygon area excluding wall thickness. The area alias is retained for compatibility.", unit: "sq ft" };
+        return { roomId: room.id, name: room.name, shape: room.shape ?? "rectangle", vertices: room.vertices, width: room.width, length: room.length, netRoomArea: roomArea(room), carpetArea: roomCarpetArea(runtime.getProject(), room), area: roomArea(room), areaDefinition: "netRoomArea is measured to wall centrelines; carpetArea is the finished area inside the bounding walls. The area alias is retained for compatibility.", unit: "sq ft" };
       },
     },
     {
@@ -1033,6 +1116,13 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
         additionalProperties: false,
       },
       execute: (input) => runtime.perform({ type: "switch_view", mode: requiredString(input, "mode") as "2d" | "3d" }).result,
+    },
+    {
+      name: "set_active_floor",
+      category: "present",
+      description: "Make one storey the active floor. The plan, inspector, 3D level presentation, and Walk Mode all follow it, so call this before inspecting or editing another floor visually.",
+      inputSchema: { type: "object", properties: { floorId }, required: ["floorId"], additionalProperties: false },
+      execute: (input) => runtime.perform({ type: "set_active_floor", floorId: requiredString(input, "floorId") }).result,
     },
     {
       name: "set_camera",

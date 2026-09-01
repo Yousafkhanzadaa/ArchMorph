@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
   exteriorFinishPresets,
-  roomCentroid,
+  roomInteriorPoint,
   roomContainsPoint,
   roomVertices,
   stairConnection,
@@ -51,6 +51,8 @@ const WALK_EYE_HEIGHT = 5.4;
 const WALK_BODY_HEIGHT = 6.4;
 const WALK_RADIUS = 0.38;
 const STAIR_LANDING_CLEARANCE = 0.75;
+/** How close to an end of a flight counts as having arrived on that floor. */
+const STAIR_ARRIVAL_PROGRESS = 0.06;
 const STAIR_SOFFIT_OFFSET = 0.34;
 const FLOOR_SLAB_THICKNESS = 0.18;
 const CEILING_THICKNESS = 0.1;
@@ -161,7 +163,7 @@ export default function ModelView({
     const maxDimension = Math.max(project.plot.width, project.plot.length);
     const center = new THREE.Vector3(project.plot.width / 2, 3.2, project.plot.length / 2);
     const focusedRoom = project.rooms.find((room) => room.id === project.view.focusElementId);
-    const focusedCenter = focusedRoom ? roomCentroid(focusedRoom) : undefined;
+    const focusedCenter = focusedRoom ? roomInteriorPoint(focusedRoom) : undefined;
     const target = focusedCenter
       ? new THREE.Vector3(focusedCenter.x, 3.2, focusedCenter.y)
       : center;
@@ -196,7 +198,7 @@ export default function ModelView({
         ?? project.rooms.find((room) => room.floorId === floor?.id);
       const poseKey = `${floor?.id ?? "floor"}:${project.view.walkStartRoomId ?? startRoom?.id ?? "site"}`;
       const storedPose = walkPoseRef.current?.key === poseKey ? walkPoseRef.current : undefined;
-      const startCenter = startRoom ? roomCentroid(startRoom) : undefined;
+      const startCenter = startRoom ? roomInteriorPoint(startRoom) : undefined;
       const roomCenter = {
         x: startCenter?.x ?? project.plot.width / 2,
         z: startCenter?.y ?? project.plot.length / 2,
@@ -885,7 +887,28 @@ export default function ModelView({
         const activeFloorEye = (activeFloor?.elevation ?? 0) + WALK_EYE_HEIGHT;
 
         if (activeStairId) {
-          if (!nextStair || nextStair.stair.id !== activeStairId) continue;
+          if (!nextStair || nextStair.stair.id !== activeStairId) {
+            // A stair has to be leavable at either end. Blocking every off-stair step traps the
+            // walker on the top tread: the flight ends, the next step is off the flight, and the
+            // move is discarded. Stepping off at an end arrives on that end's floor.
+            const finished = previousStair?.stair.id === activeStairId ? previousStair : undefined;
+            const leaving = finished ? stairProgress(finished, previousX, previousZ) : undefined;
+            if (leaving === undefined || (leaving > STAIR_ARRIVAL_PROGRESS && leaving < 1 - STAIR_ARRIVAL_PROGRESS)) continue;
+            const arrivalFloor = leaving >= 1 - STAIR_ARRIVAL_PROGRESS ? finished!.upperFloor : finished!.lowerFloor;
+            activeStairId = undefined;
+            camera.position.x = x;
+            camera.position.z = z;
+            camera.position.y = arrivalFloor.elevation + WALK_EYE_HEIGHT;
+            if (activeFloor?.id !== arrivalFloor.id && !transitionRequested) {
+              transitionRequested = true;
+              walkPoseRef.current = {
+                key: poseKeyForFloor(arrivalFloor.id),
+                x, y: arrivalFloor.elevation + WALK_EYE_HEIGHT, z, yaw, pitch,
+              };
+              onWalkFloorChange(arrivalFloor.id);
+            }
+            continue;
+          }
         } else if (nextStair) {
           const enteringDifferentStair = previousStair?.stair.id !== nextStair.stair.id;
           const previousLocal = stairLocalPoint(nextStair.stair, { x: previousX, y: previousZ });
@@ -917,9 +940,9 @@ export default function ModelView({
 
         const progress = stairProgress(nextStair, x, z);
         camera.position.y = nextStair.lowerFloor.elevation + progress * nextStair.rise + WALK_EYE_HEIGHT;
-        const targetFloorId = activeFloor?.id === nextStair.lowerFloor.id && progress >= 0.96
+        const targetFloorId = activeFloor?.id === nextStair.lowerFloor.id && progress >= 1 - STAIR_ARRIVAL_PROGRESS
           ? nextStair.upperFloor.id
-          : activeFloor?.id === nextStair.upperFloor.id && progress <= 0.04
+          : activeFloor?.id === nextStair.upperFloor.id && progress <= STAIR_ARRIVAL_PROGRESS
             ? nextStair.lowerFloor.id
             : undefined;
         if (targetFloorId && !transitionRequested) {

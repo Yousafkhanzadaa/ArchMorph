@@ -975,11 +975,21 @@ export default function Studio() {
                       className={floor.id === project.view.activeFloorId ? "is-active" : ""}
                       onClick={() => safeCommit({ type: "set_active_floor", floorId: floor.id })}
                     >
-                      <Layers3 size={15} /><span><b>{floor.name}</b><small>{roomCount} {roomCount === 1 ? "room" : "rooms"}{stairCount ? ` · ${stairCount} stair connection${stairCount === 1 ? "" : "s"}` : ""}</small></span>
+                      <Layers3 size={15} /><span><b>{floor.name}</b><small>{roomCount} {roomCount === 1 ? "room" : "rooms"} · {floor.height} ft{stairCount ? ` · ${stairCount} stair connection${stairCount === 1 ? "" : "s"}` : ""}</small></span>
                     </button>
                   );
                 })}
               </div>
+              <NumberField
+                label="Storey height"
+                unit="ft"
+                value={activeFloor?.height ?? 9}
+                min={7}
+                max={16}
+                step={0.5}
+                onCommit={(height) => safeCommit({ type: "set_floor_height", floorId: project.view.activeFloorId, height })}
+              />
+              <p className="technical-note">Changing a storey height re-levels every floor above it and recomputes each connected stair&rsquo;s rise, riser count, and tread depth.</p>
             </Section>
           </div>
           <div className="library-foot">

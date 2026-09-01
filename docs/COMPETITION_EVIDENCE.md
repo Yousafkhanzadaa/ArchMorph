@@ -31,13 +31,14 @@ Run `git log --reverse --date=iso-strict --format='%h %ad %s'` to inspect the so
 
 ## WebMCP evidence paths
 
-- `src/lib/webmcp-tools.ts`: 51 named, schema-bounded tools; the added exterior/site tools use the same canonical operation pipeline.
+- `src/lib/webmcp-tools.ts`: 57 named, schema-bounded tools; the added exterior/site and habitability tools use the same canonical operation pipeline.
 - `src/app/components/Studio.tsx`: signal-scoped `document.modelContext.registerTool()` lifecycle and the shared human/agent commit path.
 - `src/lib/architecture.ts`: canonical operation, inspection, topology, metric, circulation, and validation logic used by tools and UI.
 - `src/types/webmcp.d.ts`: local type boundary for the draft imperative API.
 - `scripts/webmcp-regression.ts`: deterministic catalog and representative execution checks.
 - `evals/webmcp-journeys.json`: repeatable agent-selection and end-to-end journey fixtures.
 - `docs/WEBMCP_TESTING.md`: native-client smoke procedure and result log.
+- `docs/HABITABILITY_AND_MEASUREMENT_2026-08-30.md`: architectural habitability review, measurement corrections, room anchors, agent/human tool parity, and inspection payload budgets.
 - `docs/assets/webmcp-native-final-n06-2026-08-29.png`: native version-matched 3D snapshot from the completed N06 run.
 - `docs/assets/webmcp-native-final-n06-ui-2026-08-29.jpg`: visible ChatGPT in-app browser evidence for the completed 3D/stair state.
 

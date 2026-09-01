@@ -27,7 +27,7 @@ ArchMorph is a strong fit for the WebMCP Challenge because spatial design is dif
 5. The human adjusts the design directly.
 6. The agent re-inspects, explains tradeoffs, and refines the live model.
 
-The current product contains a meaningful architectural domain model, 2D and 3D synchronization, browser persistence, Walk Mode, multi-storey stairs, orthogonal irregular rooms, editable project sites, lightweight exterior systems, glazing properties, validation, and 51 WebMCP tools.
+The current product contains a meaningful architectural domain model, 2D and 3D synchronization, browser persistence, Walk Mode, multi-storey stairs, orthogonal irregular rooms, editable project sites, lightweight exterior systems, glazing properties, geometric and habitability validation, and 57 WebMCP tools.
 
 ## 2. Product purpose and boundaries
 
@@ -150,7 +150,7 @@ The central principle is one canonical project model and one mutation pipeline. 
 | `src/lib/spatial3d.ts` | Derived wall/opening geometry and collision data used by 3D navigation |
 | `src/app/components/ModelView.tsx` | Three.js model, camera/navigation modes, level presentation, openings, stairs, and Walk Mode |
 | `src/lib/persistence.ts` | Local project library, save/load, import/export, and schema migration |
-| `src/lib/webmcp-tools.ts` | 51 typed tools mapped to inspections, operations, calculations, validation, and presentation actions |
+| `src/lib/webmcp-tools.ts` | 57 typed tools mapped to inspections, operations, calculations, validation, and presentation actions |
 | `src/types/webmcp.d.ts` | Local types for the current WebMCP imperative API |
 | `scripts/architecture-regression.ts` | Deterministic architectural-domain regression coverage |
 
@@ -251,6 +251,10 @@ Current validation can identify:
 - Invalid stair connection or geometry.
 - Openings lacking valid adjacency.
 - Walls outside the plot.
+- Habitable rooms below the concept minimum area or least dimension.
+- Rooms below the concept daylight glazing ratio.
+- Rooms without openable exterior glazing for natural ventilation.
+- Bedrooms without a qualifying emergency escape opening.
 
 Issues include stable IDs, severity, human-readable messages, evidence, and suggested correction context. This evidence-oriented shape is valuable to both human users and agents.
 
@@ -338,14 +342,14 @@ Good: `rehost_window({ openingId, wallId, offset })`.
 
 Weak: `click_canvas({ x, y })`.
 
-### 6.7 Current 51-tool surface
+### 6.7 Current 57-tool surface
 
 | Category | Count | Tools |
 | --- | ---: | --- |
 | Inspect | 8 | `inspect_project`, `inspect_plot`, `inspect_exterior`, `inspect_floor`, `inspect_room`, `inspect_wall`, `inspect_opening`, `inspect_circulation` |
-| Edit | 32 | Existing room/wall/opening/stair/floor tools plus `configure_plot`, `set_wall_finish`, `set_roof`, `configure_site_boundary`, balcony CRUD, and façade-feature CRUD |
+| Edit | 37 | Existing room/wall/opening/stair/floor tools plus `configure_plot`, `set_floor_height`, `rename_project`, `update_room`, `delete_wall`, `delete_stairs`, `set_wall_finish`, `set_roof`, `configure_site_boundary`, balcony CRUD, and façade-feature CRUD |
 | Calculate/validate | 5 | `calculate_room_area`, `calculate_total_area`, `calculate_open_area`, `measure_distance`, `validate_layout` |
-| Present | 6 | `switch_view`, `set_camera`, `set_navigation_mode`, `focus_element`, `take_snapshot`, `export_plan` |
+| Present | 7 | `switch_view`, `set_active_floor`, `set_camera`, `set_navigation_mode`, `focus_element`, `take_snapshot`, `export_plan` |
 
 The breadth is useful, but tool count is not itself a competition advantage. The submission should demonstrate a small number of coherent, high-value journeys and prove that the agent chooses and sequences tools correctly.
 
@@ -492,6 +496,8 @@ Architecture tools earn trust through predictable direct manipulation. ArchMorph
 - Snaps reveal their target and priority before committing.
 - Escape cancels an in-progress operation; undo restores the complete previous state.
 - Locked or constrained geometry cannot move silently.
+- Near-miss edges latch onto existing geometry so intended shared walls actually become one wall.
+- Overlapping space is refused at the operation, not reported after the fact.
 - Dimensions identify their referenced geometry rather than becoming disconnected annotations.
 - Zoom does not change real-world snap tolerance unpredictably.
 - Destructive operations identify their affected elements and dependencies.
@@ -575,7 +581,7 @@ Repository snapshot: [Yousafkhanzadaa/ArchMorph](https://github.com/Yousafkhanza
 | Item | Status | Evidence / action |
 | --- | --- | --- |
 | Architecture-first product direction | Strong | Domain model, plan/3D synchronization, circulation, validation, stairs, and glazing are implemented |
-| Non-trivial WebMCP implementation | Strong foundation | 51 tools share the same operation pipeline as the human UI |
+| Non-trivial WebMCP implementation | Strong foundation | 57 tools share the same operation pipeline as the human UI; a regression test asserts the agent can reach every operation the human UI can |
 | Meaningful competition-period extension | Evidence exists | Preserve commits and clearly document prior versus new behavior |
 | Production UI free of developer clutter | Implemented | Developer console and internal values require explicit debug mode |
 | Deterministic domain verification | Implemented | Architecture regression script, lint, and production build have passed |
@@ -746,7 +752,7 @@ A focused under-three-minute demonstration could follow this sequence:
 7. Switch to 3D Walk Mode, enter the building, ascend the stair, and arrive on the upper level.
 8. Focus the final element or capture a snapshot while showing the validation summary.
 
-This proves page-state sharing, multi-tool reasoning, human-agent turn-taking, architectural value, and visible execution. Avoid spending demo time listing all 51 tools or showing the debug console.
+This proves page-state sharing, multi-tool reasoning, human-agent turn-taking, architectural value, and visible execution. Avoid spending demo time listing all 57 tools or showing the debug console.
 
 ## 15. Immediate recommended sequence
 

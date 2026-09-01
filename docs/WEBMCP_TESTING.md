@@ -18,7 +18,7 @@ The architecture suite covers canonical geometry, topology, hosted openings, cir
 1. Use the current ChatGPT in-app browser or the Chrome version and flag specified by the official challenge instructions.
 2. Open the public ArchMorph URL, not a source-code preview.
 3. Confirm the production UI loads without `?debug=1`.
-4. Confirm the client discovers 51 ArchMorph tools. Historical result rows below retain the exact 40-tool count observed before the exterior-system expansion.
+4. Confirm the client discovers 57 ArchMorph tools. Historical result rows below retain the exact tool counts observed at the time of each run (40 before the exterior-system expansion, 51 before the habitability release).
 5. Record the client name, exact version/model when visible, date, and result below.
 
 ## Native smoke suite
@@ -37,6 +37,7 @@ Start from a new project unless the case says otherwise. Stable IDs must come fr
 | N08 | Start a capture/export and cancel it if the client exposes cancellation. | Execution observes the abort signal where supported | Safe cancellation; no partial model mutation |
 | N09 | Make a direct human edit, then ask the agent what changed. | Fresh inspection reads the human edit | Agent reports the updated shared state without reloading |
 | N10 | Navigate away or close the page after discovery. | Registration signal cleanup removes page-scoped tools | Tools no longer remain available for the closed/navigated page |
+| N11 | “Review this design the way an architect would, then fix what you find.” | `inspect_project` → `validate_layout` → `add_window` or `set_window_properties` → `validate_layout` | Habitability findings name the room, its shortfall, and the threshold; the correction clears the finding without new errors |
 
 ## Evaluation fixtures
 

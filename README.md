@@ -12,7 +12,7 @@ ArchMorph is a browser-based architectural concept-design environment where a pe
 
 ## Why WebMCP
 
-Coordinate clicking is fragile in an architectural editor. A small visual error can select the wrong wall, place an opening outside its host, or edit the wrong floor. ArchMorph instead exposes 51 architectural operations through `document.modelContext.registerTool()`.
+Coordinate clicking is fragile in an architectural editor. A small visual error can select the wrong wall, place an opening outside its host, or edit the wrong floor. ArchMorph instead exposes 57 architectural operations through `document.modelContext.registerTool()`.
 
 The agent works with stable floor, room, wall, opening, and stair identifiers. Human actions and WebMCP calls both pass through the same operation pipeline, so they share:
 
@@ -33,7 +33,9 @@ A representative collaboration loop is:
 ## Current capabilities
 
 - Per-project editable land size, cardinal orientation, setbacks, buildable envelope, coverage, and open-area metrics.
-- Multiple floors with explicit elevations and storey heights.
+- Multiple floors with editable storey heights; changing one re-levels every floor above and recomputes connected stair geometry.
+- Edge alignment that latches near-miss geometry onto neighbouring rooms, plot boundaries, setback lines, and stairs, so rooms share one canonical wall instead of leaving slivers.
+- Room overlap prevented at the operation rather than reported afterwards.
 - Rectangular, L-, T-, U-, and custom orthogonal polygon rooms.
 - Canonical walls with connectivity, adjacency, and exterior/interior classification.
 - Hosted doors and windows with handing, operation, and glazing-performance properties.
@@ -41,6 +43,8 @@ A representative collaboration loop is:
 - Exact dimensions, direct manipulation, snapping, selection, and measurement.
 - Circulation graphs with entrance-to-room route evidence.
 - Validation for overlap, plot/setback violations, opening hosts, circulation, and stairs.
+- Habitability review of each room's daylight, natural ventilation, bedroom escape opening, and minimum habitable size.
+- Both centreline and finished carpet areas, ground coverage, open site area, and floor area ratio (FAR/FSI).
 - Local project library, JSON import/export, SVG export, migration, and undo/redo.
 - Synchronized SVG plan, Three.js orbit view, and first-person Walk Mode.
 - Flat roofs with adjustable parapets; balcony/terrace slabs with bounded railing styles; and boundary walls with adjustable gates.
@@ -54,9 +58,9 @@ ArchMorph intentionally focuses on architecture rather than furniture, decoratio
 | Category | Count | Examples |
 | --- | ---: | --- |
 | Inspect | 8 | `inspect_project`, `inspect_floor`, `inspect_exterior`, `inspect_circulation` |
-| Edit | 32 | `configure_plot`, `add_balcony`, `set_roof`, `configure_site_boundary`, `add_facade_feature` |
+| Edit | 37 | `configure_plot`, `set_floor_height`, `update_room`, `add_balcony`, `set_roof`, `delete_stairs` |
 | Calculate and validate | 5 | `calculate_room_area`, `measure_distance`, `validate_layout` |
-| Present | 6 | `switch_view`, `set_camera`, `focus_element`, `take_snapshot`, `export_plan` |
+| Present | 7 | `switch_view`, `set_active_floor`, `set_camera`, `focus_element`, `take_snapshot` |
 
 The full definitions live in [`src/lib/webmcp-tools.ts`](src/lib/webmcp-tools.ts). Repeatable journeys and the native-client smoke procedure are recorded in [`evals/webmcp-journeys.json`](evals/webmcp-journeys.json) and [`docs/WEBMCP_TESTING.md`](docs/WEBMCP_TESTING.md).
 
@@ -93,9 +97,9 @@ npm run lint
 npm run build
 ```
 
-`test:architecture` covers canonical geometry, topology, openings, circulation, straight/L/U stairs, polygonal rooms, exterior systems, per-project sites, persistence, migrations, and spatial collision data. `test:webmcp` checks the 51-tool catalog, schema boundaries, annotations, unique names, and representative inspection/mutation failures.
+`test:architecture` covers canonical geometry, topology, openings, circulation, straight/L/U stairs, polygonal rooms, exterior systems, per-project sites, persistence, migrations, and spatial collision data. `test:webmcp` checks the 57-tool catalog, schema boundaries, annotations, unique names, human/agent operation parity, inspection payload size, and representative inspection/mutation failures.
 
-The N01–N10 production baseline was verified with ChatGPT desktop 26.825.41651 (build 7345) when the deployed catalog contained 40 tools: N01–N07 and N09–N10 passed, and N08 was N/A because that client exposes no cancellation mechanism. The current 51-tool catalog additionally passed native local discovery and representative exterior-system execution on August 30. See [`docs/WEBMCP_TESTING.md`](docs/WEBMCP_TESTING.md) for the exact records.
+The N01–N10 production baseline was verified with ChatGPT desktop 26.825.41651 (build 7345) when the deployed catalog contained 40 tools: N01–N07 and N09–N10 passed, and N08 was N/A because that client exposes no cancellation mechanism. The 51-tool catalog additionally passed native local discovery and representative exterior-system execution on August 30; the current catalog contains 57 tools. See [`docs/WEBMCP_TESTING.md`](docs/WEBMCP_TESTING.md) for the exact records.
 
 The under-three-minute recording plan and narration are ready in [`docs/DEMO_VIDEO_SCRIPT.md`](docs/DEMO_VIDEO_SCRIPT.md).
 

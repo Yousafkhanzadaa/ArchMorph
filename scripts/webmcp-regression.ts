@@ -37,11 +37,11 @@ const runtime: ToolRuntime = {
 const tools = createArchMorphTools(runtime);
 const names = tools.map((tool) => tool.name);
 
-assert.equal(tools.length, 51, "ArchMorph should expose exactly 51 canonical tools");
+assert.equal(tools.length, 57, "ArchMorph should expose exactly 57 canonical tools");
 assert.equal(new Set(names).size, tools.length, "WebMCP tool names must be unique");
 assert.deepEqual(
   Object.fromEntries(["inspect", "edit", "calculate", "present"].map((category) => [category, tools.filter((tool) => tool.category === category).length])),
-  { inspect: 8, edit: 32, calculate: 5, present: 6 },
+  { inspect: 8, edit: 37, calculate: 5, present: 7 },
   "the documented category counts must match the live catalog",
 );
 
@@ -69,6 +69,10 @@ const expectedReadOnly = new Set([
 
 for (const tool of tools) {
   assert.equal(tool.annotations?.readOnlyHint === true, expectedReadOnly.has(tool.name), `${tool.name} has an unexpected read-only annotation`);
+}
+
+for (const name of ["set_active_floor", "set_floor_height", "rename_project", "update_room", "delete_stairs", "delete_wall"]) {
+  assert.ok(names.includes(name), `${name} must be reachable by an agent, not only from the human UI`);
 }
 
 const inspectProject = tools.find((tool) => tool.name === "inspect_project")!;
@@ -106,10 +110,14 @@ const updatedUStair = await tools.find((tool) => tool.name === "update_stairs")!
 assert.deepEqual({ turnSide: updatedUStair.stair.turnSide, wellWidth: updatedUStair.stair.wellWidth }, { turnSide: "right", wellWidth: 1 }, "WebMCP should configure U-shaped return side and center well");
 const convertedLStair = await tools.find((tool) => tool.name === "update_stairs")!.execute({ stairId: addedUStair.stair.id, stairType: "l-shaped", upperFlightLength: 6, landingDepth: 3, turnSide: "left" }) as { stair: { stairType: string; upperFlightLength: number; turnSide: string } };
 assert.deepEqual({ stairType: convertedLStair.stair.stairType, upperFlightLength: convertedLStair.stair.upperFlightLength, turnSide: convertedLStair.stair.turnSide }, { stairType: "l-shaped", upperFlightLength: 6, turnSide: "left" }, "WebMCP should convert a stable stair to a configured quarter-turn L shape");
-const inspectedUpperStairs = await tools.find((tool) => tool.name === "inspect_floor")!.execute({ floorId: createdFloor.floor.id }) as { stairDetails: Array<{ roleOnFloor: string; stair: { stairType: string }; layout: { flights: unknown[]; route: unknown[] } }> };
-assert.equal(inspectedUpperStairs.stairDetails[0]?.roleOnFloor, "upper-entry", "floor inspection should identify the stair's architectural role on the selected floor");
+const upperStairSummary = await tools.find((tool) => tool.name === "inspect_floor")!.execute({ floorId: createdFloor.floor.id }) as { stairs: Array<{ roleOnFloor: string; stairType: string; riserHeightInches: number }> };
+assert.equal(upperStairSummary.stairs[0]?.roleOnFloor, "upper-entry", "the floor summary should identify the stair's architectural role on the selected floor");
+assert.equal(upperStairSummary.stairs[0]?.stairType, "l-shaped");
+assert.ok(upperStairSummary.stairs[0]?.riserHeightInches > 0, "the summary should report riser height in inches");
+const inspectedUpperStairs = await tools.find((tool) => tool.name === "inspect_floor")!.execute({ floorId: createdFloor.floor.id, detail: "full" }) as { stairDetails: Array<{ roleOnFloor: string; stair: { stairType: string }; layout: { flights: unknown[]; route: unknown[] } }> };
+assert.equal(inspectedUpperStairs.stairDetails[0]?.roleOnFloor, "upper-entry", "full detail should identify the stair's architectural role on the selected floor");
 assert.equal(inspectedUpperStairs.stairDetails[0]?.stair.stairType, "l-shaped");
-assert.equal(inspectedUpperStairs.stairDetails[0]?.layout.flights.length, 2, "WebMCP inspection should expose explicit L-stair flights and route geometry");
+assert.equal(inspectedUpperStairs.stairDetails[0]?.layout.flights.length, 2, "full detail should expose explicit L-stair flights and route geometry");
 
 const exteriorWall = project.walls.find((wall) => wall.exterior && wall.roomIds.includes(project.rooms[0].id))!;
 await tools.find((tool) => tool.name === "set_wall_finish")!.execute({ wallId: exteriorWall.id, finish: "brick" });
@@ -145,6 +153,14 @@ assert.deepEqual(
   { glazing: "low-e", solarHeatGainCoefficient: 0.35, visibleTransmittance: 0.62, uFactor: 0.3 },
   "selecting the low-e preset should apply its performance defaults",
 );
+
+const overlapSnapshot = JSON.stringify(project);
+assert.throws(
+  () => createRoom.execute({ floorId: "floor-ground", name: "Overlapping", roomType: "Office", x: 4, y: 13, width: 8, length: 8 }),
+  /cannot occupy the same floor area/,
+  "a room that would overlap an existing room must be refused, not merely reported later",
+);
+assert.equal(JSON.stringify(project), overlapSnapshot, "a refused overlap must not mutate the project");
 
 const snapshotBeforeFailure = JSON.stringify(project);
 assert.throws(
@@ -200,7 +216,45 @@ assert.throws(
 );
 assert.equal(exportCalls, 0, "a cancelled export must stop before serialization begins");
 
+await tools.find((tool) => tool.name === "rename_project")!.execute({ name: "WebMCP Regression House" });
+assert.equal(project.name, "WebMCP Regression House", "rename_project should rename the shared project");
+await tools.find((tool) => tool.name === "update_room")!.execute({ roomId: project.rooms[0].id, name: "Renamed Room", roomType: "Bedroom" });
+assert.deepEqual(
+  { name: project.rooms[0].name, type: project.rooms[0].type },
+  { name: "Renamed Room", type: "Bedroom" },
+  "update_room should rename and retype a room",
+);
+await tools.find((tool) => tool.name === "set_active_floor")!.execute({ floorId: "floor-ground" });
+const raised = await tools.find((tool) => tool.name === "set_floor_height")!.execute({ floorId: "floor-ground", height: 12 }) as { floors: Array<{ id: string; elevation: number; height: number }>; stairs: Array<{ rise: number }> };
+assert.equal(raised.floors.find((floor) => floor.id === "floor-ground")!.height, 12, "set_floor_height should change the storey height");
+assert.equal(raised.floors.find((floor) => floor.id === createdFloor.floor.id)!.elevation, 12, "storeys above must be re-levelled");
+assert.ok(project.walls.filter((wall) => wall.floorId === "floor-ground").every((wall) => wall.height === 12), "walls on the floor must follow its new height");
+assert.throws(
+  () => tools.find((tool) => tool.name === "set_floor_height")!.execute({ floorId: "floor-ground", height: 6 }),
+  /between 7 and 16 ft/,
+  "an unbuildable storey height must be refused",
+);
+assert.equal(project.view.activeFloorId, "floor-ground", "set_active_floor should switch the visible storey");
+const stairsBefore = project.stairs.length;
+await tools.find((tool) => tool.name === "delete_stairs")!.execute({ stairId: project.stairs[0].id });
+assert.equal(project.stairs.length, stairsBefore - 1, "delete_stairs should remove the staircase");
+assert.throws(
+  () => tools.find((tool) => tool.name === "delete_wall")!.execute({ wallId: project.walls.find((wall) => wall.roomIds.length > 0)!.id }),
+  /room-boundary walls are controlled by their rooms/i,
+  "delete_wall must refuse canonical room-boundary walls",
+);
+
+// Chrome's WebMCP guidance budgets roughly 1.5K characters per tool result. The default summary must
+// stay far below the unbounded full payload on a realistic floor.
+const inspectFloorTool = tools.find((tool) => tool.name === "inspect_floor")!;
+const summary = JSON.stringify(await inspectFloorTool.execute({ floorId: "floor-ground" }));
+const full = JSON.stringify(await inspectFloorTool.execute({ floorId: "floor-ground", detail: "full" }));
+assert.ok(summary.length < full.length * 0.75, `inspect_floor summary (${summary.length}) should be materially smaller than full (${full.length})`);
+const summaryRooms = (JSON.parse(summary) as { rooms: Array<{ area: number; carpetArea: number }> }).rooms;
+assert.ok(summaryRooms.every((room) => typeof room.area === "number" && typeof room.carpetArea === "number"),
+  "inspect_floor should report each room's area without a second round trip");
+
 const exported = await tools.find((tool) => tool.name === "export_plan")!.execute({ format: "json", download: false }) as { projectVersion: number };
 assert.equal(exported.projectVersion, project.version, "exports should identify the current project version");
 
-console.log(`WebMCP regression passed: ${tools.length} tools, ${expectedReadOnly.size} read-only tools, representative execution verified.`);
+console.log(`WebMCP regression passed: ${tools.length} tools, ${expectedReadOnly.size} read-only tools, inspect_floor summary ${summary.length} vs full ${full.length} chars, representative execution verified.`);

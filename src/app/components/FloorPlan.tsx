@@ -11,7 +11,7 @@ import {
   round,
   roomArea,
   roomBounds,
-  roomCentroid,
+  roomInteriorPoint,
   roomVertices,
   stairConnection,
   stairAccessPolygon,
@@ -55,6 +55,8 @@ type FloorPlanProps = {
 };
 
 const snap = (value: number, grid = 0.5) => round(Math.round(value / grid) * grid);
+/** How close a dragged edge must come before it latches onto existing geometry, in feet. */
+const SNAP_DISTANCE = 0.75;
 
 function roomLabel(room: Room) {
   return room.name.length > 18 ? `${room.name.slice(0, 17)}…` : room.name;
@@ -133,28 +135,47 @@ export default function FloorPlan({
     return room;
   };
 
+  // Everything worth latching onto: neighbouring room edges, the plot boundary, the setback lines an
+  // architect designs against, stair footprints, and free-standing wall ends.
+  const guidesExcluding = (roomId?: string) => {
+    const others = rooms.filter((item) => item.id !== roomId);
+    const vertical = [
+      0, project.plot.width,
+      project.plot.setbacks.left, project.plot.width - project.plot.setbacks.right,
+      ...others.flatMap((item) => roomVertices(item).map((point) => point.x)),
+      ...stairs.flatMap((stair) => { const box = stairFootprint(stair); return [box.x, box.x + box.width]; }),
+      ...walls.filter((wall) => !wall.roomIds.length).flatMap((wall) => [wall.x1, wall.x2]),
+    ];
+    const horizontal = [
+      0, project.plot.length,
+      project.plot.setbacks.front, project.plot.length - project.plot.setbacks.rear,
+      ...others.flatMap((item) => roomVertices(item).map((point) => point.y)),
+      ...stairs.flatMap((stair) => { const box = stairFootprint(stair); return [box.y, box.y + box.length]; }),
+      ...walls.filter((wall) => !wall.roomIds.length).flatMap((wall) => [wall.y1, wall.y2]),
+    ];
+    return { vertical: Array.from(new Set(vertical)), horizontal: Array.from(new Set(horizontal)) };
+  };
+
+  const nearestGuide = (value: number, guides: number[]) => guides
+    .map((edge) => ({ edge, delta: edge - value }))
+    .filter((item) => Math.abs(item.delta) <= SNAP_DISTANCE)
+    .sort((a, b) => Math.abs(a.delta) - Math.abs(b.delta))[0];
+
   const alignRoom = (room: Room) => {
-    const otherRooms = rooms.filter((item) => item.id !== room.id);
-    const verticalEdges = otherRooms.flatMap((item) => [item.x, item.x + item.width]);
-    const horizontalEdges = otherRooms.flatMap((item) => [item.y, item.y + item.length]);
-    let x = room.x;
-    let y = room.y;
-    let vertical: number | undefined;
-    let horizontal: number | undefined;
-    const xMatches = verticalEdges.flatMap((edge) => [
-      { delta: edge - room.x, edge },
-      { delta: edge - (room.x + room.width), edge },
-    ]).filter((item) => Math.abs(item.delta) <= 0.4).sort((a, b) => Math.abs(a.delta) - Math.abs(b.delta));
-    const yMatches = horizontalEdges.flatMap((edge) => [
-      { delta: edge - room.y, edge },
-      { delta: edge - (room.y + room.length), edge },
-    ]).filter((item) => Math.abs(item.delta) <= 0.4).sort((a, b) => Math.abs(a.delta) - Math.abs(b.delta));
-    if (xMatches[0]) { x += xMatches[0].delta; vertical = xMatches[0].edge; }
-    if (yMatches[0]) { y += yMatches[0].delta; horizontal = yMatches[0].edge; }
-    setAlignmentGuides({ vertical, horizontal });
-    const dx = snap(x) - room.x;
-    const dy = snap(y) - room.y;
-    return { ...room, x: snap(x), y: snap(y), vertices: room.vertices?.map((point) => ({ x: point.x + dx, y: point.y + dy })) };
+    const guides = guidesExcluding(room.id);
+    const corners = roomVertices(room);
+    const xEdges = Array.from(new Set(corners.map((point) => point.x)));
+    const yEdges = Array.from(new Set(corners.map((point) => point.y)));
+    const xMatch = xEdges.flatMap((edge) => { const hit = nearestGuide(edge, guides.vertical); return hit ? [hit] : []; })
+      .sort((a, b) => Math.abs(a.delta) - Math.abs(b.delta))[0];
+    const yMatch = yEdges.flatMap((edge) => { const hit = nearestGuide(edge, guides.horizontal); return hit ? [hit] : []; })
+      .sort((a, b) => Math.abs(a.delta) - Math.abs(b.delta))[0];
+    setAlignmentGuides({ vertical: xMatch?.edge, horizontal: yMatch?.edge });
+    const x = snap(room.x + (xMatch?.delta ?? 0));
+    const y = snap(room.y + (yMatch?.delta ?? 0));
+    const dx = x - room.x;
+    const dy = y - room.y;
+    return { ...room, x, y, vertices: room.vertices?.map((point) => ({ x: round(point.x + dx), y: round(point.y + dy) })) };
   };
 
   const alignWallPoint = (point: Point, start: Point) => {
@@ -163,7 +184,10 @@ export default function FloorPlan({
       .map((endpoint) => ({ endpoint, distance: Math.hypot(endpoint.x - point.x, endpoint.y - point.y) }))
       .filter((item) => item.distance <= 0.55)
       .sort((a, b) => a.distance - b.distance)[0];
-    let current = nearest?.endpoint ?? point;
+    const wallGuides = guidesExcluding();
+    const guidedX = nearestGuide(point.x, wallGuides.vertical);
+    const guidedY = nearestGuide(point.y, wallGuides.horizontal);
+    let current = nearest?.endpoint ?? { x: guidedX ? guidedX.edge : point.x, y: guidedY ? guidedY.edge : point.y };
     const dx = current.x - start.x;
     const dy = current.y - start.y;
     if (Math.abs(dx) > Math.abs(dy) * 2.5) current = { x: current.x, y: start.y };
@@ -266,9 +290,9 @@ export default function FloorPlan({
     } else if (drag.kind === "resize-room") {
       let width = Math.max(3, Math.min(project.plot.width - drag.room.x, snap(point.x - drag.room.x)));
       let length = Math.max(3, Math.min(project.plot.length - drag.room.y, snap(point.y - drag.room.y)));
-      const otherRooms = rooms.filter((item) => item.id !== drag.id);
-      const vertical = otherRooms.flatMap((item) => [item.x, item.x + item.width]).map((edge) => ({ edge, delta: edge - (drag.room.x + width) })).filter((item) => Math.abs(item.delta) <= 0.4).sort((a, b) => Math.abs(a.delta) - Math.abs(b.delta))[0];
-      const horizontal = otherRooms.flatMap((item) => [item.y, item.y + item.length]).map((edge) => ({ edge, delta: edge - (drag.room.y + length) })).filter((item) => Math.abs(item.delta) <= 0.4).sort((a, b) => Math.abs(a.delta) - Math.abs(b.delta))[0];
+      const resizeGuides = guidesExcluding(drag.id);
+      const vertical = nearestGuide(drag.room.x + width, resizeGuides.vertical);
+      const horizontal = nearestGuide(drag.room.y + length, resizeGuides.horizontal);
       if (vertical) width = snap(width + vertical.delta);
       if (horizontal) length = snap(length + horizontal.delta);
       setAlignmentGuides({ vertical: vertical?.edge, horizontal: horizontal?.edge });
@@ -281,7 +305,14 @@ export default function FloorPlan({
       const previous = vertices[previousIndex];
       const current = vertices[index];
       const next = vertices[nextIndex];
-      const moved = { x: Math.max(0, Math.min(project.plot.width, point.x)), y: Math.max(0, Math.min(project.plot.length, point.y)) };
+      const vertexGuides = guidesExcluding(drag.id);
+      const xHit = nearestGuide(point.x, vertexGuides.vertical);
+      const yHit = nearestGuide(point.y, vertexGuides.horizontal);
+      setAlignmentGuides({ vertical: xHit?.edge, horizontal: yHit?.edge });
+      const moved = {
+        x: Math.max(0, Math.min(project.plot.width, xHit ? xHit.edge : point.x)),
+        y: Math.max(0, Math.min(project.plot.length, yHit ? yHit.edge : point.y)),
+      };
       vertices[index] = moved;
       vertices[previousIndex] = Math.abs(previous.y - current.y) < 0.01 ? { ...previous, y: moved.y } : { ...previous, x: moved.x };
       vertices[nextIndex] = Math.abs(next.y - current.y) < 0.01 ? { ...next, y: moved.y } : { ...next, x: moved.x };
@@ -443,7 +474,7 @@ export default function FloorPlan({
         const focused = room.id === project.view.focusElementId;
         const area = roomArea(room);
         const vertices = roomVertices(room);
-        const centroid = roomCentroid(room);
+        const centroid = roomInteriorPoint(room);
         const compactLabel = !selected && (room.width < 7 || room.length < 6 || area < 55);
         const mediumLabel = !selected && !compactLabel && (room.width < 10 || room.length < 8 || area < 90);
         const visibleName = roomLabel(room).length > 18 && !selected ? `${roomLabel(room).slice(0, 16)}…` : roomLabel(room);

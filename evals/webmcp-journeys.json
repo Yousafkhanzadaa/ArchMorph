@@ -42,6 +42,21 @@
       "assertions": ["An aligned room or landing exists on both connected floors", "Stair identifies source and target floors", "Rise/riser/tread evidence is returned", "3D view shows the same stair"]
     },
     {
+      "id": "judgment-habitability-review",
+      "layer": "full-journey",
+      "prompt": "Review this design the way an architect would, explain anything that makes a room unpleasant or unsafe to live in, then fix it.",
+      "expectedTools": ["inspect_project", "validate_layout", "inspect_room", "add_window", "validate_layout"],
+      "assertions": ["Findings name the room, the measured shortfall, and the threshold", "Daylight, ventilation, egress, and minimum-size findings are distinguished from geometric errors", "A fixed window is reported as admitting light but no ventilation", "The correction clears the finding and introduces no new errors", "No claim of code compliance or permit approval is made"]
+    },
+    {
+      "id": "arguments-floor-activation",
+      "layer": "arguments",
+      "prompt": "Switch to the first floor and tell me how much carpet area it has.",
+      "expectedTools": ["inspect_project", "set_active_floor", "inspect_floor"],
+      "expectedArguments": { "set_active_floor": { "floorId": "<upper-floor-id>" } },
+      "assertions": ["The agent activates the floor rather than only focusing an element on it", "Carpet area is read from the floor summary without a per-room round trip", "Carpet area is reported as distinct from centreline net area"]
+    },
+    {
       "id": "collaboration-human-edit",
       "layer": "collaboration",
       "prompt": "After the human moves the living room, inspect the latest project and explain the resulting circulation or setback changes.",

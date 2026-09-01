@@ -246,8 +246,12 @@ export type StairConnection = {
   rise: number;
   riserCount: number;
   riserHeight: number;
+  /** Riser height in inches — the unit architects actually read. */
+  riserHeightInches: number;
   treadCount: number;
   treadDepth: number;
+  /** Worst-case tread depth in inches. */
+  treadDepthInches: number;
   treadDepths: number[];
   recommendedRun: number;
   recommendedRuns: number[];
@@ -309,9 +313,14 @@ export type ValidationIssue = {
     | "INVALID_STAIR_GEOMETRY"
     | "STAIR_ACCESS_CLEARANCE"
     | "STAIR_WALL_CLASH"
+    | "DOOR_BLOCKED_BY_STAIR"
     | "OPENING_WITHOUT_ADJACENCY"
     | "OPENING_OVERLAP"
     | "WALL_OUTSIDE_PLOT"
+    | "ROOM_BELOW_HABITABLE_MINIMUM"
+    | "ROOM_DAYLIGHT_SHORTFALL"
+    | "ROOM_NO_VENTILATION"
+    | "BEDROOM_NO_EGRESS"
     | "INVALID_BALCONY"
     | "INVALID_SITE_BOUNDARY"
     | "INVALID_FACADE_FEATURE";
@@ -571,6 +580,7 @@ export type ArchitectureOperation =
   | { type: "delete_facade_feature"; featureId: string }
   | { type: "set_exterior_finish"; finish: ExteriorFinishId }
   | { type: "create_floor"; name?: string; height?: number }
+  | { type: "set_floor_height"; floorId: string; height: number }
   | { type: "set_active_floor"; floorId: string }
   | { type: "delete_element"; elementId: string }
   | { type: "switch_view"; mode: ViewMode }
@@ -714,6 +724,56 @@ export function roomCentroid(room: Room) {
     return { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.length / 2 };
   }
   return { x: x / (3 * twiceArea), y: y / (3 * twiceArea) };
+}
+
+/**
+ * A point guaranteed to lie inside the room, used for labels, camera focus, walk-mode spawn,
+ * and element anchors. The true area centroid of a U- or C-shaped polygon can fall in its
+ * notch, so concave rooms fall back to the centre of their largest interior band.
+ */
+export function roomInteriorPoint(room: Room): PlanPoint {
+  const centroid = roomCentroid(room);
+  if (roomContainsPoint(room, centroid)) return centroid;
+  const vertices = roomVertices(room);
+  const xs = Array.from(new Set(vertices.map((point) => point.x))).sort((a, b) => a - b);
+  let best: { point: PlanPoint; area: number } | undefined;
+  for (let index = 0; index < xs.length - 1; index += 1) {
+    const width = xs[index + 1] - xs[index];
+    if (width <= 0.001) continue;
+    const midX = (xs[index] + xs[index + 1]) / 2;
+    for (const [top, bottom] of polygonIntervalsAtX(vertices, midX)) {
+      const area = width * (bottom - top);
+      if (!best || area > best.area) best = { point: { x: midX, y: (top + bottom) / 2 }, area };
+    }
+  }
+  return best?.point ?? centroid;
+}
+
+/**
+ * Finished floor area measured to the inside face of the bounding walls. Exact for orthogonal
+ * rooms of uniform wall thickness: each convex corner adds t²/4 and each reflex corner removes it.
+ */
+export function roomCarpetArea(project: Project, room: Room) {
+  const thicknesses = project.walls
+    .filter((wall) => wall.roomIds.includes(room.id))
+    .map((wall) => wall.thickness);
+  const thickness = thicknesses.length
+    ? thicknesses.reduce((sum, value) => sum + value, 0) / thicknesses.length
+    : 0.5;
+  const vertices = normalizedRoomVertices(roomVertices(room));
+  let convex = 0;
+  let reflex = 0;
+  vertices.forEach((point, index) => {
+    const previous = vertices[(index + vertices.length - 1) % vertices.length];
+    const next = vertices[(index + 1) % vertices.length];
+    const cross = (point.x - previous.x) * (next.y - point.y) - (point.y - previous.y) * (next.x - point.x);
+    if (cross > 0) convex += 1;
+    else if (cross < 0) reflex += 1;
+  });
+  const inset = roomArea(room)
+    - roomPerimeter(room) * thickness / 2
+    + (convex - reflex) * thickness * thickness / 4;
+  return round(Math.max(0, inset));
 }
 
 export function roomArea(room: Room) {
@@ -1020,6 +1080,34 @@ export function wallLength(wall: Wall) {
 const CONCEPT_MAX_RISER = 7.75 / 12;
 const CONCEPT_MIN_TREAD = 10 / 12;
 
+/**
+ * Early-design habitability thresholds. These follow widely used residential concepts comparable to
+ * the 2021 IRC (R303 light and ventilation, R304 minimum room areas, R310 emergency escape openings).
+ * They are design guidance with stated assumptions, never a code-compliance determination.
+ */
+const HABITABLE_ROOM_TYPES: RoomType[] = ["Living Room", "Kitchen", "Bedroom", "Dining Room", "Office"];
+const DAYLIGHT_GLAZING_RATIO = 0.08;
+const VENTILATION_OPENABLE_RATIO = 0.04;
+const HABITABLE_MIN_AREA = 70;
+const HABITABLE_MIN_DIMENSION = 7;
+const EGRESS_MIN_CLEAR_AREA = 5.7;
+const EGRESS_MAX_SILL = 44 / 12;
+const EGRESS_MIN_CLEAR_WIDTH = 20 / 12;
+const EGRESS_MIN_CLEAR_HEIGHT = 24 / 12;
+/** Share of a window's area that actually opens, by operating type. */
+const WINDOW_OPENABLE_FRACTION: Record<WindowType, number> = { fixed: 0, casement: 0.9, sliding: 0.5, awning: 0.6 };
+
+/** Walls that can admit daylight and air: exterior walls, plus walls facing an open courtyard. */
+function daylightWallIds(project: Project, room: Room) {
+  return new Set(
+    project.walls
+      .filter((wall) => wall.roomIds.includes(room.id))
+      .filter((wall) => wall.exterior || wall.roomIds.some((id) => id !== room.id
+        && project.rooms.find((item) => item.id === id)?.type === "Courtyard"))
+      .map((wall) => wall.id),
+  );
+}
+
 export function stairConnection(project: Project, stair: Stair): StairConnection | undefined {
   const floors = [...project.floors].sort((a, b) => a.level - b.level);
   const sourceIndex = floors.findIndex((floor) => floor.id === stair.floorId);
@@ -1049,8 +1137,10 @@ export function stairConnection(project: Project, stair: Stair): StairConnection
     rise: round(rise, 3),
     riserCount,
     riserHeight: round(rise / riserCount, 3),
+    riserHeightInches: round((rise / riserCount) * 12, 2),
     treadCount,
     treadDepth: Math.min(...treadDepths),
+    treadDepthInches: round(Math.min(...treadDepths) * 12, 2),
     treadDepths,
     recommendedRun: Math.max(...recommendedRuns),
     recommendedRuns,
@@ -1305,6 +1395,22 @@ export function projectMetrics(project: Project, floorId = project.view.activeFl
   const terraceArea = round(project.balconies
     .filter((balcony) => balcony.floorId === floorId && balcony.kind === "terrace")
     .reduce((sum, balcony) => sum + balcony.width * balcony.length, 0));
+  const projectBalconyArea = round(project.balconies
+    .filter((balcony) => balcony.kind === "balcony")
+    .reduce((sum, balcony) => sum + balcony.width * balcony.length, 0));
+  const projectTerraceArea = round(project.balconies
+    .filter((balcony) => balcony.kind === "terrace")
+    .reduce((sum, balcony) => sum + balcony.width * balcony.length, 0));
+  const carpetArea = round(project.rooms
+    .filter((room) => room.floorId === floorId && room.type !== "Courtyard")
+    .reduce((sum, room) => sum + roomCarpetArea(project, room), 0));
+  const totalCarpetArea = round(project.rooms
+    .filter((room) => room.type !== "Courtyard")
+    .reduce((sum, room) => sum + roomCarpetArea(project, room), 0));
+  // Ground coverage and open site area are ground-floor ratios by definition; they must not change
+  // with the floor the user happens to be viewing.
+  const groundCoveragePercent = plotArea ? round((groundGrossArea / plotArea) * 100, 1) : 0;
+  const openSiteArea = round(Math.max(0, plotArea - groundGrossArea));
 
   return {
     unit: "sq ft",
@@ -1313,22 +1419,32 @@ export function projectMetrics(project: Project, floorId = project.view.activeFl
     totalNetFloorArea: roomAreaSum,
     totalNetBuildingArea,
     grossCoveredArea,
+    carpetArea,
+    totalCarpetArea,
     balconyArea,
     terraceArea,
+    projectBalconyArea,
+    projectTerraceArea,
     totalGrossCoveredArea,
-    openSiteArea: round(Math.max(0, plotArea - groundGrossArea)),
+    openSiteArea,
+    groundCoveragePercent,
+    floorAreaRatio: plotArea ? round(totalGrossCoveredArea / plotArea, 3) : 0,
     measurementDefinitions: {
-      netRoomArea: "Usable internal room-polygon area, excluding wall thickness.",
-      totalNetFloorArea: "Sum of usable internal room areas on the selected floor, excluding courtyards.",
-      grossCoveredArea: "Union of room footprints and canonical wall footprints on the selected floor.",
+      netRoomArea: "Room-polygon area measured to wall centrelines. This is not finished carpet area — see carpetArea.",
+      carpetArea: "Finished floor area inside the bounding walls on the selected floor, excluding courtyards.",
+      totalNetFloorArea: "Sum of centreline room areas on the selected floor, excluding courtyards.",
+      grossCoveredArea: "Built-up area on the selected floor, measured to the outer face of the external walls.",
       openSiteArea: "Plot area remaining outside the gross ground-floor building footprint.",
+      groundCoveragePercent: "Gross ground-floor footprint as a percentage of plot area. Always a ground-floor ratio.",
+      floorAreaRatio: "Total gross covered area of all floors divided by plot area (FAR / FSI).",
+      balconyArea: "Balcony slabs on the selected floor only; projectBalconyArea covers every floor.",
     },
     // Compatibility aliases retained so existing clients are not silently broken.
     floorCoveredArea: floorArea,
     totalConstructedArea,
     roomAreaSum,
-    openArea: round(Math.max(0, plotArea - floorCoveredArea(project, project.floors[0]?.id))),
-    coveragePercent: plotArea ? round((grossCoveredArea / plotArea) * 100, 1) : 0,
+    openArea: openSiteArea,
+    coveragePercent: groundCoveragePercent,
     buildableEnvelope: {
       x: project.plot.setbacks.left,
       y: project.plot.setbacks.front,
@@ -1751,6 +1867,88 @@ export function migrateProject(input: Project): Project {
   return project;
 }
 
+/**
+ * Near-miss tolerance for latching new geometry onto existing edges. Two rooms meant to share a wall
+ * but drawn 0.1 ft apart otherwise produce two separate exterior walls with a sliver between them,
+ * which is what makes a plan look "not connected" in 2D and doubled in 3D.
+ */
+export const ALIGNMENT_TOLERANCE = 0.25;
+
+/** Coordinates that new or edited geometry on a floor should latch onto. */
+function alignmentGuides(project: Project, floorId: string, ignoreRoomId?: string) {
+  const xs = new Set<number>([0, project.plot.width, project.plot.setbacks.left, round(project.plot.width - project.plot.setbacks.right)]);
+  const ys = new Set<number>([0, project.plot.length, project.plot.setbacks.front, round(project.plot.length - project.plot.setbacks.rear)]);
+  project.rooms
+    .filter((room) => room.floorId === floorId && room.id !== ignoreRoomId)
+    .forEach((room) => roomVertices(room).forEach((point) => { xs.add(point.x); ys.add(point.y); }));
+  project.walls
+    .filter((wall) => wall.floorId === floorId && !wall.roomIds.length)
+    .forEach((wall) => { xs.add(wall.x1); xs.add(wall.x2); ys.add(wall.y1); ys.add(wall.y2); });
+  project.stairs
+    .filter((stair) => stair.floorId === floorId)
+    .forEach((stair) => {
+      const footprint = stairFootprint(stair);
+      xs.add(footprint.x); xs.add(round(footprint.x + footprint.width));
+      ys.add(footprint.y); ys.add(round(footprint.y + footprint.length));
+    });
+  return { xs: Array.from(xs), ys: Array.from(ys) };
+}
+
+function nearestGuide(value: number, guides: number[], tolerance = ALIGNMENT_TOLERANCE) {
+  let best = value;
+  let bestDistance = tolerance;
+  for (const guide of guides) {
+    const distance = Math.abs(guide - value);
+    if (distance < bestDistance || (distance === bestDistance && guide !== value && best === value)) {
+      bestDistance = distance;
+      best = guide;
+    }
+  }
+  return best;
+}
+
+/** Snap every distinct edge coordinate onto nearby existing geometry so rooms tile cleanly. */
+export function alignVertices(project: Project, floorId: string, vertices: PlanPoint[], ignoreRoomId?: string) {
+  const { xs, ys } = alignmentGuides(project, floorId, ignoreRoomId);
+  const xMap = new Map<number, number>();
+  const yMap = new Map<number, number>();
+  vertices.forEach((point) => {
+    if (!xMap.has(point.x)) xMap.set(point.x, round(nearestGuide(point.x, xs)));
+    if (!yMap.has(point.y)) yMap.set(point.y, round(nearestGuide(point.y, ys)));
+  });
+  return vertices.map((point) => ({ x: xMap.get(point.x)!, y: yMap.get(point.y)! }));
+}
+
+/** The single translation that latches a moved room onto nearby geometry without resizing it. */
+function alignTranslation(project: Project, floorId: string, vertices: PlanPoint[], ignoreRoomId?: string) {
+  const { xs, ys } = alignmentGuides(project, floorId, ignoreRoomId);
+  const pick = (values: number[], guides: number[]) => {
+    let shift = 0;
+    let bestDistance = ALIGNMENT_TOLERANCE;
+    for (const value of values) {
+      const guide = nearestGuide(value, guides);
+      const distance = Math.abs(guide - value);
+      if (guide !== value && distance < bestDistance) { bestDistance = distance; shift = round(guide - value); }
+    }
+    return shift;
+  };
+  return {
+    dx: pick(Array.from(new Set(vertices.map((point) => point.x))), xs),
+    dy: pick(Array.from(new Set(vertices.map((point) => point.y))), ys),
+  };
+}
+
+/** Rooms may touch but never overlap. Prevented at the operation, not merely reported afterwards. */
+function assertNoRoomOverlap(project: Project, candidate: Room, ignoreRoomId?: string) {
+  for (const other of project.rooms) {
+    if (other.id === ignoreRoomId || other.id === candidate.id || other.floorId !== candidate.floorId) continue;
+    const overlap = rectanglesOverlap(candidate, other);
+    if (overlap.overlaps) {
+      throw new Error(`${candidate.name} would overlap ${other.name} by ${overlap.area} sq ft. Rooms may share a wall but cannot occupy the same floor area.`);
+    }
+  }
+}
+
 function assertRoomInsidePlot(project: Project, room: Pick<Room, "x" | "y" | "width" | "length"> & Partial<Pick<Room, "vertices">>) {
   if (room.vertices?.length) {
     assertRoomVertices(project, room.vertices);
@@ -1952,26 +2150,38 @@ export function applyOperation(
         wallIds: [],
         shape: operation.shape ?? "rectangle",
       };
-      const vertices = shapeVertices(operation.shape ?? "rectangle", room.x, room.y, room.width, room.length);
-      if (vertices) room = roomFromVertices(room, vertices, operation.shape);
+      const requested = { x: room.x, y: room.y, width: room.width, length: room.length };
+      const shape = shapeVertices(operation.shape ?? "rectangle", room.x, room.y, room.width, room.length);
+      const aligned = alignVertices(project, operation.floorId, shape ?? [
+        { x: room.x, y: room.y }, { x: room.x + room.width, y: room.y },
+        { x: room.x + room.width, y: room.y + room.length }, { x: room.x, y: room.y + room.length },
+      ]);
+      room = roomFromVertices(room, aligned, operation.shape ?? "rectangle");
+      if ((operation.shape ?? "rectangle") === "rectangle") room.vertices = undefined;
       assertRoomInsidePlot(project, room);
+      assertNoRoomOverlap(project, room);
       project.rooms.push(room);
       rebuildCanonicalTopology(project);
       const createdRoom = project.rooms.find((item) => item.id === room.id)!;
       project.view.focusElementId = room.id;
       description = `${who} added ${room.name} · ${room.width} × ${room.length} ft`;
-      result = { room: createdRoom, area: roomArea(room), wallIds: createdRoom.wallIds };
+      const moved = requested.x !== room.x || requested.y !== room.y || requested.width !== room.width || requested.length !== room.length;
+      result = {
+        room: createdRoom, area: roomArea(room), wallIds: createdRoom.wallIds,
+        ...(moved ? { alignment: { requested, applied: { x: room.x, y: room.y, width: room.width, length: room.length }, toleranceFt: ALIGNMENT_TOLERANCE, note: "Edges within the alignment tolerance were latched onto existing geometry so the rooms share one canonical wall." } } : {}),
+      };
       break;
     }
     case "create_polygon_room": {
       if (!project.floors.some((floor) => floor.id === operation.floorId)) throw new Error(`Floor ${operation.floorId} does not exist.`);
-      const normalized = normalizedRoomVertices(operation.vertices);
+      const normalized = alignVertices(project, operation.floorId, normalizedRoomVertices(operation.vertices));
       assertRoomVertices(project, normalized);
       const bounds = roomBounds({ x: 0, y: 0, width: 0, length: 0, vertices: normalized });
       const room = roomFromVertices({
         id: createId("room"), floorId: operation.floorId, name: operation.name.trim() || operation.roomType,
         type: operation.roomType, ...bounds, color: roomPalette[operation.roomType], wallIds: [], shape: "custom",
       }, normalized);
+      assertNoRoomOverlap(project, room);
       project.rooms.push(room);
       rebuildCanonicalTopology(project);
       project.view.focusElementId = room.id;
@@ -1985,9 +2195,15 @@ export function applyOperation(
       const previousRoom = project.rooms[index];
       const dx = round(operation.x) - previousRoom.x;
       const dy = round(operation.y) - previousRoom.y;
-      const movedVertices = previousRoom.vertices?.map((point) => ({ x: round(point.x + dx), y: round(point.y + dy) }));
-      const room = { ...previousRoom, x: round(operation.x), y: round(operation.y), vertices: movedVertices };
+      const proposed = roomVertices({ ...previousRoom, x: round(operation.x), y: round(operation.y) })
+        .map((point, index) => (previousRoom.vertices?.length
+          ? { x: round(previousRoom.vertices[index].x + dx), y: round(previousRoom.vertices[index].y + dy) }
+          : point));
+      const latch = alignTranslation(project, previousRoom.floorId, proposed, previousRoom.id);
+      const movedVertices = previousRoom.vertices?.map((point) => ({ x: round(point.x + dx + latch.dx), y: round(point.y + dy + latch.dy) }));
+      const room = { ...previousRoom, x: round(operation.x + latch.dx), y: round(operation.y + latch.dy), vertices: movedVertices };
       assertRoomInsidePlot(project, room);
+      assertNoRoomOverlap(project, room, previousRoom.id);
       const targets = roomOpeningTargets(project, previousRoom, room);
       const featureTargets = roomFacadeFeatureTargets(project, previousRoom, room);
       const wallFinishes = roomWallFinishes(project, previousRoom.id);
@@ -2017,6 +2233,8 @@ export function applyOperation(
         vertices: resizedVertices,
       };
       assertRoomInsidePlot(project, room);
+      // A resize states an exact dimension, so it is never snapped — but it still cannot overlap.
+      assertNoRoomOverlap(project, room, previousRoom.id);
       const targets = roomOpeningTargets(project, previousRoom, room);
       const featureTargets = roomFacadeFeatureTargets(project, previousRoom, room);
       const wallFinishes = roomWallFinishes(project, previousRoom.id);
@@ -2032,10 +2250,11 @@ export function applyOperation(
     case "update_room_vertices": {
       const index = project.rooms.findIndex((room) => room.id === operation.roomId);
       if (index < 0) throw new Error(`Room ${operation.roomId} does not exist.`);
-      const normalized = normalizedRoomVertices(operation.vertices);
-      assertRoomVertices(project, normalized);
       const previousRoom = project.rooms[index];
+      const normalized = alignVertices(project, previousRoom.floorId, normalizedRoomVertices(operation.vertices), previousRoom.id);
+      assertRoomVertices(project, normalized);
       const room = roomFromVertices(previousRoom, normalized);
+      assertNoRoomOverlap(project, room, previousRoom.id);
       project.rooms[index] = room;
       rebuildCanonicalTopology(project);
       assertAllOpeningsValid(project);
@@ -2446,6 +2665,30 @@ export function applyOperation(
       result = { floor };
       break;
     }
+    case "set_floor_height": {
+      const index = project.floors.findIndex((floor) => floor.id === operation.floorId);
+      if (index < 0) throw new Error(`Floor ${operation.floorId} does not exist.`);
+      const height = round(operation.height);
+      if (height < 7 || height > 16) throw new Error("Storey height must be between 7 and 16 ft.");
+      const blocking = project.openings.find((opening) => opening.floorId === operation.floorId
+        && (opening.sillHeight ?? 0) + opening.height > height + 0.001);
+      if (blocking) {
+        throw new Error(`A ${blocking.kind} on this floor reaches ${round((blocking.sillHeight ?? 0) + blocking.height, 2)} ft and would not fit a ${height} ft storey. Resize or lower it first.`);
+      }
+      project.floors[index] = { ...project.floors[index], height };
+      // Every storey above sits on the one below, so elevations and stair rises recompute together.
+      const ordered = [...project.floors].sort((a, b) => a.level - b.level);
+      let elevation = 0;
+      const elevations = new Map<string, number>();
+      ordered.forEach((floor) => { elevations.set(floor.id, round(elevation, 3)); elevation += floor.height; });
+      project.floors = project.floors.map((floor) => ({ ...floor, elevation: elevations.get(floor.id) ?? floor.elevation }));
+      project.walls = project.walls.map((wall) => (wall.floorId === operation.floorId ? { ...wall, height } : wall));
+      const affectedStairs = project.stairs
+        .flatMap((stair) => { const connection = stairConnection(project, stair); return connection ? [{ stairId: stair.id, rise: connection.rise, riserCount: connection.riserCount, riserHeightInches: connection.riserHeightInches, treadDepthInches: connection.treadDepthInches }] : []; });
+      description = `${who} set ${project.floors[index].name} to a ${height} ft storey height`;
+      result = { floor: project.floors[index], floors: project.floors, stairs: affectedStairs, metrics: projectMetrics(project) };
+      break;
+    }
     case "set_active_floor": {
       const floor = project.floors.find((item) => item.id === operation.floorId);
       if (!floor) throw new Error(`Floor ${operation.floorId} does not exist.`);
@@ -2676,7 +2919,7 @@ export function validateLayout(project: Project, floorId?: string): ValidationRe
       issues.push({
         id: createId("issue"),
         code: "SETBACK_VIOLATION",
-        severity: "warning",
+        severity: "error",
         message: `${room.name} crosses the current buildable envelope.`,
         elementIds: [room.id],
         evidence: { ...bounds },
@@ -2828,6 +3071,52 @@ export function validateLayout(project: Project, floorId?: string): ValidationRe
     }
   });
 
+  // A door must open onto clear floor. Stepping straight onto a flight, a landing, or into the
+  // stairwell void is a real hazard, and the stair's own approach check cannot see it.
+  const stairwells = project.stairs.flatMap((stair) => {
+    const connection = stairConnection(project, stair);
+    if (!connection) return [];
+    return [{ stair, layout: stairLayout(stair), floorIds: new Set([connection.lowerFloor.id, connection.upperFloor.id]) }];
+  });
+  if (stairwells.length) {
+    for (const opening of project.openings.filter((item) => item.kind === "door" && targetFloors.includes(item.floorId))) {
+      const wall = project.walls.find((item) => item.id === opening.wallId);
+      const length = wall ? wallLength(wall) : 0;
+      if (!wall || !length) continue;
+      const ux = (wall.x2 - wall.x1) / length;
+      const uy = (wall.y2 - wall.y1) / length;
+      const centerX = wall.x1 + ux * opening.offset;
+      const centerY = wall.y1 + uy * opening.offset;
+      const clashing = stairwells.filter((item) => item.floorIds.has(opening.floorId)).filter((item) => {
+        for (const sign of [1, -1]) {
+          for (const depth of [0.75, 1.5, 2.25, 3]) {
+            for (const across of [-opening.width / 2 + 0.25, 0, opening.width / 2 - 0.25]) {
+              const point = { x: centerX + ux * across - uy * sign * depth, y: centerY + uy * across + ux * sign * depth };
+              if (localPolygonContains(item.layout.outline, stairLocalPoint(item.stair, point))) return true;
+            }
+          }
+        }
+        return false;
+      });
+      if (!clashing.length) continue;
+      issues.push({
+        id: createId("issue"),
+        code: "DOOR_BLOCKED_BY_STAIR",
+        severity: "error",
+        message: `A ${opening.kind} opens directly onto the stairwell of ${clashing.map((item) => item.stair.id).join(", ")} with no clear landing in front of it.`,
+        elementIds: [opening.id, ...clashing.map((item) => item.stair.id)],
+        evidence: {
+          openingId: opening.id, wallId: opening.wallId, floorId: opening.floorId,
+          doorCentre: `${round(centerX, 2)}, ${round(centerY, 2)}`,
+          requiredClearDepth: 3,
+          stairIds: clashing.map((item) => item.stair.id).join(", "),
+        },
+        suggestion: "Move the stair or the door so at least 3 ft of clear floor separates them; a door must never open onto a flight or into the stairwell void.",
+        possibleCorrection: "Use update_stairs to shift the stair, or update_opening to move the door along its wall.",
+      });
+    }
+  }
+
   for (let i = 0; i < rooms.length; i += 1) {
     for (let j = i + 1; j < rooms.length; j += 1) {
       if (rooms[i].floorId !== rooms[j].floorId) continue;
@@ -2902,6 +3191,85 @@ export function validateLayout(project: Project, floorId?: string): ValidationRe
     }
   }
 
+  // Habitability: the app knows each room's programmatic type, so it can check whether the space is
+  // actually liveable, not merely geometrically valid. These are warnings — early-design guidance.
+  for (const room of rooms) {
+    const habitable = HABITABLE_ROOM_TYPES.includes(room.type);
+    if (!habitable && room.type !== "Bathroom") continue;
+    const area = roomArea(room);
+    const bounds = roomBounds(room);
+    const minDimension = round(Math.min(bounds.width, bounds.length), 2);
+
+    if (habitable && (area < HABITABLE_MIN_AREA || minDimension < HABITABLE_MIN_DIMENSION)) {
+      issues.push({
+        id: createId("issue"),
+        code: "ROOM_BELOW_HABITABLE_MINIMUM",
+        severity: "warning",
+        message: `${room.name} is ${area} sq ft with a least dimension of ${minDimension} ft, below the ${HABITABLE_MIN_AREA} sq ft / ${HABITABLE_MIN_DIMENSION} ft concept minimum for a habitable room.`,
+        elementIds: [room.id],
+        evidence: { roomType: room.type, area, minDimension, requiredArea: HABITABLE_MIN_AREA, requiredMinDimension: HABITABLE_MIN_DIMENSION, basis: "2021 IRC R304 concept" },
+        suggestion: `Enlarge ${room.name} to at least ${HABITABLE_MIN_AREA} sq ft with no dimension under ${HABITABLE_MIN_DIMENSION} ft, or change its room type.`,
+        possibleCorrection: "Use resize_room or set_exact_dimension, then validate again.",
+      });
+    }
+
+    const hostIds = daylightWallIds(project, room);
+    const windows = project.openings.filter((opening) => opening.kind === "window" && hostIds.has(opening.wallId));
+    const glazedArea = round(windows.reduce((sum, opening) => sum + opening.width * opening.height, 0));
+    const openableArea = round(windows.reduce((sum, opening) => sum + (opening.operable
+      ? opening.width * opening.height * (WINDOW_OPENABLE_FRACTION[opening.windowType ?? "fixed"] ?? 0)
+      : 0), 0));
+    const requiredGlazing = round(area * DAYLIGHT_GLAZING_RATIO);
+    const requiredOpenable = round(area * VENTILATION_OPENABLE_RATIO);
+
+    if (habitable && area > 0 && glazedArea + 0.01 < requiredGlazing) {
+      issues.push({
+        id: createId("issue"),
+        code: "ROOM_DAYLIGHT_SHORTFALL",
+        severity: "warning",
+        message: `${room.name} has ${glazedArea} sq ft of exterior glazing, ${round((glazedArea / area) * 100, 1)}% of its floor area, below the 8% concept daylight guideline.`,
+        elementIds: [room.id, ...windows.map((opening) => opening.id)],
+        evidence: { roomArea: area, glazedArea, glazingRatioPercent: round((glazedArea / area) * 100, 1), requiredGlazing, windowCount: windows.length, basis: "2021 IRC R303.1 concept" },
+        suggestion: `Add or widen exterior windows in ${room.name} to reach about ${requiredGlazing} sq ft of glazing.`,
+        possibleCorrection: "Use add_window on an exterior wall of this room, then validate again.",
+      });
+    }
+
+    if (area > 0 && openableArea + 0.01 < requiredOpenable) {
+      issues.push({
+        id: createId("issue"),
+        code: "ROOM_NO_VENTILATION",
+        severity: "warning",
+        message: openableArea === 0
+          ? `${room.name} has no openable exterior window, so it has no natural ventilation.`
+          : `${room.name} has ${openableArea} sq ft of openable glazing, below the 4% concept ventilation guideline.`,
+        elementIds: [room.id, ...windows.map((opening) => opening.id)],
+        evidence: { roomArea: area, openableArea, requiredOpenable, windowCount: windows.length, note: "Fixed windows contribute no openable area; mechanical ventilation is an accepted alternative not modelled here.", basis: "2021 IRC R303.1 concept" },
+        suggestion: `Make a window in ${room.name} operable, or add an openable exterior window of about ${requiredOpenable} sq ft.`,
+        possibleCorrection: "Use set_window_properties with operable true and a casement, sliding, or awning window type.",
+      });
+    }
+
+    if (room.type === "Bedroom") {
+      const escape = windows.find((opening) => opening.width * opening.height >= EGRESS_MIN_CLEAR_AREA
+        && (opening.sillHeight ?? 0) <= EGRESS_MAX_SILL
+        && opening.width >= EGRESS_MIN_CLEAR_WIDTH
+        && opening.height >= EGRESS_MIN_CLEAR_HEIGHT);
+      if (!escape) {
+        issues.push({
+          id: createId("issue"),
+          code: "BEDROOM_NO_EGRESS",
+          severity: "warning",
+          message: `${room.name} has no window that meets the emergency escape concept: at least ${EGRESS_MIN_CLEAR_AREA} sq ft clear, 20 in wide, 24 in high, with a sill no higher than 44 in.`,
+          elementIds: [room.id, ...windows.map((opening) => opening.id)],
+          evidence: { windowCount: windows.length, requiredClearArea: EGRESS_MIN_CLEAR_AREA, maxSillInches: 44, minClearWidthInches: 20, minClearHeightInches: 24, basis: "2021 IRC R310 concept" },
+          suggestion: `Provide one exterior window in ${room.name} of at least ${EGRESS_MIN_CLEAR_AREA} sq ft with its sill at or below 44 in.`,
+          possibleCorrection: "Use add_window or set_window_properties to enlarge an exterior window and lower its sill.",
+        });
+      }
+    }
+  }
+
   for (const balcony of project.balconies.filter((item) => targetFloors.includes(item.floorId))) {
     const outside = balcony.width < 3 || balcony.length < 3 || balcony.x < 0 || balcony.y < 0
       || balcony.x + balcony.width > plot.width || balcony.y + balcony.length > plot.length;
@@ -2967,9 +3335,11 @@ export function inspectRoom(project: Project, roomId: string) {
   return {
     room,
     netRoomArea: roomArea(room),
+    carpetArea: roomCarpetArea(project, room),
     area: roomArea(room),
-    areaDefinition: "Usable internal room-polygon area, excluding wall thickness.",
+    areaDefinition: "netRoomArea is measured to wall centrelines; carpetArea is the finished area inside the bounding walls. The area alias is retained for compatibility.",
     perimeter: roomPerimeter(room),
+    interiorPoint: roomInteriorPoint(room),
     vertices: roomVertices(room),
     walls,
     openings,
@@ -3020,7 +3390,7 @@ export function inspectOpening(project: Project, openingId: string) {
   };
 }
 
-export function inspectFloor(project: Project, floorId: string) {
+export function inspectFloor(project: Project, floorId: string, detail: "summary" | "full" = "summary") {
   const floor = project.floors.find((item) => item.id === floorId);
   if (!floor) throw new Error(`Floor ${floorId} does not exist.`);
   const stairDetails = project.stairs.flatMap((stair) => {
@@ -3041,18 +3411,83 @@ export function inspectFloor(project: Project, floorId: string) {
       upperAccess: stairAccessPolygon(stair, "upper"),
     }];
   });
+  const rooms = project.rooms.filter((room) => room.floorId === floorId);
+  const walls = project.walls.filter((wall) => wall.floorId === floorId);
+  const openings = project.openings.filter((opening) => opening.floorId === floorId);
+  const balconies = project.balconies.filter((balcony) => balcony.floorId === floorId);
+  const facadeFeatures = project.facadeFeatures.filter((feature) => project.walls.find((wall) => wall.id === feature.wallId)?.floorId === floorId);
+  const circulation = buildCirculationGraph(project);
+  const validation = validateLayout(project, floorId);
+  const metrics = projectMetrics(project, floorId);
+
+  if (detail === "full") {
+    return {
+      detail,
+      floor,
+      rooms: rooms.map((room) => ({ ...room, area: roomArea(room), carpetArea: roomCarpetArea(project, room), perimeter: roomPerimeter(room) })),
+      walls,
+      openings,
+      stairs: project.stairs.filter((stair) => stair.floorId === floorId),
+      stairDetails,
+      balconies,
+      facadeFeatures,
+      metrics,
+      circulation,
+      validation,
+    };
+  }
+
+  // Default summary keeps every stable ID and dimension an agent needs to plan an edit, but drops
+  // derived geometry, deprecated compatibility fields, and the full circulation graph. Chrome's
+  // WebMCP guidance budgets roughly 1.5K characters per tool result; the full payload is far larger.
   return {
+    detail,
     floor,
-    rooms: project.rooms.filter((room) => room.floorId === floorId),
-    walls: project.walls.filter((wall) => wall.floorId === floorId),
-    openings: project.openings.filter((opening) => opening.floorId === floorId),
-    stairs: project.stairs.filter((stair) => stair.floorId === floorId),
-    stairDetails,
-    balconies: project.balconies.filter((balcony) => balcony.floorId === floorId),
-    facadeFeatures: project.facadeFeatures.filter((feature) => project.walls.find((wall) => wall.id === feature.wallId)?.floorId === floorId),
-    metrics: projectMetrics(project, floorId),
-    circulation: buildCirculationGraph(project),
-    validation: validateLayout(project, floorId),
+    rooms: rooms.map((room) => ({
+      id: room.id, name: room.name, type: room.type, shape: room.shape ?? "rectangle",
+      x: room.x, y: room.y, width: room.width, length: room.length,
+      area: roomArea(room), carpetArea: roomCarpetArea(project, room), perimeter: roomPerimeter(room),
+    })),
+    walls: walls.map((wall) => ({
+      id: wall.id, x1: wall.x1, y1: wall.y1, x2: wall.x2, y2: wall.y2,
+      length: round(wallLength(wall)), thickness: wall.thickness, height: wall.height,
+      exterior: wall.exterior, roomIds: wall.roomIds,
+      ...(wall.exterior ? { facing: wallCardinalFacing(project, wall) } : {}),
+      ...(wall.finish ? { finish: wall.finish } : {}),
+    })),
+    openings: openings.map((opening) => ({
+      id: opening.id, kind: opening.kind, wallId: opening.wallId, offset: opening.offset,
+      width: opening.width, height: opening.height,
+      ...(opening.kind === "window"
+        ? { sillHeight: opening.sillHeight, windowType: opening.windowType, operable: opening.operable, glazing: opening.glazing }
+        : { handing: opening.handing, swingDirection: opening.swingDirection, state: opening.state }),
+    })),
+    stairs: stairDetails.map((item) => ({
+      id: item.stair.id, stairType: item.stair.stairType, roleOnFloor: item.roleOnFloor,
+      x: item.stair.x, y: item.stair.y, width: item.stair.width, length: item.stair.length,
+      rotation: item.stair.rotation, direction: item.stair.direction,
+      connects: `${item.connection.lowerFloor.id} -> ${item.connection.upperFloor.id}`,
+      rise: item.connection.rise, riserCount: item.connection.riserCount,
+      riserHeightInches: item.connection.riserHeightInches, treadDepthInches: item.connection.treadDepthInches,
+    })),
+    balconies: balconies.map((balcony) => ({ id: balcony.id, name: balcony.name, kind: balcony.kind, x: balcony.x, y: balcony.y, width: balcony.width, length: balcony.length })),
+    facadeFeatures: facadeFeatures.map((feature) => ({ id: feature.id, kind: feature.kind, wallId: feature.wallId, offset: feature.offset, width: feature.width })),
+    metrics,
+    circulation: {
+      mainEntranceOpeningId: circulation.mainEntranceOpeningId,
+      primaryEntryRoomId: circulation.primaryEntryRoomId,
+      hasExteriorAccess: circulation.hasExteriorAccess,
+      reachableRoomCount: circulation.reachableRoomIds.length,
+      disconnectedRoomIds: circulation.disconnectedRoomIds,
+      invalidDoorIds: circulation.invalidDoorIds,
+      invalidStairIds: circulation.invalidStairIds,
+    },
+    validation: {
+      status: validation.status, issueCount: validation.issueCount,
+      errors: validation.errors, warnings: validation.warnings,
+      issues: validation.issues.map((issue) => ({ code: issue.code, severity: issue.severity, message: issue.message, elementIds: issue.elementIds })),
+    },
+    hint: "Each wall lists the rooms it bounds, so a room's boundary walls are the walls whose roomIds include it. Call inspect_floor with detail 'full' for wall connectivity, stair layout geometry, and the complete circulation graph.",
   };
 }
 
@@ -3060,7 +3495,7 @@ function elementPoint(project: Project, ref: PointRef) {
   if ("x" in ref) return { x: ref.x, y: ref.y };
   if (ref.elementId === "plot") return { x: project.plot.width / 2, y: project.plot.length / 2 };
   const room = project.rooms.find((item) => item.id === ref.elementId);
-  if (room) return roomCentroid(room);
+  if (room) return roomInteriorPoint(room);
   const wall = project.walls.find((item) => item.id === ref.elementId);
   if (wall) {
     if (ref.anchor === "start") return { x: wall.x1, y: wall.y1 };
@@ -3127,8 +3562,8 @@ export function projectInspection(project: Project) {
     exteriorFinish: { id: project.exteriorFinish, ...exteriorFinishPresets[project.exteriorFinish] },
     roof: project.roof,
     siteBoundary: project.siteBoundary,
-    balconies: project.balconies,
-    facadeFeatures: project.facadeFeatures,
+    balconies: project.balconies.map((balcony) => ({ id: balcony.id, floorId: balcony.floorId, name: balcony.name, kind: balcony.kind, x: balcony.x, y: balcony.y, width: balcony.width, length: balcony.length })),
+    facadeFeatures: project.facadeFeatures.map((feature) => ({ id: feature.id, kind: feature.kind, wallId: feature.wallId, offset: feature.offset, width: feature.width })),
     floors: project.floors,
     counts: {
       floors: project.floors.length,
@@ -3143,10 +3578,25 @@ export function projectInspection(project: Project) {
     },
     metrics: projectMetrics(project),
     currentView: project.view,
-    circulation: buildCirculationGraph(project),
+    // A summary only: the full graph, including every entrance route, comes from inspect_circulation.
+    circulation: (() => {
+      const graph = buildCirculationGraph(project);
+      return {
+        mainEntranceOpeningId: graph.mainEntranceOpeningId,
+        primaryEntryRoomId: graph.primaryEntryRoomId,
+        hasExteriorAccess: graph.hasExteriorAccess,
+        reachableRoomCount: graph.reachableRoomIds.length,
+        disconnectedRoomIds: graph.disconnectedRoomIds,
+        invalidDoorIds: graph.invalidDoorIds,
+        invalidStairIds: graph.invalidStairIds,
+      };
+    })(),
     validationSummary: (() => {
       const report = validateLayout(project);
-      return { status: report.status, issues: report.issueCount, errors: report.errors, warnings: report.warnings };
+      return {
+        status: report.status, issues: report.issueCount, errors: report.errors, warnings: report.warnings,
+        codes: Array.from(new Set(report.issues.map((issue) => issue.code))),
+      };
     })(),
     floorsDetail: project.floors.map((floor) => ({
       id: floor.id,
