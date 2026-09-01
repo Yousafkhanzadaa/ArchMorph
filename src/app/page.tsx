@@ -1,5 +1,5 @@
-import { ArrowUpRight, Braces, Layers3, Ruler } from "lucide-react";
-import HeroBuilding from "./components/HeroBuilding";
+import { ArrowUpRight } from "lucide-react";
+import Hero from "./components/Hero";
 import styles from "./landing.module.css";
 
 export default function Home() {
@@ -24,59 +24,7 @@ export default function Home() {
         </a>
       </nav>
 
-      <section className={styles.hero} aria-labelledby="hero-title">
-        <div className={styles.copy}>
-          <p className={styles.eyebrow}>
-            <span>WebMCP-native</span>
-            Architecture in motion
-          </p>
-
-          <div>
-            <h1 id="hero-title">ArchMorph</h1>
-            <p className={styles.tagline}>Human + Agent Architecture Studio</p>
-          </div>
-
-          <p className={styles.intro}>
-            Draw with intent. Let an agent inspect, shape, measure, and validate the
-            same live building model—then step inside the result.
-          </p>
-
-          <div className={styles.actions}>
-            <a href="/studio" className={styles.primaryAction}>
-              Enter the live studio <ArrowUpRight size={17} strokeWidth={1.7} />
-            </a>
-            <a href="#live-model" className={styles.secondaryAction}>
-              Explore the 3D model
-            </a>
-          </div>
-
-          <dl className={styles.proof}>
-            <div>
-              <dt><Braces size={15} strokeWidth={1.5} /> Agent tools</dt>
-              <dd>57</dd>
-              <span>Typed architectural operations</span>
-            </div>
-            <div>
-              <dt><Layers3 size={15} strokeWidth={1.5} /> Shared state</dt>
-              <dd>2D + 3D</dd>
-              <span>One canonical live model</span>
-            </div>
-            <div>
-              <dt><Ruler size={15} strokeWidth={1.5} /> Geometry</dt>
-              <dd>Exact</dd>
-              <span>Measured, inspectable, validated</span>
-            </div>
-          </dl>
-        </div>
-
-        <div className={styles.visual} id="live-model">
-          <HeroBuilding />
-        </div>
-
-        <p className={styles.challengeNote}>
-          Built for The WebMCP Challenge <span>·</span> Open web, shared intent
-        </p>
-      </section>
+      <Hero />
     </main>
   );
 }
