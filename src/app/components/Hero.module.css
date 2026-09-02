@@ -411,6 +411,43 @@
   text-transform: uppercase;
 }
 
+.sheetLabel { white-space: nowrap; }
+
+/* The page-scoped WebMCP surface, and whoever last moved the model through it. */
+.toolState {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: #8d958f;
+  transition: color .3s ease;
+}
+
+.toolState b {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: inherit;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.toolState i {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  background: #9aa39c;
+  transition: background .3s ease, box-shadow .3s ease;
+}
+
+.toolState[data-status="native"] { color: #5d6b62; }
+.toolState[data-status="native"] i { background: #4f7760; box-shadow: 0 0 0 3px rgb(79 119 96 / 12%); }
+.toolState[data-status="unavailable"] { color: #8a5848; }
+.toolState[data-status="unavailable"] i { background: #a65f48; box-shadow: 0 0 0 3px rgb(166 95 72 / 12%); }
+.toolState[data-actor="agent"] { color: #4f7760; }
+.toolState[data-actor="agent"] i { background: #4f7760; box-shadow: 0 0 0 3px rgb(79 119 96 / 14%); }
+.toolState[data-actor="human"] { color: #3b4a42; }
+.toolState[data-actor="human"] i { background: #3b4a42; box-shadow: none; }
+
 .viewState {
   display: flex;
   align-items: center;
@@ -502,6 +539,7 @@
   .actions { gap: 16px; }
   .primaryAction { min-height: 44px; gap: 12px; padding-inline: 13px; font-size: 8px; }
   .secondaryAction { font-size: 7px; }
+  .sheetLabel { display: none; }
   .schedule > div { grid-template-columns: 15px minmax(0, 1fr) auto; gap: 10px; padding: 8px 0; }
   .schedule > div > span { display: none; }
   .liveRow > span { display: none; }

@@ -33,6 +33,7 @@ Run `git log --reverse --date=iso-strict --format='%h %ad %s'` to inspect the so
 
 - `src/lib/webmcp-tools.ts`: 57 named, schema-bounded tools; the added exterior/site and habitability tools use the same canonical operation pipeline.
 - `src/app/components/Studio.tsx`: signal-scoped `document.modelContext.registerTool()` lifecycle and the shared human/agent commit path.
+- `src/lib/landing-webmcp-tools.ts` and `src/app/components/Hero.tsx`: the route-scoped landing catalog, where an agent can read the product surface, drive the hero model's presentation, and enter the studio; landing clicks and WebMCP calls execute the same four definitions.
 - `src/lib/architecture.ts`: canonical operation, inspection, topology, metric, circulation, and validation logic used by tools and UI.
 - `src/types/webmcp.d.ts`: local type boundary for the draft imperative API.
 - `scripts/webmcp-regression.ts`: deterministic catalog and representative execution checks.

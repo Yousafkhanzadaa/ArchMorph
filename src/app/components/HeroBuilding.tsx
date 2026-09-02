@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from "react";
 import * as THREE from "three";
+import { LANDING_LAYER_KEYS, type LandingLayer, type LandingLayers } from "@/lib/landing-webmcp-tools";
 import styles from "./HeroBuilding.module.css";
 
 export type HeroMode = "idle" | "studio" | "section";
-export type LayerKey = "plan" | "structure" | "envelope" | "dimensions";
+export type LayerKey = LandingLayer;
 
 export type HeroSignal = {
   actor: "system" | "human" | "agent";
@@ -975,12 +976,15 @@ function buildModel() {
   };
 }
 
-const LAYER_ORDER: { key: LayerKey; label: string }[] = [
-  { key: "plan", label: "Plan" },
-  { key: "structure", label: "Structure" },
-  { key: "envelope", label: "Envelope" },
-  { key: "dimensions", label: "Dims" },
-];
+/** Title-block labels. Abbreviated where the agent-facing names in the tool catalog are not. */
+const LAYER_LABELS: Record<LayerKey, string> = {
+  plan: "Plan",
+  structure: "Structure",
+  envelope: "Envelope",
+  dimensions: "Dims",
+};
+
+const LAYER_ORDER = LANDING_LAYER_KEYS.map((key) => ({ key, label: LAYER_LABELS[key] }));
 
 type Episode = {
   code: string;
@@ -1054,17 +1058,13 @@ function pointOnPath(path: THREE.Vector3[], t: number, out: THREE.Vector3) {
 type HeroBuildingProps = {
   mode?: HeroMode;
   onSignal?: (signal: HeroSignal) => void;
+  layers: LandingLayers;
+  onLayerChange: (layer: LayerKey) => void;
 };
 
-export default function HeroBuilding({ mode = "idle", onSignal }: HeroBuildingProps) {
+export default function HeroBuilding({ mode = "idle", onSignal, layers, onLayerChange }: HeroBuildingProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const annotationRef = useRef<HTMLDivElement>(null);
-  const [layers, setLayers] = useState<Record<LayerKey, boolean>>({
-    plan: true,
-    structure: true,
-    envelope: true,
-    dimensions: true,
-  });
 
   const controls = useRef({
     mode,
@@ -1084,10 +1084,6 @@ export default function HeroBuilding({ mode = "idle", onSignal }: HeroBuildingPr
     controls.current.layers = layers;
     controls.current.signal = onSignal;
   });
-
-  const toggleLayer = useCallback((key: LayerKey) => {
-    setLayers((current) => ({ ...current, [key]: !current[key] }));
-  }, []);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -1675,7 +1671,7 @@ export default function HeroBuilding({ mode = "idle", onSignal }: HeroBuildingPr
               type="button"
               className={styles.layerToggle}
               aria-pressed={layers[layer.key]}
-              onClick={() => toggleLayer(layer.key)}
+              onClick={() => onLayerChange(layer.key)}
             >
               {layer.label}
             </button>

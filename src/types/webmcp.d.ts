@@ -29,4 +29,9 @@ interface Window {
     listTools: () => string[];
     invokeTool: (name: string, input?: Record<string, unknown>) => Promise<unknown>;
   };
+  __archMorphLanding?: {
+    getState: () => unknown;
+    listTools: () => string[];
+    invokeTool: (name: string, input?: Record<string, unknown>) => Promise<unknown>;
+  };
 }
