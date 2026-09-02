@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   applyOperation,
   buildCirculationGraph,
+  cloneProject,
   createInitialProject,
   inspectFloor,
   inspectRoom,
@@ -685,6 +686,60 @@ assert.throws(
   "an unbuildable storey height must be refused",
 );
 
+// An independent wall is a legitimate opening host — a garden gate or a screen wall — so it must
+// place, validate as guidance rather than an error, and carry no circulation edge.
+let screen = createInitialProject();
+const performScreen = (operation: Parameters<typeof applyOperation>[1]) => {
+  screen = applyOperation(screen, operation, "human").project;
+};
+performScreen({ type: "create_room", floorId: "floor-ground", name: "Hall", roomType: "Custom", x: 4, y: 6, width: 12, length: 14 });
+const screenEntry = screen.walls.find((wall) => wall.exterior)!;
+performScreen({ type: "add_opening", kind: "door", wallId: screenEntry.id, offset: 6 });
+performScreen({ type: "add_wall", floorId: "floor-ground", x1: 4, y1: 30, x2: 16, y2: 30 });
+const screenWall = screen.walls.find((wall) => !wall.roomIds.length)!;
+performScreen({ type: "add_opening", kind: "door", wallId: screenWall.id, offset: 6 });
+const screenDoor = screen.openings.find((opening) => opening.wallId === screenWall.id)!;
+const screenIssues = validateLayout(screen).issues.filter((issue) => issue.elementIds.includes(screenDoor.id));
+assert.equal(
+  screenIssues.filter((issue) => issue.code === "INVALID_OPENING").length,
+  0,
+  "an independent wall must be accepted as an opening host",
+);
+const screenAdjacency = screenIssues.filter((issue) => issue.code === "OPENING_WITHOUT_ADJACENCY");
+assert.equal(screenAdjacency.length, 1, "an independent-wall opening must be reported once");
+assert.equal(screenAdjacency[0].severity, "warning", "and only as guidance, not an error");
+performScreen({ type: "add_opening", kind: "window", wallId: screenWall.id, offset: 10 });
+const screenWindow = screen.openings.find((opening) => opening.kind === "window" && opening.wallId === screenWall.id)!;
+assert.equal(
+  validateLayout(screen).issues.filter((issue) => issue.elementIds.includes(screenWindow.id)).length,
+  0,
+  "a window in a screen wall carries no circulation claim and needs no report",
+);
+const screenGraph = buildCirculationGraph(screen);
+assert.ok(!screenGraph.invalidDoorIds.includes(screenDoor.id), "an independent-wall door is not a broken host");
+assert.ok(!screenGraph.edges.some((edge) => edge.openingId === screenDoor.id), "and connects no two spaces");
+assert.ok(screenGraph.hasExteriorAccess, "the real entrance must still reach the site");
+screen.openings = screen.openings.map((opening) => (opening.id === screenDoor.id ? { ...opening, offset: 40 } : opening));
+const brokenScreenIssues = validateLayout(screen).issues.filter((issue) => issue.elementIds.includes(screenDoor.id));
+const screenBroken = brokenScreenIssues.filter((issue) => issue.code === "INVALID_OPENING");
+assert.equal(screenBroken.length, 1, "an opening past the end of its wall must still be an error");
+assert.equal(screenBroken[0].severity, "error", "and must stay an error");
+assert.equal(
+  brokenScreenIssues.filter((issue) => issue.code === "OPENING_WITHOUT_ADJACENCY").length,
+  0,
+  "an invalid independent-wall door must not also receive guidance saying it may be kept",
+);
+const overloadedHost = cloneProject(screen);
+overloadedHost.openings = overloadedHost.openings.filter((opening) => opening.id !== screenDoor.id);
+overloadedHost.walls = overloadedHost.walls.map((wall) => wall.id === screenWall.id
+  ? { ...wall, roomIds: ["room-one", "room-two", "room-three"] }
+  : wall);
+assertOperationRejectedWithoutMutation(
+  overloadedHost,
+  { type: "add_opening", kind: "door", wallId: screenWall.id, offset: 6 },
+  /more than two rooms/,
+);
+
 console.log(JSON.stringify({
   project: { id: project.id, schemaVersion: project.schemaVersion, rooms: project.rooms.length, walls: project.walls.length, openings: project.openings.length },
   topology: { sharedWalls: project.walls.filter((wall) => wall.roomIds.length === 2).length, duplicateWallIds: project.walls.length - new Set(project.walls.map((wall) => wall.id)).size },
@@ -695,6 +750,7 @@ console.log(JSON.stringify({
   alignment: { sharedWalls: align.walls.filter((wall) => wall.roomIds.length === 2).length, exteriorWalls: align.walls.filter((wall) => wall.exterior).length },
   storey: { groundHeight: storey.floors[0].height, upperElevation: storey.floors[1].elevation, rise: stairConnection(storey, storey.stairs[0])!.rise },
   habitability: { codes: Array.from(new Set(validateLayout(habitat).issues.map((issue) => issue.code))) },
+  independentWallOpenings: { hostAccepted: true, severity: screenAdjacency[0].severity, circulationEdges: screenGraph.edges.filter((edge) => edge.openingId === screenDoor.id).length },
   measurement: { carpet: roomCarpetArea(carpet, carpet.rooms[0]), net: roomArea(carpet.rooms[0]), far: groundMetrics.floorAreaRatio },
   spatial: { wallVolumes: walkSpatial.wallVolumes.length, designDoorBlocked: collisionAtDoor(designSpatial), walkDoorBlocked: collisionAtDoor(walkSpatial), renderedFloorIds: Array.from(new Set(multiFloorSpatial.openingFrames.map(({ opening }) => opening.floorId))) },
 }, null, 2));
