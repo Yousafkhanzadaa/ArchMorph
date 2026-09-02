@@ -106,6 +106,7 @@ import ModelView from "./ModelView";
 
 type InspectorTab = "properties" | "activity" | "checks";
 type ActivityFilter = "design" | "view" | "all";
+type LibraryTab = "spaces" | "levels" | "exterior" | "browse";
 type ToastState = { message: string; action?: "undo" };
 type ToolStatus = "native" | "preview" | "registering";
 type ToolCall = {
@@ -128,6 +129,13 @@ const toolItems: Array<{ id: CanvasTool; label: string; icon: typeof MousePointe
   { id: "window", label: "Place window", icon: PanelTop, key: "N" },
   { id: "stair", label: "Place stair", icon: Layers3, key: "S" },
   { id: "measure", label: "Measure", icon: Ruler, key: "M" },
+];
+
+const libraryTabs: Array<{ id: LibraryTab; label: string; description: string }> = [
+  { id: "spaces", label: "Spaces", description: "Place room templates" },
+  { id: "levels", label: "Levels", description: "Manage floors and stairs" },
+  { id: "exterior", label: "Exterior", description: "Configure the site and building exterior" },
+  { id: "browse", label: "Browse", description: "Find elements on the active floor" },
 ];
 
 const defaultRoomSize: Record<RoomType, [number, number]> = {
@@ -405,6 +413,7 @@ export default function Studio() {
   const [exportOpen, setExportOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [libraryTab, setLibraryTab] = useState<LibraryTab>("spaces");
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [showPlanLabels, setShowPlanLabels] = useState(true);
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>("design");
@@ -755,7 +764,11 @@ export default function Studio() {
         }
       }
       const shortcut = toolItems.find((item) => item.key.toLowerCase() === key);
-      if (shortcut) setTool(shortcut.id);
+      if (shortcut) {
+        setTool(shortcut.id);
+        if (shortcut.id === "room") setLibraryTab("spaces");
+        if (shortcut.id === "stair") setLibraryTab("levels");
+      }
       if ((event.key === "Backspace" || event.key === "Delete") && selectedId) deleteSelected();
       if (event.key === "Escape") {
         setSelectedId(undefined);
@@ -925,8 +938,8 @@ export default function Studio() {
 
   const openRoomLibrary = () => {
     setLibraryOpen(true);
+    setLibraryTab("spaces");
     setTool("room");
-    window.requestAnimationFrame(() => document.getElementById("room-library-section")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   };
 
   const addDefaultBalcony = (kind: "balcony" | "terrace") => {
@@ -1210,7 +1223,11 @@ export default function Studio() {
                   key={item.id}
                   type="button"
                   className={tool === item.id ? "is-active" : ""}
-                  onClick={() => setTool(item.id)}
+                  onClick={() => {
+                    setTool(item.id);
+                    if (item.id === "room") setLibraryTab("spaces");
+                    if (item.id === "stair") setLibraryTab("levels");
+                  }}
                   title={`${item.label} (${item.key})`}
                   aria-label={`${item.label} (${item.key})`}
                   aria-pressed={tool === item.id}
@@ -1233,34 +1250,38 @@ export default function Studio() {
 
         <aside id="design-library" className="library-panel" aria-label="Design library">
           <div className="panel-mobile-head"><div><small>Design library</small><b>{activeFloor.name}</b></div><button type="button" onClick={() => setLibraryOpen(false)} aria-label="Close design library"><X size={18} /></button></div>
-          <div className="panel-scroll">
-            <Section title="Site">
-              <div className="site-line"><span>Rectangular plot</span><b>{project.plot.width}&apos; × {project.plot.length}&apos;</b></div>
-              <div className="site-line"><span>Front faces</span><b>{project.plot.orientation}</b></div>
-            </Section>
-
-            <Section title="Exterior finish">
-              <label className="field field-full"><span>Façade palette</span><select value={project.exteriorFinish} onChange={(event) => safeCommit({ type: "set_exterior_finish", finish: event.target.value as ExteriorFinishId })}>{Object.entries(exteriorFinishPresets).map(([id, finish]) => <option key={id} value={id}>{finish.label}</option>)}</select></label>
-              <p className="technical-note">Project default with optional per-wall overrides; lightweight visual materials only.</p>
-            </Section>
-
-            <Section title="Exterior systems" action={<span className="section-hint">LIGHTWEIGHT</span>}>
-              {!activeFloorRooms.length && <p className="technical-note is-locked">Place the first room to unlock hosted balconies and façade features.</p>}
-              <div className="room-library">
-                <button type="button" disabled={!activeFloorRooms.length} onClick={() => addDefaultBalcony(activeFloor.level > 0 ? "balcony" : "terrace")}>
-                  <span style={{ background: "#b8aea0" }} /><div><b>{activeFloor.level > 0 ? "Add balcony" : "Add terrace"}</b><small>Slab + configurable railing</small></div><Plus size={14} />
-                </button>
-                {(["canopy", "frame", "sunshade"] as FacadeFeatureKind[]).map((kind) => (
-                  <button type="button" key={kind} disabled={!activeFloorRooms.length} onClick={() => addDefaultFacadeFeature(kind)}>
-                    <span style={{ background: kind === "frame" ? "#9f6653" : kind === "canopy" ? "#69756f" : "#aaa79f" }} /><div><b>Add {kind}</b><small>Exterior-wall hosted feature</small></div><Plus size={14} />
-                  </button>
-                ))}
-              </div>
-              <button type="button" className="walk-inside-button" onClick={() => safeCommit({ type: "set_site_boundary", enabled: !project.siteBoundary.enabled })}>
-                <Building2 size={15} /> {project.siteBoundary.enabled ? "Hide" : "Add"} boundary wall + gate
+          <div className="library-tabs" role="tablist" aria-label="Design library categories">
+            {libraryTabs.map((item, index) => (
+              <button
+                key={item.id}
+                id={`library-tab-${item.id}`}
+                type="button"
+                role="tab"
+                className={libraryTab === item.id ? "is-active" : ""}
+                aria-selected={libraryTab === item.id}
+                aria-controls={`library-panel-${item.id}`}
+                aria-label={`${item.label}: ${item.description}`}
+                tabIndex={libraryTab === item.id ? 0 : -1}
+                onClick={() => setLibraryTab(item.id)}
+                onKeyDown={(event) => {
+                  let nextIndex = index;
+                  if (event.key === "ArrowRight") nextIndex = (index + 1) % libraryTabs.length;
+                  else if (event.key === "ArrowLeft") nextIndex = (index - 1 + libraryTabs.length) % libraryTabs.length;
+                  else if (event.key === "Home") nextIndex = 0;
+                  else if (event.key === "End") nextIndex = libraryTabs.length - 1;
+                  else return;
+                  event.preventDefault();
+                  const nextTab = libraryTabs[nextIndex].id;
+                  setLibraryTab(nextTab);
+                  window.requestAnimationFrame(() => document.getElementById(`library-tab-${nextTab}`)?.focus());
+                }}
+              >
+                {item.label}
               </button>
-            </Section>
+            ))}
+          </div>
 
+          <div id="library-panel-spaces" className="panel-scroll" role="tabpanel" aria-labelledby="library-tab-spaces" tabIndex={0} hidden={libraryTab !== "spaces"}>
             <Section id="room-library-section" title="Rooms" action={<span className="section-hint">CLICK TO PLACE</span>}>
               <label className="field field-full"><span>Footprint shape</span><select value={roomShape} onChange={(event) => setRoomShape(event.target.value as Exclude<RoomShape, "custom">)}><option value="rectangle">Rectangle</option><option value="l-shape">L-shaped</option><option value="t-shape">T-shaped</option><option value="u-shape">U-shaped</option></select></label>
               <div className="room-library">
@@ -1278,13 +1299,9 @@ export default function Studio() {
                 ))}
               </div>
             </Section>
+          </div>
 
-            <Section title="Stairs" action={<span className="section-hint">CLICK TO PLACE</span>}>
-              <label className="field field-full"><span>Stair configuration</span><select value={stairType} onChange={(event) => { setStairType(event.target.value as StairType); setTool("stair"); }}><option value="straight">Straight · one flight</option><option value="l-shaped">L-shaped · 90° quarter turn</option><option value="u-shaped">U-shaped · 180° half turn</option></select></label>
-              <button type="button" className={`walk-inside-button ${tool === "stair" ? "is-active" : ""}`} onClick={() => setTool("stair")}><Layers3 size={15} /> Place {stairTypeLabel[stairType]} stair</button>
-              <p className="technical-note">{stairType === "u-shaped" ? "Two parallel flights reverse 180° at a half landing for a compact stacked stair core." : stairType === "l-shaped" ? "Two perpendicular flights turn 90° at a quarter landing to fit a room corner." : "One continuous flight with access at opposite ends."} Both connected floors require a clear approach outside the stair.</p>
-            </Section>
-
+          <div id="library-panel-levels" className="panel-scroll" role="tabpanel" aria-labelledby="library-tab-levels" tabIndex={0} hidden={libraryTab !== "levels"}>
             <Section title="Floors" action={
               <button className="text-action" type="button" onClick={() => safeCommit({ type: "create_floor" })}><Plus size={13} /> Add</button>
             }>
@@ -1317,6 +1334,43 @@ export default function Studio() {
               <p className="technical-note">Changing a storey height re-levels every floor above it and recomputes each connected stair&rsquo;s rise, riser count, and tread depth.</p>
             </Section>
 
+            <Section title="Stairs" action={<span className="section-hint">CLICK TO PLACE</span>}>
+              <label className="field field-full"><span>Stair configuration</span><select value={stairType} onChange={(event) => { setStairType(event.target.value as StairType); setTool("stair"); }}><option value="straight">Straight · one flight</option><option value="l-shaped">L-shaped · 90° quarter turn</option><option value="u-shaped">U-shaped · 180° half turn</option></select></label>
+              <button type="button" className={`walk-inside-button ${tool === "stair" ? "is-active" : ""}`} onClick={() => setTool("stair")}><Layers3 size={15} /> Place {stairTypeLabel[stairType]} stair</button>
+              <p className="technical-note">{stairType === "u-shaped" ? "Two parallel flights reverse 180° at a half landing for a compact stacked stair core." : stairType === "l-shaped" ? "Two perpendicular flights turn 90° at a quarter landing to fit a room corner." : "One continuous flight with access at opposite ends."} Both connected floors require a clear approach outside the stair.</p>
+            </Section>
+          </div>
+
+          <div id="library-panel-exterior" className="panel-scroll" role="tabpanel" aria-labelledby="library-tab-exterior" tabIndex={0} hidden={libraryTab !== "exterior"}>
+            <Section title="Site">
+              <div className="site-line"><span>Rectangular plot</span><b>{project.plot.width}&apos; × {project.plot.length}&apos;</b></div>
+              <div className="site-line"><span>Front faces</span><b>{project.plot.orientation}</b></div>
+            </Section>
+
+            <Section title="Exterior finish">
+              <label className="field field-full"><span>Façade palette</span><select value={project.exteriorFinish} onChange={(event) => safeCommit({ type: "set_exterior_finish", finish: event.target.value as ExteriorFinishId })}>{Object.entries(exteriorFinishPresets).map(([id, finish]) => <option key={id} value={id}>{finish.label}</option>)}</select></label>
+              <p className="technical-note">Project default with optional per-wall overrides; lightweight visual materials only.</p>
+            </Section>
+
+            <Section title="Exterior systems" action={<span className="section-hint">LIGHTWEIGHT</span>}>
+              {!activeFloorRooms.length && <p className="technical-note is-locked">Place the first room to unlock hosted balconies and façade features.</p>}
+              <div className="room-library">
+                <button type="button" disabled={!activeFloorRooms.length} onClick={() => addDefaultBalcony(activeFloor.level > 0 ? "balcony" : "terrace")}>
+                  <span style={{ background: "#b8aea0" }} /><div><b>{activeFloor.level > 0 ? "Add balcony" : "Add terrace"}</b><small>Slab + configurable railing</small></div><Plus size={14} />
+                </button>
+                {(["canopy", "frame", "sunshade"] as FacadeFeatureKind[]).map((kind) => (
+                  <button type="button" key={kind} disabled={!activeFloorRooms.length} onClick={() => addDefaultFacadeFeature(kind)}>
+                    <span style={{ background: kind === "frame" ? "#9f6653" : kind === "canopy" ? "#69756f" : "#aaa79f" }} /><div><b>Add {kind}</b><small>Exterior-wall hosted feature</small></div><Plus size={14} />
+                  </button>
+                ))}
+              </div>
+              <button type="button" className="walk-inside-button" onClick={() => safeCommit({ type: "set_site_boundary", enabled: !project.siteBoundary.enabled })}>
+                <Building2 size={15} /> {project.siteBoundary.enabled ? "Hide" : "Add"} boundary wall + gate
+              </button>
+            </Section>
+          </div>
+
+          <div id="library-panel-browse" className="panel-scroll" role="tabpanel" aria-labelledby="library-tab-browse" tabIndex={0} hidden={libraryTab !== "browse"}>
             <Section title="Elements" action={<span className="section-hint">KEYBOARD ACCESSIBLE</span>}>
               <p className="technical-note element-intro">Select an element here to inspect it without using the drawing canvas.</p>
               <div className="element-navigator">
