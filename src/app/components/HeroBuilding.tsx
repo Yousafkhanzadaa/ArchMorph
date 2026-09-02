@@ -1094,9 +1094,6 @@ export default function HeroBuilding({ mode = "idle", onSignal }: HeroBuildingPr
     const annotation = annotationRef.current;
     if (!mount) return;
 
-    const reduceMotion =
-      typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
     const scene = new THREE.Scene();
     const camera = new THREE.OrthographicCamera(-9, 9, 7.5, -7.5, 0.1, 100);
     camera.position.set(16.5, 13.4, 18.5);
@@ -1176,7 +1173,7 @@ export default function HeroBuilding({ mode = "idle", onSignal }: HeroBuildingPr
     const annotationTag = annotation?.querySelector("b") ?? null;
     const annotationSpec = annotation?.querySelector("span") ?? null;
 
-    let elapsed = reduceMotion ? AMBIENT_START + CYCLE - 3 : 0;
+    let elapsed = 0;
     let sectionAmount = 0;
     let studioAmount = 0;
     let yaw = -0.1;
@@ -1252,7 +1249,7 @@ export default function HeroBuilding({ mode = "idle", onSignal }: HeroBuildingPr
     const render = (now: number) => {
       const delta = lastFrame ? Math.min((now - lastFrame) / 1000, 0.1) : 0;
       lastFrame = now;
-      if (!reduceMotion) elapsed += delta;
+      elapsed += delta;
 
       const state = controls.current;
       sectionAmount = damp(sectionAmount, state.mode === "section" ? 1 : 0, 2.4, delta);
@@ -1454,12 +1451,12 @@ export default function HeroBuilding({ mode = "idle", onSignal }: HeroBuildingPr
         state.drag.x = damp(state.drag.x, 0, 0.45, delta);
         state.drag.y = damp(state.drag.y, 0, 0.45, delta);
       }
-      const drift = reduceMotion ? 0 : Math.sin(elapsed * 0.055) * 0.05;
+      const drift = Math.sin(elapsed * 0.055) * 0.05;
       const restYaw = -0.1 + studioAmount * 0.09 - sectionAmount * 0.15;
       yaw = damp(yaw, restYaw + drift + state.pointer.x * 0.12 + state.drag.x, 2.6, delta);
       pitch = damp(
         pitch,
-        (reduceMotion ? 0 : Math.sin(elapsed * 0.041) * 0.012) - state.pointer.y * 0.028 + state.drag.y + sectionAmount * 0.05,
+        Math.sin(elapsed * 0.041) * 0.012 - state.pointer.y * 0.028 + state.drag.y + sectionAmount * 0.05,
         2.6,
         delta,
       );
