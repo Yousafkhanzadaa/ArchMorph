@@ -190,4 +190,6 @@
   .viewport { inset: 0 -8% 8%; }
   .titleBlock { left: 6%; right: 6%; }
   .layerSet > span { display: none; }
+  .layerSet { width: 100%; justify-content: space-around; gap: 4px; }
+  .layerToggle { min-height: 44px; padding: 8px 5px; font-size: 9px; }
 }

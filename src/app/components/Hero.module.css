@@ -501,7 +501,7 @@
   .body { gap: 22px; padding-top: 22px; }
   .actions { gap: 16px; }
   .primaryAction { min-height: 44px; gap: 12px; padding-inline: 13px; font-size: 8px; }
-  .secondaryAction { font-size: 7px; }
+  .secondaryAction { min-height: 44px; padding: 0 4px; font-size: 10px; }
   .schedule > div { grid-template-columns: 15px minmax(0, 1fr) auto; gap: 10px; padding: 8px 0; }
   .schedule > div > span { display: none; }
   .liveRow > span { display: none; }
