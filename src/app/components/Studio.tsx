@@ -60,10 +60,13 @@ import {
   cloneProject,
   createId,
   createInitialProject,
+  elementFloorIds,
+  elementIsOnFloor,
   glazingPerformanceDefaults,
   exteriorFinishPresets,
   projectMetrics,
   recommendedStairRun,
+  round,
   roomArea,
   roomContainsPoint,
   roomTypes,
@@ -87,6 +90,7 @@ import {
   type FacadeFeatureKind,
   type RailingStyle,
   type ValidationReport,
+  type Wall,
 } from "@/lib/architecture";
 import {
   createNewLocalProject,
@@ -107,7 +111,11 @@ import ModelView from "./ModelView";
 type InspectorTab = "properties" | "activity" | "checks";
 type ActivityFilter = "design" | "view" | "all";
 type LibraryTab = "spaces" | "levels" | "exterior" | "browse";
-type ToastState = { message: string; action?: "undo" };
+type ToastState = {
+  message: string;
+  action?: "undo";
+  download?: { url: string; filename: string };
+};
 type ToolStatus = "native" | "preview" | "registering";
 type ToolCall = {
   id: string;
@@ -192,6 +200,20 @@ function formatTime(timestamp: string) {
   );
 }
 
+function formatActivityTime(timestamp: string) {
+  const date = new Date(timestamp);
+  const today = new Date();
+  const sameDay = date.toDateString() === today.toDateString();
+  if (sameDay) return formatTime(timestamp);
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    ...(date.getFullYear() === today.getFullYear() ? {} : { year: "numeric" as const }),
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
 function formatSavedTime(timestamp: string) {
   const date = new Date(timestamp);
   const today = new Date();
@@ -199,21 +221,39 @@ function formatSavedTime(timestamp: string) {
   return sameDay ? `Saved ${formatTime(timestamp)}` : `Saved ${new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(date)}`;
 }
 
+/** What kind of wall this is: the façade an architect names, the rooms it divides, or independent. */
+function wallKindLabel(project: Project, wall: Wall) {
+  if (wall.exterior) return `${wallCardinalFacing(project, wall) ?? "Exterior"} façade`;
+  const rooms = wall.roomIds.map((roomId) => project.rooms.find((item) => item.id === roomId)?.name).filter(Boolean).join(" / ");
+  return rooms || "Independent wall";
+}
+
+/** Endpoints identify a wall exactly, so two same-length walls of the same kind never read alike. */
+function wallSpanLabel(wall: Wall) {
+  return `${round(wall.x1, 1)},${round(wall.y1, 1)}→${round(wall.x2, 1)},${round(wall.y2, 1)}`;
+}
+
 function elementLabel(project: Project, id?: string) {
   if (!id) return "Project site";
   const floorName = (floorId: string) => project.floors.find((floor) => floor.id === floorId)?.name ?? "Unknown floor";
   const room = project.rooms.find((item) => item.id === id);
-  if (room) return `${room.name} · ${floorName(room.floorId)}`;
+  if (room) {
+    // Renaming can still collide, so a shared name falls back to the room's own plan position.
+    const shares = project.rooms.some((item) => item.id !== room.id && item.floorId === room.floorId && item.name === room.name);
+    return `${room.name}${shares ? ` at ${round(room.x, 1)},${round(room.y, 1)}` : ""} · ${floorName(room.floorId)}`;
+  }
   const wall = project.walls.find((item) => item.id === id);
   if (wall) {
-    const rooms = wall.roomIds.map((roomId) => project.rooms.find((item) => item.id === roomId)?.name).filter(Boolean).join(" / ");
-    return `${wall.exterior ? `${wallCardinalFacing(project, wall) ?? "Exterior"} façade` : rooms || "Independent wall"} · ${floorName(wall.floorId)}`;
+    return `${wallKindLabel(project, wall)} ${round(wallLength(wall), 1)}′ · ${wallSpanLabel(wall)} · ${floorName(wall.floorId)}`;
   }
   const opening = project.openings.find((item) => item.id === id);
   if (opening) {
     const host = project.walls.find((item) => item.id === opening.wallId);
+    // Width and offset alone repeat across a room's walls, so the host wall itself carries the identity.
+    const hostLabel = host ? `${wallKindLabel(project, host)} ${wallSpanLabel(host)}` : "Missing host wall";
     const rooms = host?.roomIds.map((roomId) => project.rooms.find((item) => item.id === roomId)?.name).filter(Boolean).join(" / ");
-    return `${opening.kind === "door" ? "Door" : "Window"}${rooms ? ` · ${rooms}` : ""} · ${floorName(opening.floorId)}`;
+    const context = rooms && host?.exterior ? `${rooms} · ${hostLabel}` : hostLabel;
+    return `${opening.kind === "door" ? "Door" : "Window"} ${round(opening.width, 1)}′ @ ${round(opening.offset, 1)}′ · ${context} · ${floorName(opening.floorId)}`;
   }
   const stair = project.stairs.find((item) => item.id === id);
   if (stair) {
@@ -221,25 +261,49 @@ function elementLabel(project: Project, id?: string) {
     return connection ? `Staircase · ${connection.lowerFloor.name} to ${connection.upperFloor.name}` : `Staircase · ${floorName(stair.floorId)}`;
   }
   const balcony = project.balconies.find((item) => item.id === id);
-  if (balcony) return `${balcony.name} · ${floorName(balcony.floorId)}`;
+  if (balcony) return `${balcony.name} ${balcony.width}′ × ${balcony.length}′ · at ${round(balcony.x, 1)},${round(balcony.y, 1)} · ${floorName(balcony.floorId)}`;
   const feature = project.facadeFeatures.find((item) => item.id === id);
-  if (feature) return `${feature.kind[0].toUpperCase()}${feature.kind.slice(1)} · exterior feature`;
+  if (feature) {
+    const host = project.walls.find((item) => item.id === feature.wallId);
+    const where = host ? `${wallKindLabel(project, host)} ${wallSpanLabel(host)} @ ${round(feature.offset, 1)}′` : "exterior feature";
+    return `${feature.kind[0].toUpperCase()}${feature.kind.slice(1)} ${round(feature.width, 1)}′ · ${where}`;
+  }
   return id;
+}
+
+/** Restore design data without replaying the old snapshot's temporary camera, floor, or mode. */
+function restoreDesignSnapshot(snapshot: Project, current: Project, preferredSelection?: string) {
+  const restored = cloneProject(snapshot);
+  const activeFloorId = restored.floors.some((floor) => floor.id === current.view.activeFloorId)
+    ? current.view.activeFloorId
+    : restored.view.activeFloorId;
+  const focusElementId = [preferredSelection, current.view.focusElementId, restored.view.focusElementId]
+    .find((id): id is string => Boolean(id && elementIsOnFloor(restored, id, activeFloorId)));
+  const walkStartRoomId = current.view.walkStartRoomId
+    && restored.rooms.some((room) => room.id === current.view.walkStartRoomId)
+    ? current.view.walkStartRoomId
+    : undefined;
+  return {
+    ...restored,
+    view: { ...current.view, activeFloorId, focusElementId, walkStartRoomId },
+  };
 }
 
 function downloadUrl(url: string, filename: string) {
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = filename;
+  anchor.hidden = true;
   document.body.appendChild(anchor);
   anchor.click();
-  anchor.remove();
+  window.setTimeout(() => anchor.remove(), 0);
 }
 
 function downloadText(text: string, filename: string, mime: string) {
   const url = URL.createObjectURL(new Blob([text], { type: mime }));
   downloadUrl(url, filename);
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  return url;
 }
 
 function serializedPlan(svg: SVGSVGElement) {
@@ -395,11 +459,18 @@ export default function Studio() {
   const [project, setProject] = useState<Project>(() => createInitialProject());
   const projectRef = useRef(project);
   const hydrated = useSyncExternalStore(subscribeHydration, getClientHydrationSnapshot, getServerHydrationSnapshot);
-  const [selectedId, setSelectedId] = useState<string>();
-  const [tool, setTool] = useState<CanvasTool>("select");
+  const [selectedElementId, setSelectedId] = useState<string>();
+  const [planTool, setTool] = useState<CanvasTool>("select");
+  // Selection belongs to the floor it lives on, and drawing tools belong to the plan. Deriving both
+  // means an element hidden by a floor change, or a tool left behind by a jump into 3D, cannot linger.
+  const selectedId = selectedElementId && elementIsOnFloor(project, selectedElementId, project.view.activeFloorId)
+    ? selectedElementId
+    : undefined;
+  const tool: CanvasTool = project.view.mode === "2d" ? planTool : "select";
   const [roomType, setRoomType] = useState<RoomType>("Living Room");
   const [roomShape, setRoomShape] = useState<Exclude<RoomShape, "custom">>("rectangle");
   const [stairType, setStairType] = useState<StairType>("straight");
+  const [balconyKind, setBalconyKind] = useState<"balcony" | "terrace">("terrace");
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("properties");
   const [validation, setValidation] = useState<ValidationReport>(() => validateLayout(project));
   const [debugMode, setDebugMode] = useState(false);
@@ -449,6 +520,17 @@ export default function Studio() {
     setToast({ message, action });
     if (toastTimer.current) window.clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToast(undefined), action ? 6000 : 3200);
+  }, []);
+
+  const offerDownload = useCallback((url: string, filename: string) => {
+    setToast({
+      message: `${filename} is ready`,
+      download: { url, filename },
+    });
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    // Embedded browsers may suppress synthetic downloads. Keep a direct, user-activated link visible
+    // long enough to save the file; if `download` is ignored, the target opens as a usable preview.
+    toastTimer.current = window.setTimeout(() => setToast(undefined), 15_000);
   }, []);
 
   const replaceProject = useCallback((next: Project, message?: string) => {
@@ -502,6 +584,7 @@ export default function Studio() {
           projectRef.current = next;
           setProject(next);
           if (next.view.focusElementId !== previous.view.focusElementId) setSelectedId(next.view.focusElementId);
+          if (next.view.mode !== "2d") setTool("select");
           return presentationOutcome;
         }
         pastRef.current = [...pastRef.current.slice(-79), cloneProject(previous)];
@@ -565,8 +648,12 @@ export default function Studio() {
     options?.signal?.throwIfAborted();
     const viewLabel = current.view.mode === "2d" ? "2d" : `3d-${current.view.navigationMode ?? "orbit"}`;
     const filename = `archmorph-${viewLabel}-v${current.version}.png`;
-    if (options?.download) downloadUrl(dataUrl, filename);
-    notify(`Captured ${current.view.mode === "2d" ? "floor plan" : current.view.navigationMode === "walk" ? "walkthrough" : current.view.cameraPreset} view`);
+    if (options?.download) {
+      downloadUrl(dataUrl, filename);
+      offerDownload(dataUrl, filename);
+    } else {
+      notify(`Captured ${current.view.mode === "2d" ? "floor plan" : current.view.navigationMode === "walk" ? "walkthrough" : current.view.cameraPreset} view`);
+    }
     return {
       projectId: current.id,
       projectVersion: current.version,
@@ -575,7 +662,7 @@ export default function Studio() {
       mimeType: "image/png",
       imageDataUrl: dataUrl,
     };
-  }, [notify]);
+  }, [notify, offerDownload]);
 
   const exportPlan = useCallback((format: "json" | "svg", download = false, signal?: AbortSignal) => {
     signal?.throwIfAborted();
@@ -584,16 +671,35 @@ export default function Studio() {
       if (!svgRef.current) throw new Error("Switch to the 2D floor plan before exporting SVG.");
       const content = serializedPlan(svgRef.current);
       const filename = `archmorph-plan-v${current.version}.svg`;
-      if (download) downloadText(content, filename, "image/svg+xml");
+      if (download) offerDownload(downloadText(content, filename, "image/svg+xml"), filename);
       if (download) setSavedVersion(current.version);
       return { format, filename, projectVersion: current.version, content };
     }
     const content = exportProjectDocument(current);
     const filename = `archmorph-project-v${current.version}.json`;
-    if (download) downloadText(content, filename, "application/json");
+    if (download) offerDownload(downloadText(content, filename, "application/json"), filename);
     if (download) setSavedVersion(current.version);
     return { format, filename, projectVersion: current.version, content };
-  }, []);
+  }, [offerDownload]);
+
+  const downloadExport = useCallback((format: "json" | "svg") => {
+    try {
+      exportPlan(format, true);
+      setExportOpen(false);
+      setProjectMenuOpen(false);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "The export could not be created.");
+    }
+  }, [exportPlan, notify]);
+
+  const downloadSnapshot = useCallback(async () => {
+    setExportOpen(false);
+    try {
+      await captureSnapshot({ download: true });
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "The snapshot could not be created.");
+    }
+  }, [captureSnapshot, notify]);
 
   const webTools = useMemo(
     () =>
@@ -683,32 +789,50 @@ export default function Studio() {
   const undo = useCallback(() => {
     const previous = pastRef.current.pop();
     if (!previous) return;
-    futureRef.current.push(cloneProject(projectRef.current));
-    projectRef.current = previous;
-    setProject(previous);
-    saveProjectLocally(previous);
-    setSavedVersion(previous.version);
-    setValidation(validateLayout(previous));
-    setSelectedId(undefined);
+    const current = projectRef.current;
+    futureRef.current.push(cloneProject(current));
+    const restored = restoreDesignSnapshot(previous, current, selectedId);
+    projectRef.current = restored;
+    setProject(restored);
+    saveProjectLocally(restored);
+    setSavedVersion(restored.version);
+    setValidation(validateLayout(restored));
+    setSelectedId(restored.view.focusElementId);
     setPastCount(pastRef.current.length);
     setFutureCount(futureRef.current.length);
     notify("Undid last change");
-  }, [notify]);
+  }, [notify, selectedId]);
 
   const redo = useCallback(() => {
     const next = futureRef.current.pop();
     if (!next) return;
-    pastRef.current.push(cloneProject(projectRef.current));
-    projectRef.current = next;
-    setProject(next);
-    saveProjectLocally(next);
-    setSavedVersion(next.version);
-    setValidation(validateLayout(next));
-    setSelectedId(undefined);
+    const current = projectRef.current;
+    pastRef.current.push(cloneProject(current));
+    const restored = restoreDesignSnapshot(next, current, selectedId);
+    projectRef.current = restored;
+    setProject(restored);
+    saveProjectLocally(restored);
+    setSavedVersion(restored.version);
+    setValidation(validateLayout(restored));
+    setSelectedId(restored.view.focusElementId);
     setPastCount(pastRef.current.length);
     setFutureCount(futureRef.current.length);
     notify("Redid change");
-  }, [notify]);
+  }, [notify, selectedId]);
+
+  const activatePlanTool = useCallback((nextTool: CanvasTool) => {
+    if (nextTool !== "select" && projectRef.current.view.mode !== "2d") {
+      try {
+        commit({ type: "switch_view", mode: "2d" });
+      } catch {
+        return;
+      }
+    }
+    setTool(nextTool);
+    if (nextTool === "room") setLibraryTab("spaces");
+    if (nextTool === "stair") setLibraryTab("levels");
+    if (nextTool === "balcony") setLibraryTab("exterior");
+  }, [commit]);
 
   const deleteSelected = useCallback(() => {
     if (!selectedId) return;
@@ -764,11 +888,7 @@ export default function Studio() {
         }
       }
       const shortcut = toolItems.find((item) => item.key.toLowerCase() === key);
-      if (shortcut) {
-        setTool(shortcut.id);
-        if (shortcut.id === "room") setLibraryTab("spaces");
-        if (shortcut.id === "stair") setLibraryTab("levels");
-      }
+      if (shortcut) activatePlanTool(shortcut.id);
       if ((event.key === "Backspace" || event.key === "Delete") && selectedId) deleteSelected();
       if (event.key === "Escape") {
         setSelectedId(undefined);
@@ -777,7 +897,7 @@ export default function Studio() {
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [commit, deleteSelected, redo, selectedId, undo]);
+  }, [activatePlanTool, commit, deleteSelected, redo, selectedId, undo]);
 
   useEffect(() => {
     const handleDismiss = (event: KeyboardEvent | MouseEvent) => {
@@ -879,7 +999,8 @@ export default function Studio() {
   const metrics = projectMetrics(project);
   const nativeStatus = toolStatus === "native";
   const navigationMode = project.view.navigationMode ?? "orbit";
-  const activeIssue = validation.issues.find((issue) => issue.id === activeIssueId);
+  const activeIssue = validation.issues.find((issue) => issue.id === activeIssueId
+    && (!issue.elementIds.length || issue.elementIds.some((id) => elementIsOnFloor(project, id, project.view.activeFloorId))));
   const activeIssueIndex = activeIssue ? validation.issues.findIndex((issue) => issue.id === activeIssue.id) : -1;
   const filteredActivity = project.activity.filter((entry) => {
     const isView = presentationOperations.has(entry.operation as ArchitectureOperation["type"]);
@@ -921,12 +1042,22 @@ export default function Studio() {
   const focusIssue = (issueId: string) => {
     const issue = validation.issues.find((item) => item.id === issueId);
     if (!issue) return;
+    const issueFloorIds = Array.from(new Set(issue.elementIds.flatMap((id) => elementFloorIds(projectRef.current, id))));
+    const targetFloorId = issueFloorIds.includes(projectRef.current.view.activeFloorId)
+      ? projectRef.current.view.activeFloorId
+      : issueFloorIds[0];
+    const targetElementId = targetFloorId
+      ? issue.elementIds.find((id) => elementIsOnFloor(projectRef.current, id, targetFloorId))
+      : issue.elementIds[0];
+    if (targetFloorId && targetFloorId !== projectRef.current.view.activeFloorId) {
+      safeCommit({ type: "set_active_floor", floorId: targetFloorId });
+    }
     setActiveIssueId(issue.id);
     setInspectorTab("properties");
     setInspectorOpen(true);
-    if (issue.elementIds[0]) {
-      setSelectedId(issue.elementIds[0]);
-      safeCommit({ type: "focus_element", elementId: issue.elementIds[0] });
+    if (targetElementId) {
+      setSelectedId(targetElementId);
+      safeCommit({ type: "focus_element", elementId: targetElementId });
     }
   };
 
@@ -939,22 +1070,39 @@ export default function Studio() {
   const openRoomLibrary = () => {
     setLibraryOpen(true);
     setLibraryTab("spaces");
-    setTool("room");
+    activatePlanTool("room");
   };
 
-  const addDefaultBalcony = (kind: "balcony" | "terrace") => {
-    const width = Math.min(10, project.plot.width - 2);
-    const length = Math.min(6, project.plot.length - 2);
-    safeCommit({
-      type: "add_balcony",
-      floorId: activeFloor.id,
-      name: kind === "terrace" ? "Front Terrace" : "Front Balcony",
-      kind,
-      x: Math.max(0, (project.plot.width - width) / 2),
-      y: 0,
-      width,
-      length,
-    });
+  const startBalconyPlacement = (kind: "balcony" | "terrace") => {
+    setBalconyKind(kind);
+    activatePlanTool("balcony");
+    notify(`Click the plan to place the ${kind}`);
+  };
+
+  const createBalconyAt = (point: { x: number; y: number }) => {
+    const width = Math.min(10, project.plot.width);
+    const length = Math.min(6, project.plot.length);
+    const x = Math.max(0, Math.min(point.x - width / 2, project.plot.width - width));
+    const y = Math.max(0, Math.min(point.y - length / 2, project.plot.length - length));
+    const label = balconyKind === "terrace" ? "Terrace" : "Balcony";
+    const count = project.balconies.filter((item) => item.kind === balconyKind).length + 1;
+    try {
+      const outcome = commit({
+        type: "add_balcony",
+        floorId: project.view.activeFloorId,
+        name: count > 1 ? `${label} ${count}` : label,
+        kind: balconyKind,
+        x: Math.round(x * 2) / 2,
+        y: Math.round(y * 2) / 2,
+        width,
+        length,
+      });
+      const balcony = outcome.result.balcony as { id?: string } | undefined;
+      if (balcony?.id) setSelectedId(balcony.id);
+      setTool("select");
+    } catch {
+      // commit handles the error.
+    }
   };
 
   const addDefaultFacadeFeature = (kind: FacadeFeatureKind) => {
@@ -974,14 +1122,24 @@ export default function Studio() {
     }
   }, [commit]);
 
+  const addOpeningAt = (kind: "door" | "window", wallId: string, offset: number) => {
+    try {
+      commit({ type: "add_opening", kind, wallId, offset });
+      setTool("select");
+    } catch {
+      // commit handles the error and keeps the placement tool active for another try.
+    }
+  };
+
   const createRoomAt = (point: { x: number; y: number }, type: RoomType) => {
     const [defaultWidth, defaultLength] = defaultRoomSize[type];
     const width = Math.min(defaultWidth, project.plot.width);
     const length = Math.min(defaultLength, project.plot.length);
     const x = Math.max(0, Math.min(point.x - width / 2, project.plot.width - width));
     const y = Math.max(0, Math.min(point.y - length / 2, project.plot.length - length));
+    // Every repeat of a room type is numbered, so no two rooms arrive with the same name.
     const count = project.rooms.filter((room) => room.type === type).length + 1;
-    const numbered = ["Bedroom", "Bathroom", "Custom"].includes(type) && count > 1;
+    const numbered = count > 1;
     try {
       const outcome = commit({
         type: "create_room",
@@ -1107,13 +1265,13 @@ export default function Studio() {
     const newer = pastRef.current.slice(index + 1).map(cloneProject).reverse();
     pastRef.current = pastRef.current.slice(0, index).map(cloneProject);
     futureRef.current = [current, ...newer];
-    const restored = cloneProject(snapshot);
+    const restored = restoreDesignSnapshot(snapshot, current);
     projectRef.current = restored;
     setProject(restored);
     saveProjectLocally(restored);
     setSavedVersion(restored.version);
     setValidation(validateLayout(restored));
-    setSelectedId(undefined);
+    setSelectedId(restored.view.focusElementId);
     setPastCount(pastRef.current.length);
     setFutureCount(futureRef.current.length);
     notify(`Restored design version ${restored.version}`);
@@ -1163,7 +1321,7 @@ export default function Studio() {
                 <button type="button" onClick={saveCurrentProject}><Save size={14} />Save now</button>
                 <button type="button" onClick={createProject}><FilePlus2 size={14} />New</button>
                 <button type="button" onClick={duplicateProject}><Copy size={14} />Duplicate</button>
-                <button type="button" onClick={() => { exportPlan("json", true); setProjectMenuOpen(false); notify("Project JSON exported"); }}><FileJson size={14} />Project JSON</button>
+                <button type="button" onClick={() => downloadExport("json")}><FileJson size={14} />Project JSON</button>
                 <button type="button" onClick={() => importInputRef.current?.click()}><Upload size={14} />Import</button>
                 <button type="button" className="is-danger" onClick={removeCurrentProject}><Trash2 size={14} />Delete</button>
               </div>
@@ -1204,9 +1362,9 @@ export default function Studio() {
             </button>
             {exportOpen && (
               <div ref={exportMenuRef} id="export-menu" className="export-menu" role="menu" aria-label="Export options">
-                <button type="button" role="menuitem" onClick={() => { exportPlan("json", true); setExportOpen(false); notify("Project JSON exported"); }}><FileJson size={17} /><span><b>Project JSON</b><small>archmorph-project-v{project.version}.json · editable backup</small></span></button>
-                <button type="button" role="menuitem" disabled={project.view.mode !== "2d"} onClick={() => { exportPlan("svg", true); setExportOpen(false); notify("Floor plan SVG exported"); }}><FileImage size={17} /><span><b>Floor plan SVG</b><small>{project.view.mode === "2d" ? `archmorph-plan-v${project.version}.svg · active floor` : "Switch to Floor plan first"}</small></span></button>
-                <button type="button" role="menuitem" onClick={() => { void captureSnapshot({ download: true }); setExportOpen(false); }}><Maximize2 size={17} /><span><b>Current view PNG</b><small>archmorph-{project.view.mode === "2d" ? "2d" : `3d-${navigationMode}`}-v{project.version}.png</small></span></button>
+                <button type="button" role="menuitem" onClick={() => downloadExport("json")}><FileJson size={17} /><span><b>Project JSON</b><small>archmorph-project-v{project.version}.json · editable backup</small></span></button>
+                <button type="button" role="menuitem" disabled={project.view.mode !== "2d"} onClick={() => downloadExport("svg")}><FileImage size={17} /><span><b>Floor plan SVG</b><small>{project.view.mode === "2d" ? `archmorph-plan-v${project.version}.svg · active floor` : "Switch to Floor plan first"}</small></span></button>
+                <button type="button" role="menuitem" onClick={() => void downloadSnapshot()}><Maximize2 size={17} /><span><b>Current view PNG</b><small>archmorph-{project.view.mode === "2d" ? "2d" : `3d-${navigationMode}`}-v{project.version}.png</small></span></button>
               </div>
             )}
           </div>
@@ -1223,11 +1381,7 @@ export default function Studio() {
                   key={item.id}
                   type="button"
                   className={tool === item.id ? "is-active" : ""}
-                  onClick={() => {
-                    setTool(item.id);
-                    if (item.id === "room") setLibraryTab("spaces");
-                    if (item.id === "stair") setLibraryTab("levels");
-                  }}
+                  onClick={() => activatePlanTool(item.id)}
                   title={`${item.label} (${item.key})`}
                   aria-label={`${item.label} (${item.key})`}
                   aria-pressed={tool === item.id}
@@ -1290,7 +1444,7 @@ export default function Studio() {
                     type="button"
                     key={type}
                     className={roomType === type && tool === "room" ? "is-active" : ""}
-                    onClick={() => { setRoomType(type); setTool("room"); }}
+                    onClick={() => { setRoomType(type); activatePlanTool("room"); }}
                   >
                     <span style={{ background: roomSwatches[type] }} />
                     <div><b>{type}</b><small>{defaultRoomSize[type][0]}′ × {defaultRoomSize[type][1]}′ default</small></div>
@@ -1335,8 +1489,8 @@ export default function Studio() {
             </Section>
 
             <Section title="Stairs" action={<span className="section-hint">CLICK TO PLACE</span>}>
-              <label className="field field-full"><span>Stair configuration</span><select value={stairType} onChange={(event) => { setStairType(event.target.value as StairType); setTool("stair"); }}><option value="straight">Straight · one flight</option><option value="l-shaped">L-shaped · 90° quarter turn</option><option value="u-shaped">U-shaped · 180° half turn</option></select></label>
-              <button type="button" className={`walk-inside-button ${tool === "stair" ? "is-active" : ""}`} onClick={() => setTool("stair")}><Layers3 size={15} /> Place {stairTypeLabel[stairType]} stair</button>
+              <label className="field field-full"><span>Stair configuration</span><select value={stairType} onChange={(event) => { setStairType(event.target.value as StairType); activatePlanTool("stair"); }}><option value="straight">Straight · one flight</option><option value="l-shaped">L-shaped · 90° quarter turn</option><option value="u-shaped">U-shaped · 180° half turn</option></select></label>
+              <button type="button" className={`walk-inside-button ${tool === "stair" ? "is-active" : ""}`} onClick={() => activatePlanTool("stair")}><Layers3 size={15} /> Place {stairTypeLabel[stairType]} stair</button>
               <p className="technical-note">{stairType === "u-shaped" ? "Two parallel flights reverse 180° at a half landing for a compact stacked stair core." : stairType === "l-shaped" ? "Two perpendicular flights turn 90° at a quarter landing to fit a room corner." : "One continuous flight with access at opposite ends."} Both connected floors require a clear approach outside the stair.</p>
             </Section>
           </div>
@@ -1355,8 +1509,8 @@ export default function Studio() {
             <Section title="Exterior systems" action={<span className="section-hint">LIGHTWEIGHT</span>}>
               {!activeFloorRooms.length && <p className="technical-note is-locked">Place the first room to unlock hosted balconies and façade features.</p>}
               <div className="room-library">
-                <button type="button" disabled={!activeFloorRooms.length} onClick={() => addDefaultBalcony(activeFloor.level > 0 ? "balcony" : "terrace")}>
-                  <span style={{ background: "#b8aea0" }} /><div><b>{activeFloor.level > 0 ? "Add balcony" : "Add terrace"}</b><small>Slab + configurable railing</small></div><Plus size={14} />
+                <button type="button" disabled={!activeFloorRooms.length} className={tool === "balcony" ? "is-active" : ""} onClick={() => startBalconyPlacement(activeFloor.level > 0 ? "balcony" : "terrace")}>
+                  <span style={{ background: "#b8aea0" }} /><div><b>{activeFloor.level > 0 ? "Add balcony" : "Add terrace"}</b><small>Click the plan to place · slab + railing</small></div><Plus size={14} />
                 </button>
                 {(["canopy", "frame", "sunshade"] as FacadeFeatureKind[]).map((kind) => (
                   <button type="button" key={kind} disabled={!activeFloorRooms.length} onClick={() => addDefaultFacadeFeature(kind)}>
@@ -1375,7 +1529,7 @@ export default function Studio() {
               <p className="technical-note element-intro">Select an element here to inspect it without using the drawing canvas.</p>
               <div className="element-navigator">
                 {navigableElements.map((element) => (
-                  <button key={element.id} type="button" className={selectedId === element.id ? "is-active" : ""} aria-current={selectedId === element.id ? "true" : undefined} onClick={() => selectElement(element.id)}>
+                  <button key={element.id} type="button" title={elementLabel(project, element.id)} className={selectedId === element.id ? "is-active" : ""} aria-current={selectedId === element.id ? "true" : undefined} onClick={() => selectElement(element.id)}>
                     {element.kind === "room" ? <Square size={14} /> : element.kind === "wall" ? <Minus size={14} /> : element.kind === "opening" ? <DoorOpen size={14} /> : element.kind === "stair" ? <Layers3 size={14} /> : <PanelTop size={14} />}
                     <span><b>{elementLabel(project, element.id).split(" · ")[0]}</b><small>{elementLabel(project, element.id).split(" · ").slice(1).join(" · ") || activeFloor.name}</small></span>
                     <ChevronRight size={14} />
@@ -1413,7 +1567,7 @@ export default function Studio() {
               )}
               {project.view.mode === "2d" && <IconButton label={showPlanLabels ? "Hide room labels" : "Show room labels"} active={showPlanLabels} onClick={() => setShowPlanLabels((value) => !value)}><Eye size={16} /></IconButton>}
               <button type="button" className="labeled-control" aria-label="Focus whole project" onClick={() => safeCommit({ type: "focus_element" })}><Scan size={16} /><span>Fit</span></button>
-              <button type="button" className="labeled-control" aria-label="Capture current view as PNG" onClick={() => void captureSnapshot({ download: true })}><Maximize2 size={16} /><span>Snapshot</span></button>
+              <button type="button" className="labeled-control" aria-label="Capture current view as PNG" onClick={() => void downloadSnapshot()}><Maximize2 size={16} /><span>Snapshot</span></button>
               <IconButton label="Open inspector" onClick={() => setInspectorOpen(true)}><PanelRightOpen size={17} /></IconButton>
             </div>
           </div>
@@ -1434,10 +1588,11 @@ export default function Studio() {
                 onUpdateRoomVertices={(roomId, vertices) => safeCommit({ type: "update_room_vertices", roomId, vertices })}
                 onAddWall={(start, end) => safeCommit({ type: "add_wall", floorId: project.view.activeFloorId, x1: start.x, y1: start.y, x2: end.x, y2: end.y })}
                 onMoveWall={(wallId, dx, dy) => safeCommit({ type: "move_wall", wallId, dx, dy })}
-                onAddOpening={(kind, wallId, offset) => safeCommit({ type: "add_opening", kind, wallId, offset })}
-                onRemoveOpening={(openingId) => safeCommit({ type: "delete_element", elementId: openingId })}
+                onAddOpening={addOpeningAt}
                 onAddStair={createStairAt}
                 onMoveStair={(stairId, x, y) => safeCommit({ type: "update_stairs", stairId, x, y })}
+                onAddBalcony={createBalconyAt}
+                onMoveBalcony={(balconyId, x, y) => safeCommit({ type: "update_balcony", balconyId, x, y })}
               />
             ) : (
               <ModelView
@@ -1463,8 +1618,8 @@ export default function Studio() {
 
           <div className="statusbar">
             <span><span className="status-dot" /> {activeFloor.name}</span>
-            <span>{toolItems.find((item) => item.id === tool)?.label}</span>
-            <span className="status-message">{project.view.mode === "3d" && navigationMode === "walk" ? "WASD / arrows to move · Follow the stair flights and landing to change levels · Minimap tracks your floor and room" : tool === "room" ? `Click the plot to place a ${roomType.toLowerCase()}` : tool === "stair" ? `Click the plan to place a ${stairTypeLabel[stairType]} stair between adjacent floors` : tool === "door" || tool === "window" ? `Click a wall to add a ${tool} · Click an existing ${tool} to remove it` : project.view.mode === "3d" ? "Drag to orbit · Right-drag or Shift-drag to pan · Scroll to zoom" : "Drag rooms and stairs to move · Draw walls with orthogonal / 45° snapping"}</span>
+            <span>{tool === "balcony" ? `Place ${balconyKind}` : toolItems.find((item) => item.id === tool)?.label}</span>
+            <span className="status-message">{project.view.mode === "3d" && navigationMode === "walk" ? "WASD / arrows to move · Click to lock look or drag to look · Follow stairs to change levels" : tool === "room" ? `Click the plot to place a ${roomType.toLowerCase()}` : tool === "stair" ? `Click the plan to place a ${stairTypeLabel[stairType]} stair between adjacent floors` : tool === "door" || tool === "window" ? `Click any wall to add one ${tool}; placement exits after success` : tool === "balcony" ? `Click the plan to place a ${balconyKind} · drag it afterwards to reposition` : tool === "wall" ? "Drag to draw a wall, or click the start then the end · 45° snapping · Esc cancels" : tool === "measure" ? "Drag between two points, or click the start then the end · Esc cancels" : project.view.mode === "3d" ? "Drag to orbit · Right-drag or Shift-drag to pan · Scroll to zoom" : "Drag rooms, stairs, balconies, terraces, and independent walls to move"}</span>
             {debugMode && <span>Project v{project.version}</span>}
           </div>
         </section>
@@ -1701,7 +1856,7 @@ export default function Studio() {
                   {filteredActivity.map((entry) => (
                     <div key={entry.id} className={`activity-item actor-${entry.actor}`}>
                       <span className="activity-avatar">{entry.actor === "agent" ? <Sparkles size={12} /> : entry.actor === "human" ? "Y" : "S"}</span>
-                      <div><p>{entry.description}</p><small>{formatTime(entry.timestamp)}{debugMode ? ` · v${entry.version}` : ""}</small></div>
+                      <div><p>{entry.description}</p><small>{formatActivityTime(entry.timestamp)}{debugMode ? ` · v${entry.version}` : ""}</small></div>
                     </div>
                   ))}
                   {!filteredActivity.length && <p className="empty-activity">No {activityFilter} activity yet.</p>}
@@ -1713,7 +1868,7 @@ export default function Studio() {
               <div className="checks-panel">
                 <div className={`check-summary ${validation.status === "pass" ? "is-pass" : ""}`}>
                   <span>{validation.status === "pass" ? <Check size={20} /> : <CircleAlert size={20} />}</span>
-                  <div><h2>{validation.status === "pass" ? "Layout looks clear" : `${validation.issueCount} layout ${validation.issueCount === 1 ? "issue" : "issues"}`}</h2><p>{validation.status === "pass" ? "No obvious geometric issues detected." : `${validation.errors} errors · ${validation.warnings} warnings`}</p></div>
+                  <div><h2>{validation.status === "pass" ? "Layout looks clear" : `${validation.issueCount} layout ${validation.issueCount === 1 ? "issue" : "issues"}`}</h2><p>{validation.status === "pass" ? "No obvious geometric issues detected." : `${validation.errors} ${validation.errors === 1 ? "error" : "errors"} · ${validation.warnings} ${validation.warnings === 1 ? "warning" : "warnings"}`}</p></div>
                 </div>
                 <button className="validate-button" type="button" onClick={runValidation}><Check size={15} /> Validate current layout</button>
                 <div className="issue-list">
@@ -1741,7 +1896,7 @@ export default function Studio() {
           <section className="help-dialog" role="dialog" aria-modal="true" aria-labelledby="studio-help-title">
             <div className="modal-heading"><div><span><CircleHelp size={18} /></span><div><small>STUDIO GUIDE</small><h2 id="studio-help-title">Design with confidence</h2></div></div><button ref={helpCloseRef} type="button" onClick={() => setHelpOpen(false)} aria-label="Close help"><X size={18} /></button></div>
             <div className="help-grid">
-              <div><h3>Getting started</h3><ol><li>Place rooms from the Design library.</li><li>Add openings and stairs directly on the plan.</li><li>Use Properties for precise dimensions.</li><li>Run Checks, then explore the model in 3D.</li></ol></div>
+              <div><h3>Getting started</h3><ol><li>Place rooms from the Design library.</li><li>Draw walls and measurements by dragging, or by clicking the start point and then the end point.</li><li>Click once to place rooms, openings, stairs, balconies, and terraces.</li><li>Use Select to drag rooms, stairs, balconies, terraces, and independent walls.</li><li>Use Properties for precise dimensions, then run Checks and explore in 3D.</li></ol></div>
               <div><h3>Keyboard shortcuts</h3><dl>{toolItems.map((item) => <div key={item.id}><dt><kbd>{item.key}</kbd></dt><dd>{item.label}</dd></div>)}<div><dt><kbd>Arrows</kbd></dt><dd>Move a selected room by 6 in; hold Shift for 1 ft</dd></div><div><dt><kbd>⌥ + ↑</kbd></dt><dd>Resize a selected room; hold Shift for 1 ft</dd></div><div><dt><kbd>⌘Z</kbd></dt><dd>Undo design edit</dd></div><div><dt><kbd>?</kbd></dt><dd>Open this guide</dd></div><div><dt><kbd>Esc</kbd></dt><dd>Close or return to Select</dd></div></dl></div>
             </div>
             <p className="help-note"><b>Your work stays on this device.</b> ArchMorph autosaves locally. Export Project JSON for a portable backup. Layout Checks are geometric guidance, not building-code, structural, or permit approval.</p>
@@ -1780,7 +1935,7 @@ export default function Studio() {
         </div>
       )}
 
-      {toast && <div className="toast" role="status" aria-live="polite"><Check size={15} /><span>{toast.message}</span>{toast.action === "undo" && <button type="button" onClick={() => { undo(); setToast(undefined); }}>Undo</button>}</div>}
+      {toast && <div className="toast" role="status" aria-live="polite"><Check size={15} /><span>{toast.message}</span>{toast.action === "undo" && <button type="button" onClick={() => { undo(); setToast(undefined); }}>Undo</button>}{toast.download && <><a href={toast.download.url} download={toast.download.filename} onClick={() => window.setTimeout(() => setToast(undefined), 250)}>Save file</a><a href={toast.download.url} target="_blank" rel="noopener noreferrer">Open preview</a></>}</div>}
     </main>
   );
 }

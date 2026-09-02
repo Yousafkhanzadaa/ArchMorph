@@ -133,8 +133,9 @@ code, kbd, pre { font-family: var(--font-geist-mono), monospace; }
 .element-navigator button { min-height: 42px; display: grid; grid-template-columns: 18px minmax(0, 1fr) 14px; align-items: center; gap: 7px; padding: 6px 7px; border: 1px solid transparent; border-radius: 4px; background: transparent; text-align: left; cursor: pointer; }
 .element-navigator button:hover, .element-navigator button.is-active { border-color: #d2d7d2; background: #eef1ed; }
 .element-navigator button > span { min-width: 0; display: grid; gap: 2px; }
-.element-navigator b, .element-navigator small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.element-navigator b { font-size: 11px; }
+.element-navigator b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+/* The detail that tells two similar elements apart lives here, so it wraps rather than being clipped. */
+.element-navigator small { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
 .element-navigator small, .empty-elements { color: #68716c; font-size: 10px; }
 .empty-elements { margin: 4px 0 0; }
 
@@ -154,9 +155,9 @@ code, kbd, pre { font-family: var(--font-geist-mono), monospace; }
 .labeled-control:hover { border-color: var(--line); background: #f4f5f2; }
 .design-viewport { min-height: 0; min-width: 0; position: relative; overflow: hidden; background: #f0efea; }
 .floor-plan { display: block; width: 100%; height: 100%; touch-action: none; user-select: none; }
-.floor-plan--select .room-group rect, .floor-plan--select .wall-hit-target, .opening, .stair { cursor: pointer; }
+.floor-plan--select .room-group rect, .floor-plan--select .wall-hit-target, .floor-plan--select .balcony, .opening, .stair { cursor: pointer; }
 .floor-plan--room { cursor: crosshair; }
-.floor-plan--wall, .floor-plan--stair, .floor-plan--measure { cursor: crosshair; }
+.floor-plan--wall, .floor-plan--stair, .floor-plan--measure, .floor-plan--balcony { cursor: crosshair; }
 .floor-plan--door .wall-hit-target, .floor-plan--window .wall-hit-target { cursor: copy; }
 .wall-hit-target { stroke: transparent; stroke-width: 18px; pointer-events: stroke; }
 .opening-hit-target { fill: transparent; stroke: none; pointer-events: all; }
@@ -175,6 +176,9 @@ code, kbd, pre { font-family: var(--font-geist-mono), monospace; }
 .resize-handle { fill: var(--accent); stroke: white; stroke-width: .15; cursor: nwse-resize; }
 .room-vertex-handle { cursor: move; }
 .opening { cursor: pointer; }
+.balcony.is-selected rect { filter: drop-shadow(0 0 .34px rgb(211 95 55 / 80%)); }
+.span-anchor { fill: var(--accent); stroke: white; stroke-width: .08; }
+.measurement.is-armed line { stroke-dasharray: .5 .3; }
 .stair polygon, .stair rect, .stair line, .stair polyline { fill: #aeb5ae33; stroke: #45534b; stroke-width: .08; }
 .stair .stair-access-zone { fill: rgb(211 127 82 / 7%); stroke: #b56d47; stroke-dasharray: .3 .22; }
 .stair .stair-landing { fill: rgb(69 83 75 / 18%); }
@@ -208,7 +212,13 @@ code, kbd, pre { font-family: var(--font-geist-mono), monospace; }
 .model-view__walk-help { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); pointer-events: none; display: flex; align-items: center; gap: 9px; padding: 8px 11px; border: 1px solid rgb(255 255 255 / 38%); border-radius: 5px; background: rgb(28 39 34 / 82%); color: #f4f5f1; box-shadow: 0 6px 18px rgb(20 28 24 / 16%); backdrop-filter: blur(8px); white-space: nowrap; }
 .model-view__walk-help b { font-size: 10px; letter-spacing: .12em; color: #b7d5c2; }
 .model-view__walk-help span { font-size: 10px; color: #d9dfdb; }
-.model-view[data-pointer-locked="true"] .model-view__walk-help { opacity: .42; }
+.model-view[data-pointer-locked="true"] .model-view__walk-help,
+.model-view[data-drag-looking="true"] .model-view__walk-help { opacity: .42; }
+.model-view__gl-error { display: none; position: absolute; z-index: 3; inset: 50% auto auto 50%; transform: translate(-50%, -50%); max-width: 380px; gap: 7px; padding: 18px 20px; border: 1px solid var(--line-dark); border-radius: 7px; background: rgb(249 250 247 / 96%); text-align: center; box-shadow: 0 10px 30px rgb(20 28 24 / 14%); }
+.model-view[data-webgl-unavailable="true"] .model-view__gl-error { display: grid; }
+.model-view__gl-error span { font-size: 10px; font-weight: 700; letter-spacing: .12em; color: #9a5b3c; }
+.model-view__gl-error strong { font-size: 14px; }
+.model-view__gl-error p { margin: 0; font-size: 11px; line-height: 1.5; color: #5f6963; }
 .model-view__sync { position: absolute; top: 12px; left: 12px; pointer-events: none; display: flex; align-items: center; padding: 7px 9px; border-radius: 3px; background: rgb(249 250 247 / 90%); color: #48564e; font-size: 10px; font-weight: 700; letter-spacing: .06em; backdrop-filter: blur(6px); }
 .model-view__sync span { width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: #668d74; box-shadow: 0 0 0 3px rgb(102 141 116 / 13%); }
 .walk-minimap { position: absolute; z-index: 2; left: 14px; bottom: 14px; width: 176px; max-height: min(38vh, 250px); pointer-events: none; display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; border: 1px solid rgb(238 244 240 / 32%); border-radius: 7px; background: rgb(25 35 30 / 86%); color: #f3f6f3; box-shadow: 0 10px 28px rgb(13 21 17 / 24%); backdrop-filter: blur(9px); }
@@ -401,7 +411,7 @@ code, kbd, pre { font-family: var(--font-geist-mono), monospace; }
 .help-note { margin: 0; padding: 14px 22px 18px; border-top: 1px solid var(--line); color: #626c66; font-size: 10px; line-height: 1.55; }
 .toast { position: fixed; z-index: 100; bottom: 72px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; min-height: 40px; max-width: min(520px, calc(100vw - 28px)); padding: 6px 13px; background: #1e2923; color: #fff; border-radius: 4px; box-shadow: var(--shadow); font-size: 10px; animation: toast-in .18s ease-out; }
 .toast > span { min-width: 0; }
-.toast > button { min-height: 30px; padding: 0 9px; border: 1px solid rgb(255 255 255 / 28%); border-radius: 3px; background: transparent; color: #fff; font-size: 10px; font-weight: 800; cursor: pointer; }
+.toast > button, .toast > a { min-height: 30px; display: inline-flex; align-items: center; padding: 0 9px; border: 1px solid rgb(255 255 255 / 28%); border-radius: 3px; background: transparent; color: #fff; font-size: 10px; font-weight: 800; text-decoration: none; cursor: pointer; }
 @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } }
 
 @media (max-width: 1180px) {

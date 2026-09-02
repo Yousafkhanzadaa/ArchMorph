@@ -143,7 +143,16 @@ export default function ModelView({
 
     const camera = new THREE.PerspectiveCamera(navigationMode === "walk" ? 68 : 34, 1, 0.1, 500);
     camera.rotation.order = "YXZ";
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+    // A browser without WebGL (hardware acceleration off, a locked-down embedded view) must cost the
+    // user the 3D view only. Letting this throw would take the whole studio down with it.
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+    } catch {
+      host.dataset.webglUnavailable = "true";
+      return;
+    }
+    host.dataset.webglUnavailable = "false";
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.shadowMap.enabled = true;
@@ -814,13 +823,47 @@ export default function ModelView({
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
     let selectionPointerStart: { x: number; y: number } | undefined;
+    let dragLook: { pointerId: number; x: number; y: number } | undefined;
+    const updateLook = (movementX: number, movementY: number) => {
+      yaw -= movementX * 0.0022;
+      pitch = Math.max(-Math.PI * 0.46, Math.min(Math.PI * 0.46, pitch - movementY * 0.0022));
+      camera.rotation.set(pitch, yaw, 0);
+    };
     const handleSelectionPointerDown = (event: PointerEvent) => {
       selectionPointerStart = event.button === 0 ? { x: event.clientX, y: event.clientY } : undefined;
+      if (navigationMode === "walk" && event.button === 0) {
+        canvas.focus();
+        dragLook = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+        canvas.setPointerCapture(event.pointerId);
+        host.dataset.dragLooking = "true";
+      }
+    };
+    const handleSelectionPointerMove = (event: PointerEvent) => {
+      if (navigationMode !== "walk" || document.pointerLockElement === canvas || dragLook?.pointerId !== event.pointerId) return;
+      updateLook(event.clientX - dragLook.x, event.clientY - dragLook.y);
+      dragLook = { ...dragLook, x: event.clientX, y: event.clientY };
+    };
+    const finishDragLook = (event: PointerEvent) => {
+      if (dragLook?.pointerId !== event.pointerId) return;
+      if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+      dragLook = undefined;
+      host.dataset.dragLooking = "false";
     };
     const handleClick = (event: MouseEvent) => {
       if (navigationMode === "walk") {
         canvas.focus();
-        void canvas.requestPointerLock();
+        const pointerTravel = selectionPointerStart
+          ? Math.hypot(event.clientX - selectionPointerStart.x, event.clientY - selectionPointerStart.y)
+          : 0;
+        selectionPointerStart = undefined;
+        if (pointerTravel <= 4) {
+          const markPointerLockUnavailable = () => { host.dataset.pointerLockUnavailable = "true"; };
+          try {
+            Promise.resolve(canvas.requestPointerLock()).catch(markPointerLockUnavailable);
+          } catch {
+            markPointerLockUnavailable();
+          }
+        }
         return;
       }
       const pointerTravel = selectionPointerStart
@@ -836,6 +879,9 @@ export default function ModelView({
       onSelect(hit?.object.userData.elementId);
     };
     canvas.addEventListener("pointerdown", handleSelectionPointerDown);
+    canvas.addEventListener("pointermove", handleSelectionPointerMove);
+    canvas.addEventListener("pointerup", finishDragLook);
+    canvas.addEventListener("pointercancel", finishDragLook);
     canvas.addEventListener("click", handleClick);
 
     const activeFloor = project.floors.find((floor) => floor.id === project.view.activeFloorId) ?? project.floors[0];
@@ -986,9 +1032,7 @@ export default function ModelView({
     const handleKeyUp = (event: KeyboardEvent) => pressed.delete(event.code);
     const handleMouseMove = (event: MouseEvent) => {
       if (navigationMode !== "walk" || document.pointerLockElement !== canvas) return;
-      yaw -= event.movementX * 0.0022;
-      pitch = Math.max(-Math.PI * 0.46, Math.min(Math.PI * 0.46, pitch - event.movementY * 0.0022));
-      camera.rotation.set(pitch, yaw, 0);
+      updateLook(event.movementX, event.movementY);
     };
     const updatePointerState = () => {
       host.dataset.pointerLocked = String(document.pointerLockElement === canvas);
@@ -1035,6 +1079,8 @@ export default function ModelView({
       canvas.dataset.cameraX = camera.position.x.toFixed(2);
       canvas.dataset.cameraY = camera.position.y.toFixed(2);
       canvas.dataset.cameraZ = camera.position.z.toFixed(2);
+      canvas.dataset.cameraYaw = yaw.toFixed(3);
+      canvas.dataset.cameraPitch = pitch.toFixed(3);
       if (navigationMode === "walk") {
         const marker = minimapMarkerRef.current;
         if (marker) {
@@ -1070,6 +1116,9 @@ export default function ModelView({
       cancelAnimationFrame(frame);
       observer.disconnect();
       canvas.removeEventListener("pointerdown", handleSelectionPointerDown);
+      canvas.removeEventListener("pointermove", handleSelectionPointerMove);
+      canvas.removeEventListener("pointerup", finishDragLook);
+      canvas.removeEventListener("pointercancel", finishDragLook);
       canvas.removeEventListener("click", handleClick);
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
@@ -1118,6 +1167,12 @@ export default function ModelView({
         aria-describedby="model-navigation-help model-sync-status"
       />
       <div className="model-view__horizon" aria-hidden="true" />
+      <div className="model-view__gl-error" role="alert">
+        <span>3D UNAVAILABLE</span>
+        <strong>This browser could not start WebGL.</strong>
+        <p>Turn on hardware acceleration, or open ArchMorph in a browser that supports WebGL.</p>
+        <p>The floor plan, editing, checks, history, and export all keep working — switch back to Floor plan to carry on.</p>
+      </div>
       {!project.rooms.length && (
         <div className="model-view__empty">
           <span>MODEL SPACE</span>
@@ -1227,7 +1282,7 @@ export default function ModelView({
           </aside>
           <div className="model-view__walk-help" id="model-navigation-help">
             <b>WALK MODE</b>
-            <span>Click canvas to look · WASD / arrows to move · Walk onto stairs to change levels · Esc releases mouse</span>
+            <span>Click to lock look, or drag to look · WASD / arrows to move · Walk onto stairs to change levels · Esc releases mouse</span>
           </div>
         </>
       ) : (

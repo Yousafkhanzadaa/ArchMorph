@@ -1222,8 +1222,8 @@ function overlappingOpening(project: Project, candidate: Opening, ignoredId?: st
 function assertOpeningPlacement(project: Project, opening: Opening, ignoredId?: string) {
   const wall = project.walls.find((item) => item.id === opening.wallId);
   if (!wall) throw new Error(`Wall ${opening.wallId} does not exist.`);
-  if (wall.roomIds.length < 1 || wall.roomIds.length > 2) {
-    throw new Error(`The ${opening.kind} must be hosted by an exterior wall or one canonical wall shared by two rooms.`);
+  if (wall.roomIds.length > 2) {
+    throw new Error(`The ${opening.kind} cannot be hosted by a wall shared by more than two rooms.`);
   }
   const length = wallLength(wall);
   if (opening.width <= 0 || opening.offset < opening.width / 2 || opening.offset > length - opening.width / 2) {
@@ -1601,7 +1601,7 @@ export function rebuildCanonicalTopology(
       .sort((a, b) => a.placement.distance - b.placement.distance || b.wall.roomIds.length - a.wall.roomIds.length);
     const candidate = candidates[0];
     if (!candidate) {
-      if (strict) throw new Error(`The ${opening.kind} ${opening.id} no longer fits a valid canonical wall.`);
+      if (strict) throw new Error(`The ${opening.kind} ${opening.id} no longer fits a valid host wall.`);
       continue;
     }
     migratedOpenings.push({ ...opening, wallId: candidate.wall.id, offset: round(candidate.placement.offset) });
@@ -2071,6 +2071,31 @@ function displayName(project: Project, id: string) {
     project.facadeFeatures.find((item) => item.id === id)?.kind?.concat(" façade feature") ??
     id
   );
+}
+
+/** Floors on which an element can be selected and edited. Connected stairs belong to both landings. */
+export function elementFloorIds(project: Project, id: string) {
+  const direct = [
+    project.rooms.find((item) => item.id === id),
+    project.walls.find((item) => item.id === id),
+    project.openings.find((item) => item.id === id),
+    project.balconies.find((item) => item.id === id),
+  ].find(Boolean);
+  if (direct) return [direct.floorId];
+  const stair = project.stairs.find((item) => item.id === id);
+  if (stair) {
+    const connection = stairConnection(project, stair);
+    return connection
+      ? Array.from(new Set([connection.lowerFloor.id, connection.upperFloor.id]))
+      : [stair.floorId];
+  }
+  const feature = project.facadeFeatures.find((item) => item.id === id);
+  const hostWall = feature ? project.walls.find((item) => item.id === feature.wallId) : undefined;
+  return hostWall ? [hostWall.floorId] : [];
+}
+
+export function elementIsOnFloor(project: Project, id: string, floorId: string) {
+  return elementFloorIds(project, id).includes(floorId);
 }
 
 export function applyOperation(
@@ -2661,6 +2686,7 @@ export function applyOperation(
       };
       project.floors.push(floor);
       project.view.activeFloorId = floor.id;
+      project.view.focusElementId = undefined;
       description = `${who} created ${floor.name}`;
       result = { floor };
       break;
@@ -2693,6 +2719,9 @@ export function applyOperation(
       const floor = project.floors.find((item) => item.id === operation.floorId);
       if (!floor) throw new Error(`Floor ${operation.floorId} does not exist.`);
       project.view.activeFloorId = floor.id;
+      if (project.view.focusElementId && !elementIsOnFloor(project, project.view.focusElementId, floor.id)) {
+        project.view.focusElementId = undefined;
+      }
       description = `${who} opened ${floor.name}`;
       result = { floor, view: project.view };
       break;
@@ -2796,10 +2825,13 @@ export function buildCirculationGraph(project: Project): CirculationGraph {
 
   project.openings.filter((opening) => opening.kind === "door").forEach((opening) => {
     const wall = project.walls.find((item) => item.id === opening.wallId);
-    if (!wall || wall.roomIds.length < 1 || wall.roomIds.length > 2) {
+    if (!wall || wall.roomIds.length > 2) {
       invalidDoorIds.push(opening.id);
       return;
     }
+    // A door in an independent wall (a garden gate, a screen wall) is a valid opening that simply
+    // joins no two spaces, so it carries no circulation edge and is not a broken host.
+    if (!wall.roomIds.length) return;
     if (wall.roomIds.length === 2) {
       edges.push({ id: `circulation-${opening.id}`, type: "door", from: wall.roomIds[0], to: wall.roomIds[1], openingId: opening.id });
       return;
@@ -3155,7 +3187,8 @@ export function validateLayout(project: Project, floorId?: string): ValidationRe
     const wall = project.walls.find((item) => item.id === opening.wallId);
     const length = wall ? wallLength(wall) : 0;
     const verticalInvalid = Boolean(wall && ((opening.sillHeight ?? 0) < 0 || opening.height <= 0 || (opening.sillHeight ?? 0) + opening.height > wall.height));
-    if (!wall || wall.roomIds.length < 1 || wall.roomIds.length > 2 || opening.offset < opening.width / 2 || opening.offset > length - opening.width / 2 || verticalInvalid) {
+    const invalid = !wall || wall.roomIds.length > 2 || opening.offset < opening.width / 2 || opening.offset > length - opening.width / 2 || verticalInvalid;
+    if (invalid) {
       issues.push({
         id: createId("issue"),
         code: "INVALID_OPENING",
@@ -3164,6 +3197,21 @@ export function validateLayout(project: Project, floorId?: string): ValidationRe
         elementIds: [opening.id, opening.wallId],
         evidence: { offset: opening.offset, width: opening.width, wallLength: round(length), height: opening.height, sillHeight: opening.sillHeight ?? 0, wallHeight: wall?.height ?? 0 },
         suggestion: `Reposition the ${opening.kind} within the wall or select another wall.`,
+      });
+    }
+    // Independent walls host openings legitimately, but a door in one is a gate rather than a
+    // room-to-room connection, so it is reported as guidance instead of an error.
+    if (!invalid && wall && !wall.roomIds.length && opening.kind === "door") {
+      issues.push({
+        id: createId("issue"),
+        code: "OPENING_WITHOUT_ADJACENCY",
+        severity: "warning",
+        message: "A door on an independent wall does not connect two spaces.",
+        elementIds: [opening.id, opening.wallId],
+        affectedOpeningId: opening.id,
+        evidence: { openingId: opening.id, wallId: opening.wallId, hostRoomCount: 0 },
+        suggestion: "Keep it if the wall is a screen or gate, or rehost the door onto an exterior wall or a wall shared by two rooms.",
+        possibleCorrection: "Use rehost_door with a canonical wall id and a valid offset if this opening should carry circulation.",
       });
     }
   }
