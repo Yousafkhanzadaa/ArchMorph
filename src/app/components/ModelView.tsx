@@ -1115,6 +1115,7 @@ export default function ModelView({
         ref={canvasRef}
         tabIndex={0}
         aria-label={`${navigationMode === "walk" ? "Walkthrough" : "Interactive 3D model"} of ${project.name}`}
+        aria-describedby="model-navigation-help model-sync-status"
       />
       <div className="model-view__horizon" aria-hidden="true" />
       {!project.rooms.length && (
@@ -1224,16 +1225,16 @@ export default function ModelView({
               </g>
             </svg>
           </aside>
-          <div className="model-view__walk-help">
+          <div className="model-view__walk-help" id="model-navigation-help">
             <b>WALK MODE</b>
             <span>Click canvas to look · WASD / arrows to move · Walk onto stairs to change levels · Esc releases mouse</span>
           </div>
         </>
       ) : (
-        <div className="model-view__help">ORBIT · DRAG &nbsp;&nbsp; PAN · RIGHT DRAG &nbsp;&nbsp; ZOOM · SCROLL</div>
+        <div className="model-view__help" id="model-navigation-help">ORBIT · DRAG &nbsp;&nbsp; PAN · RIGHT DRAG OR SHIFT-DRAG &nbsp;&nbsp; ZOOM · SCROLL</div>
       )}
-      <div className="model-view__sync" aria-label={`3D sync: ${doors} doors, ${windows} windows, and ${stairs} stairs`}>
-        <span /> 2D SYNCED&nbsp;&nbsp;·&nbsp;&nbsp;{doors} DOORS&nbsp;&nbsp;·&nbsp;&nbsp;{windows} WINDOWS&nbsp;&nbsp;·&nbsp;&nbsp;{stairs} STAIRS
+      <div className="model-view__sync" id="model-sync-status" aria-label={`3D sync: ${doors} ${doors === 1 ? "door" : "doors"}, ${windows} ${windows === 1 ? "window" : "windows"}, and ${stairs} ${stairs === 1 ? "staircase" : "staircases"}`}>
+        <span /> 2D SYNCED&nbsp;&nbsp;·&nbsp;&nbsp;{doors} {doors === 1 ? "DOOR" : "DOORS"}&nbsp;&nbsp;·&nbsp;&nbsp;{windows} {windows === 1 ? "WINDOW" : "WINDOWS"}&nbsp;&nbsp;·&nbsp;&nbsp;{stairs} {stairs === 1 ? "STAIRCASE" : "STAIRCASES"}
       </div>
     </div>
   );

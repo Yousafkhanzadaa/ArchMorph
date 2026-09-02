@@ -7,12 +7,17 @@ import {
   Building2,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   CircleAlert,
+  CircleHelp,
   Copy,
   Code2,
   DoorOpen,
   Download,
   Eye,
+  FileImage,
+  FileJson,
   FilePlus2,
   Footprints,
   Grid2X2,
@@ -22,6 +27,8 @@ import {
   Maximize2,
   Minus,
   MousePointer2,
+  PanelLeftOpen,
+  PanelRightOpen,
   PanelTop,
   Plus,
   Redo2,
@@ -36,12 +43,16 @@ import {
   Upload,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
+  type RefObject,
   type ReactNode,
 } from "react";
 import {
@@ -94,6 +105,8 @@ import FloorPlan, { type CanvasTool } from "./FloorPlan";
 import ModelView from "./ModelView";
 
 type InspectorTab = "properties" | "activity" | "checks";
+type ActivityFilter = "design" | "view" | "all";
+type ToastState = { message: string; action?: "undo" };
 type ToolStatus = "native" | "preview" | "registering";
 type ToolCall = {
   id: string;
@@ -136,6 +149,22 @@ const stairTypeLabel: Record<StairType, string> = {
   "u-shaped": "U-shaped",
 };
 
+const subscribeHydration = () => () => undefined;
+const getClientHydrationSnapshot = () => true;
+const getServerHydrationSnapshot = () => false;
+
+const presentationOperations = new Set<ArchitectureOperation["type"]>([
+  "set_active_floor",
+  "switch_view",
+  "set_navigation_mode",
+  "set_camera",
+  "focus_element",
+]);
+
+function isPresentationOperation(operation: ArchitectureOperation) {
+  return presentationOperations.has(operation.type);
+}
+
 const roomSwatches: Record<RoomType, string> = {
   "Living Room": "#e8b39c",
   Kitchen: "#d8d2a7",
@@ -153,6 +182,41 @@ function formatTime(timestamp: string) {
   return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(
     new Date(timestamp),
   );
+}
+
+function formatSavedTime(timestamp: string) {
+  const date = new Date(timestamp);
+  const today = new Date();
+  const sameDay = date.toDateString() === today.toDateString();
+  return sameDay ? `Saved ${formatTime(timestamp)}` : `Saved ${new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(date)}`;
+}
+
+function elementLabel(project: Project, id?: string) {
+  if (!id) return "Project site";
+  const floorName = (floorId: string) => project.floors.find((floor) => floor.id === floorId)?.name ?? "Unknown floor";
+  const room = project.rooms.find((item) => item.id === id);
+  if (room) return `${room.name} · ${floorName(room.floorId)}`;
+  const wall = project.walls.find((item) => item.id === id);
+  if (wall) {
+    const rooms = wall.roomIds.map((roomId) => project.rooms.find((item) => item.id === roomId)?.name).filter(Boolean).join(" / ");
+    return `${wall.exterior ? `${wallCardinalFacing(project, wall) ?? "Exterior"} façade` : rooms || "Independent wall"} · ${floorName(wall.floorId)}`;
+  }
+  const opening = project.openings.find((item) => item.id === id);
+  if (opening) {
+    const host = project.walls.find((item) => item.id === opening.wallId);
+    const rooms = host?.roomIds.map((roomId) => project.rooms.find((item) => item.id === roomId)?.name).filter(Boolean).join(" / ");
+    return `${opening.kind === "door" ? "Door" : "Window"}${rooms ? ` · ${rooms}` : ""} · ${floorName(opening.floorId)}`;
+  }
+  const stair = project.stairs.find((item) => item.id === id);
+  if (stair) {
+    const connection = stairConnection(project, stair);
+    return connection ? `Staircase · ${connection.lowerFloor.name} to ${connection.upperFloor.name}` : `Staircase · ${floorName(stair.floorId)}`;
+  }
+  const balcony = project.balconies.find((item) => item.id === id);
+  if (balcony) return `${balcony.name} · ${floorName(balcony.floorId)}`;
+  const feature = project.facadeFeatures.find((item) => item.id === id);
+  if (feature) return `${feature.kind[0].toUpperCase()}${feature.kind.slice(1)} · exterior feature`;
+  return id;
 }
 
 function downloadUrl(url: string, filename: string) {
@@ -211,20 +275,24 @@ function IconButton({
   label,
   active,
   disabled,
+  buttonRef,
   children,
   onClick,
 }: {
   label: string;
   active?: boolean;
   disabled?: boolean;
+  buttonRef?: RefObject<HTMLButtonElement | null>;
   children: ReactNode;
   onClick: () => void;
 }) {
   return (
     <button
+      ref={buttonRef}
       type="button"
       className={`icon-button ${active ? "is-active" : ""}`}
       aria-label={label}
+      aria-pressed={active === undefined ? undefined : active}
       title={label}
       disabled={disabled}
       onClick={onClick}
@@ -251,6 +319,15 @@ function NumberField({
   step?: number;
   onCommit: (value: number) => void;
 }) {
+  const errorId = useId();
+  const [error, setError] = useState<string>();
+  const range = min !== undefined && max !== undefined
+    ? `Enter a value from ${min} to ${max}.`
+    : min !== undefined
+      ? `Enter ${min} or more.`
+      : max !== undefined
+        ? `Enter ${max} or less.`
+        : "Enter a valid number.";
   return (
     <label className="field">
       <span>{label}</span>
@@ -262,10 +339,17 @@ function NumberField({
           min={min}
           max={max}
           step={step}
+          aria-invalid={Boolean(error)}
+          aria-describedby={error ? errorId : undefined}
+          onInput={() => setError(undefined)}
           onBlur={(event) => {
             const next = Number(event.currentTarget.value);
-            if (Number.isFinite(next) && next !== value && (min === undefined || next >= min) && (max === undefined || next <= max)) onCommit(next);
-            else event.currentTarget.value = String(value);
+            const valid = Number.isFinite(next) && (min === undefined || next >= min) && (max === undefined || next <= max);
+            if (valid && next !== value) onCommit(next);
+            if (!valid) {
+              setError(range);
+              event.currentTarget.value = String(value);
+            }
           }}
           onKeyDown={(event) => {
             if (event.key === "Enter") event.currentTarget.blur();
@@ -273,13 +357,14 @@ function NumberField({
         />
         <b>{unit}</b>
       </span>
+      {error && <small className="field-error" id={errorId}>{error}</small>}
     </label>
   );
 }
 
-function Section({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
+function Section({ title, children, action, id }: { title: string; children: ReactNode; action?: ReactNode; id?: string }) {
   return (
-    <section className="panel-section">
+    <section className="panel-section" id={id}>
       <div className="section-heading">
         <h3>{title}</h3>
         {action}
@@ -301,6 +386,7 @@ function compactJson(value: unknown) {
 export default function Studio() {
   const [project, setProject] = useState<Project>(() => createInitialProject());
   const projectRef = useRef(project);
+  const hydrated = useSyncExternalStore(subscribeHydration, getClientHydrationSnapshot, getServerHydrationSnapshot);
   const [selectedId, setSelectedId] = useState<string>();
   const [tool, setTool] = useState<CanvasTool>("select");
   const [roomType, setRoomType] = useState<RoomType>("Living Room");
@@ -314,8 +400,16 @@ export default function Studio() {
   const [toolCalls, setToolCalls] = useState<ToolCall[]>([]);
   const [debugToolName, setDebugToolName] = useState("inspect_project");
   const [debugInput, setDebugInput] = useState("{}");
-  const [toast, setToast] = useState<string>();
+  const [toast, setToast] = useState<ToastState>();
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [showPlanLabels, setShowPlanLabels] = useState(true);
+  const [activityFilter, setActivityFilter] = useState<ActivityFilter>("design");
+  const [activityActor, setActivityActor] = useState<"all" | "human" | "agent">("all");
+  const [activeIssueId, setActiveIssueId] = useState<string>();
   const [savedProjects, setSavedProjects] = useState<SavedProjectSummary[]>([]);
   const [savedVersion, setSavedVersion] = useState(0);
   const [pastCount, setPastCount] = useState(0);
@@ -325,6 +419,13 @@ export default function Studio() {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const projectButtonRef = useRef<HTMLButtonElement | null>(null);
+  const projectMenuRef = useRef<HTMLDivElement | null>(null);
+  const exportButtonRef = useRef<HTMLButtonElement | null>(null);
+  const helpButtonRef = useRef<HTMLButtonElement | null>(null);
+  const exportMenuRef = useRef<HTMLDivElement | null>(null);
+  const helpCloseRef = useRef<HTMLButtonElement | null>(null);
+  const debugCloseRef = useRef<HTMLButtonElement | null>(null);
   const toastTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
@@ -335,10 +436,10 @@ export default function Studio() {
     return () => window.clearTimeout(timer);
   }, []);
 
-  const notify = useCallback((message: string) => {
-    setToast(message);
+  const notify = useCallback((message: string, action?: ToastState["action"]) => {
+    setToast({ message, action });
     if (toastTimer.current) window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(undefined), 2600);
+    toastTimer.current = window.setTimeout(() => setToast(undefined), action ? 6000 : 3200);
   }, []);
 
   const replaceProject = useCallback((next: Project, message?: string) => {
@@ -354,6 +455,8 @@ export default function Studio() {
     setSavedVersion(next.version);
     setSavedProjects(listSavedProjects());
     setProjectMenuOpen(false);
+    setExportOpen(false);
+    setActiveIssueId(undefined);
     if (message) notify(message);
   }, [notify]);
 
@@ -375,6 +478,23 @@ export default function Studio() {
       const previous = projectRef.current;
       try {
         const outcome = applyOperation(previous, operation, actor);
+        if (isPresentationOperation(operation)) {
+          const next: Project = {
+            ...outcome.project,
+            version: previous.version,
+            updatedAt: previous.updatedAt,
+            activity: previous.activity,
+          };
+          const presentationOutcome: OperationOutcome = {
+            ...outcome,
+            project: next,
+            result: { ...outcome.result, projectVersion: previous.version },
+          };
+          projectRef.current = next;
+          setProject(next);
+          if (next.view.focusElementId !== previous.view.focusElementId) setSelectedId(next.view.focusElementId);
+          return presentationOutcome;
+        }
         pastRef.current = [...pastRef.current.slice(-79), cloneProject(previous)];
         futureRef.current = [];
         projectRef.current = outcome.project;
@@ -584,13 +704,15 @@ export default function Studio() {
   const deleteSelected = useCallback(() => {
     if (!selectedId) return;
     const room = projectRef.current.rooms.find((item) => item.id === selectedId);
+    const label = elementLabel(projectRef.current, selectedId);
     try {
       commit(room ? { type: "delete_room", roomId: selectedId } : { type: "delete_element", elementId: selectedId });
       setSelectedId(undefined);
+      notify(`Deleted ${label}`, "undo");
     } catch {
       // The operation pipeline already provides the user-facing error.
     }
-  }, [commit, selectedId]);
+  }, [commit, notify, selectedId]);
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -610,6 +732,28 @@ export default function Studio() {
         redo();
         return;
       }
+      if (event.key === "?") {
+        event.preventDefault();
+        setHelpOpen(true);
+        return;
+      }
+      if (["arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key) && selectedId) {
+        const room = projectRef.current.rooms.find((item) => item.id === selectedId);
+        if (room) {
+          event.preventDefault();
+          const amount = event.shiftKey ? 1 : 0.5;
+          if (event.altKey) {
+            const width = Math.max(3, room.width + (key === "arrowright" ? amount : key === "arrowleft" ? -amount : 0));
+            const length = Math.max(3, room.length + (key === "arrowdown" ? amount : key === "arrowup" ? -amount : 0));
+            try { commit({ type: "resize_room", roomId: room.id, width, length }); } catch { /* commit announces invalid geometry */ }
+          } else {
+            const x = Math.max(0, room.x + (key === "arrowright" ? amount : key === "arrowleft" ? -amount : 0));
+            const y = Math.max(0, room.y + (key === "arrowdown" ? amount : key === "arrowup" ? -amount : 0));
+            try { commit({ type: "move_room", roomId: room.id, x, y }); } catch { /* commit announces invalid geometry */ }
+          }
+          return;
+        }
+      }
       const shortcut = toolItems.find((item) => item.key.toLowerCase() === key);
       if (shortcut) setTool(shortcut.id);
       if ((event.key === "Backspace" || event.key === "Delete") && selectedId) deleteSelected();
@@ -620,7 +764,79 @@ export default function Studio() {
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [deleteSelected, redo, selectedId, undo]);
+  }, [commit, deleteSelected, redo, selectedId, undo]);
+
+  useEffect(() => {
+    const handleDismiss = (event: KeyboardEvent | MouseEvent) => {
+      if (event instanceof KeyboardEvent && event.key !== "Escape") return;
+      if (event instanceof MouseEvent) {
+        const target = event.target as Node;
+        if (projectMenuRef.current?.contains(target) || projectButtonRef.current?.contains(target)) return;
+        if (exportMenuRef.current?.contains(target) || exportButtonRef.current?.contains(target)) return;
+      }
+      if (projectMenuOpen) {
+        setProjectMenuOpen(false);
+        if (event instanceof KeyboardEvent) projectButtonRef.current?.focus();
+      }
+      if (exportOpen) {
+        setExportOpen(false);
+        if (event instanceof KeyboardEvent) exportButtonRef.current?.focus();
+      }
+      if (event instanceof KeyboardEvent) {
+        if (helpOpen) {
+          setHelpOpen(false);
+          helpButtonRef.current?.focus();
+        }
+        if (debugOpen) setDebugOpen(false);
+        setLibraryOpen(false);
+        setInspectorOpen(false);
+      }
+    };
+    document.addEventListener("keydown", handleDismiss);
+    document.addEventListener("pointerdown", handleDismiss);
+    return () => {
+      document.removeEventListener("keydown", handleDismiss);
+      document.removeEventListener("pointerdown", handleDismiss);
+    };
+  }, [debugOpen, exportOpen, helpOpen, projectMenuOpen]);
+
+  useEffect(() => {
+    if (helpOpen) helpCloseRef.current?.focus();
+  }, [helpOpen]);
+
+  useEffect(() => {
+    if (projectMenuOpen) projectMenuRef.current?.querySelector<HTMLElement>("input, button")?.focus();
+  }, [projectMenuOpen]);
+
+  useEffect(() => {
+    if (exportOpen) exportMenuRef.current?.querySelector<HTMLElement>("button:not(:disabled)")?.focus();
+  }, [exportOpen]);
+
+  useEffect(() => {
+    if (debugOpen) debugCloseRef.current?.focus();
+  }, [debugOpen]);
+
+  useEffect(() => {
+    if (!helpOpen && !debugOpen) return;
+    const dialog = (helpOpen ? helpCloseRef.current : debugCloseRef.current)?.closest<HTMLElement>("[role='dialog']");
+    if (!dialog) return;
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [href], [tabindex]:not([tabindex='-1'])"));
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    dialog.addEventListener("keydown", trapFocus);
+    return () => dialog.removeEventListener("keydown", trapFocus);
+  }, [debugOpen, helpOpen]);
 
   const selectedRoom = project.rooms.find((item) => item.id === selectedId);
   const selectedWall = project.walls.find((item) => item.id === selectedId);
@@ -650,6 +866,28 @@ export default function Studio() {
   const metrics = projectMetrics(project);
   const nativeStatus = toolStatus === "native";
   const navigationMode = project.view.navigationMode ?? "orbit";
+  const activeIssue = validation.issues.find((issue) => issue.id === activeIssueId);
+  const activeIssueIndex = activeIssue ? validation.issues.findIndex((issue) => issue.id === activeIssue.id) : -1;
+  const filteredActivity = project.activity.filter((entry) => {
+    const isView = presentationOperations.has(entry.operation as ArchitectureOperation["type"]);
+    const matchesType = activityFilter === "all" || (activityFilter === "view" ? isView : !isView);
+    const matchesActor = activityActor === "all" || entry.actor === activityActor;
+    return matchesType && matchesActor;
+  });
+  const activeFloorRooms = project.rooms.filter((room) => room.floorId === activeFloor.id);
+  const activeFloorWalls = project.walls.filter((wall) => wall.floorId === activeFloor.id);
+  const activeFloorOpenings = project.openings.filter((opening) => opening.floorId === activeFloor.id);
+  const activeFloorStairs = project.stairs.filter((stair) => stair.floorId === activeFloor.id || stairConnection(project, stair)?.targetFloor.id === activeFloor.id);
+  const activeFloorBalconies = project.balconies.filter((balcony) => balcony.floorId === activeFloor.id);
+  const activeFloorFeatures = project.facadeFeatures.filter((feature) => activeFloorWalls.some((wall) => wall.id === feature.wallId));
+  const navigableElements = [
+    ...activeFloorRooms.map((item) => ({ id: item.id, kind: "room" as const })),
+    ...activeFloorWalls.map((item) => ({ id: item.id, kind: "wall" as const })),
+    ...activeFloorOpenings.map((item) => ({ id: item.id, kind: "opening" as const })),
+    ...activeFloorStairs.map((item) => ({ id: item.id, kind: "stair" as const })),
+    ...activeFloorBalconies.map((item) => ({ id: item.id, kind: "exterior" as const })),
+    ...activeFloorFeatures.map((item) => ({ id: item.id, kind: "exterior" as const })),
+  ];
 
   const safeCommit = (operation: ArchitectureOperation) => {
     try {
@@ -657,6 +895,38 @@ export default function Studio() {
     } catch {
       // Errors are surfaced by commit as a toast.
     }
+  };
+
+  const selectElement = (id: string) => {
+    setSelectedId(id);
+    setInspectorTab("properties");
+    setInspectorOpen(true);
+    setLibraryOpen(false);
+    safeCommit({ type: "focus_element", elementId: id });
+  };
+
+  const focusIssue = (issueId: string) => {
+    const issue = validation.issues.find((item) => item.id === issueId);
+    if (!issue) return;
+    setActiveIssueId(issue.id);
+    setInspectorTab("properties");
+    setInspectorOpen(true);
+    if (issue.elementIds[0]) {
+      setSelectedId(issue.elementIds[0]);
+      safeCommit({ type: "focus_element", elementId: issue.elementIds[0] });
+    }
+  };
+
+  const moveIssue = (direction: -1 | 1) => {
+    if (!validation.issues.length) return;
+    const index = activeIssueIndex < 0 ? 0 : (activeIssueIndex + direction + validation.issues.length) % validation.issues.length;
+    focusIssue(validation.issues[index].id);
+  };
+
+  const openRoomLibrary = () => {
+    setLibraryOpen(true);
+    setTool("room");
+    window.requestAnimationFrame(() => document.getElementById("room-library-section")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   };
 
   const addDefaultBalcony = (kind: "balcony" | "terrace") => {
@@ -797,6 +1067,45 @@ export default function Studio() {
     replaceProject(next, "Duplicated project");
   };
 
+  const loadExampleProject = () => {
+    let next = createNewLocalProject("Example Courtyard Residence", projectRef.current.plot);
+    const floorId = next.view.activeFloorId;
+    const roomOperations: ArchitectureOperation[] = [
+      { type: "create_room", floorId, name: "Living Room", roomType: "Living Room", x: 3, y: 10, width: 12, length: 14 },
+      { type: "create_room", floorId, name: "Kitchen", roomType: "Kitchen", x: 15, y: 10, width: 12, length: 12 },
+      { type: "create_room", floorId, name: "Primary Bedroom", roomType: "Bedroom", x: 3, y: 24, width: 12, length: 13 },
+      { type: "create_room", floorId, name: "Bathroom", roomType: "Bathroom", x: 15, y: 22, width: 7, length: 8 },
+    ];
+    for (const operation of roomOperations) next = applyOperation(next, operation, "system").project;
+    const frontWall = next.walls.find((wall) => wall.exterior && wall.floorId === floorId && wall.y1 === 10 && wall.y2 === 10);
+    const sharedWall = next.walls.find((wall) => wall.floorId === floorId && wall.roomIds.length > 1 && wallLength(wall) >= 4);
+    const windowWall = next.walls.find((wall) => wall.exterior && wall.floorId === floorId && wallLength(wall) >= 8 && wall.id !== frontWall?.id);
+    if (frontWall) next = applyOperation(next, { type: "add_opening", kind: "door", wallId: frontWall.id, offset: wallLength(frontWall) / 2 }, "system").project;
+    if (sharedWall) next = applyOperation(next, { type: "add_opening", kind: "door", wallId: sharedWall.id, offset: wallLength(sharedWall) / 2 }, "system").project;
+    if (windowWall) next = applyOperation(next, { type: "add_opening", kind: "window", wallId: windowWall.id, offset: wallLength(windowWall) / 2, width: 4 }, "system").project;
+    saveProjectLocally(next);
+    replaceProject(next, "Loaded an editable example residence");
+  };
+
+  const restoreSnapshot = (snapshot: Project) => {
+    const index = pastRef.current.findIndex((item) => item.version === snapshot.version && item.updatedAt === snapshot.updatedAt);
+    if (index < 0) return;
+    const current = cloneProject(projectRef.current);
+    const newer = pastRef.current.slice(index + 1).map(cloneProject).reverse();
+    pastRef.current = pastRef.current.slice(0, index).map(cloneProject);
+    futureRef.current = [current, ...newer];
+    const restored = cloneProject(snapshot);
+    projectRef.current = restored;
+    setProject(restored);
+    saveProjectLocally(restored);
+    setSavedVersion(restored.version);
+    setValidation(validateLayout(restored));
+    setSelectedId(undefined);
+    setPastCount(pastRef.current.length);
+    setFutureCount(futureRef.current.length);
+    notify(`Restored design version ${restored.version}`);
+  };
+
   const removeCurrentProject = () => {
     if (!window.confirm(`Delete “${projectRef.current.name}” from this device? This cannot be undone.`)) return;
     const next = deleteLocalProject(projectRef.current.id) ?? createNewLocalProject();
@@ -816,30 +1125,32 @@ export default function Studio() {
   };
 
   return (
-    <main className="studio-shell">
+    <main className={`studio-shell ${libraryOpen ? "is-library-open" : ""} ${inspectorOpen ? "is-inspector-open" : ""}`}>
+      <div className="visually-hidden" aria-live="polite" aria-atomic="true">{selectedId ? `Selected ${elementLabel(project, selectedId)}${selectedRoom ? `. Position ${selectedRoom.x} by ${selectedRoom.y} feet. Size ${selectedRoom.width} by ${selectedRoom.length} feet.` : ""}` : `No element selected. ${validation.issueCount} layout ${validation.issueCount === 1 ? "issue" : "issues"}.`}</div>
       <header className="topbar">
-        <div className="brand">
+        <Link className="brand" href="/" aria-label="ArchMorph home">
           <div className="brand-mark" aria-hidden="true"><span>AM</span></div>
           <div>
             <strong>ArchMorph</strong>
             <span>RESIDENTIAL STUDIO</span>
           </div>
-        </div>
+        </Link>
         <div className="project-switcher">
-          <button className="project-title" type="button" title="Project files" aria-expanded={projectMenuOpen} onClick={() => { setSavedProjects(listSavedProjects()); setProjectMenuOpen((value) => !value); }}>
+          <button ref={projectButtonRef} className="project-title" type="button" title="Project files" aria-haspopup="dialog" aria-controls="project-file-menu" aria-expanded={projectMenuOpen} onClick={() => { setSavedProjects(listSavedProjects()); setProjectMenuOpen((value) => !value); setExportOpen(false); }}>
             <Building2 size={14} />
             <span>{project.name}</span>
-            <i>{savedVersion === project.version ? "Saved locally" : `v${project.version}`}</i>
+            <i title={hydrated ? `Autosaved on this device · ${new Date(project.updatedAt).toLocaleString()}` : "Autosaved on this device"}>{hydrated ? savedVersion === project.version ? formatSavedTime(project.updatedAt) : `Saving v${project.version}…` : "Saved locally"}</i>
             <ChevronDown size={13} />
           </button>
           {projectMenuOpen && (
-            <div className="project-menu" role="dialog" aria-label="Project files">
+            <div ref={projectMenuRef} id="project-file-menu" className="project-menu" role="dialog" aria-label="Project files">
               <label className="project-name-field"><span>Project name</span><input key={`${project.id}:${project.name}`} defaultValue={project.name} onBlur={(event) => { const name = event.currentTarget.value.trim(); if (name && name !== project.name) safeCommit({ type: "rename_project", name }); else event.currentTarget.value = project.name; }} /></label>
+              <p className="menu-note">Changes autosave on this device. Use Save now for reassurance or export a JSON backup.</p>
               <div className="project-menu-actions">
-                <button type="button" onClick={saveCurrentProject}><Save size={14} />Save</button>
+                <button type="button" onClick={saveCurrentProject}><Save size={14} />Save now</button>
                 <button type="button" onClick={createProject}><FilePlus2 size={14} />New</button>
                 <button type="button" onClick={duplicateProject}><Copy size={14} />Duplicate</button>
-                <button type="button" onClick={() => { exportPlan("json", true); setProjectMenuOpen(false); notify("Project exported"); }}><Download size={14} />Export</button>
+                <button type="button" onClick={() => { exportPlan("json", true); setProjectMenuOpen(false); notify("Project JSON exported"); }}><FileJson size={14} />Project JSON</button>
                 <button type="button" onClick={() => importInputRef.current?.click()}><Upload size={14} />Import</button>
                 <button type="button" className="is-danger" onClick={removeCurrentProject}><Trash2 size={14} />Delete</button>
               </div>
@@ -853,13 +1164,13 @@ export default function Studio() {
           <input ref={importInputRef} hidden type="file" accept="application/json,.json,.archmorph" onChange={(event) => void importProject(event.currentTarget.files?.[0])} />
         </div>
         <div className="view-switch" role="group" aria-label="Drawing view">
-          <button className={project.view.mode === "2d" ? "is-active" : ""} onClick={() => safeCommit({ type: "switch_view", mode: "2d" })}>
+          <button type="button" aria-pressed={project.view.mode === "2d"} className={project.view.mode === "2d" ? "is-active" : ""} onClick={() => safeCommit({ type: "switch_view", mode: "2d" })}>
             <Grid2X2 size={14} /> Floor plan
           </button>
-          <button className={project.view.mode === "3d" && navigationMode === "orbit" ? "is-active" : ""} onClick={() => safeCommit({ type: "set_navigation_mode", mode: "orbit" })}>
+          <button type="button" aria-pressed={project.view.mode === "3d" && navigationMode === "orbit"} className={project.view.mode === "3d" && navigationMode === "orbit" ? "is-active" : ""} onClick={() => safeCommit({ type: "set_navigation_mode", mode: "orbit" })}>
             <Box size={15} /> 3D Orbit
           </button>
-          <button className={project.view.mode === "3d" && navigationMode === "walk" ? "is-active" : ""} onClick={() => safeCommit({ type: "set_navigation_mode", mode: "walk", roomId: selectedRoom?.id })}>
+          <button type="button" aria-pressed={project.view.mode === "3d" && navigationMode === "walk"} className={project.view.mode === "3d" && navigationMode === "walk" ? "is-active" : ""} onClick={() => safeCommit({ type: "set_navigation_mode", mode: "walk", roomId: selectedRoom?.id })}>
             <Footprints size={15} /> Walk
           </button>
         </div>
@@ -873,9 +1184,19 @@ export default function Studio() {
               <span><b>{nativeStatus ? "Agent ready" : "WebMCP preview"}</b><small>{webTools.length} tools · shared state</small></span>
             </button>
           )}
-          <button type="button" className="export-button" onClick={() => { exportPlan(project.view.mode === "2d" ? "svg" : "json", true); notify("Project exported"); }}>
-            <Download size={15} /> Export
-          </button>
+          <IconButton buttonRef={helpButtonRef} label="Help and keyboard shortcuts (?)" onClick={() => setHelpOpen(true)}><CircleHelp size={17} /></IconButton>
+          <div className="export-switcher">
+            <button ref={exportButtonRef} type="button" className="export-button" aria-haspopup="menu" aria-controls="export-menu" aria-expanded={exportOpen} onClick={() => { setExportOpen((value) => !value); setProjectMenuOpen(false); }}>
+              <Download size={15} /> Export <ChevronDown size={13} />
+            </button>
+            {exportOpen && (
+              <div ref={exportMenuRef} id="export-menu" className="export-menu" role="menu" aria-label="Export options">
+                <button type="button" role="menuitem" onClick={() => { exportPlan("json", true); setExportOpen(false); notify("Project JSON exported"); }}><FileJson size={17} /><span><b>Project JSON</b><small>archmorph-project-v{project.version}.json · editable backup</small></span></button>
+                <button type="button" role="menuitem" disabled={project.view.mode !== "2d"} onClick={() => { exportPlan("svg", true); setExportOpen(false); notify("Floor plan SVG exported"); }}><FileImage size={17} /><span><b>Floor plan SVG</b><small>{project.view.mode === "2d" ? `archmorph-plan-v${project.version}.svg · active floor` : "Switch to Floor plan first"}</small></span></button>
+                <button type="button" role="menuitem" onClick={() => { void captureSnapshot({ download: true }); setExportOpen(false); }}><Maximize2 size={17} /><span><b>Current view PNG</b><small>archmorph-{project.view.mode === "2d" ? "2d" : `3d-${navigationMode}`}-v{project.version}.png</small></span></button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
@@ -891,6 +1212,7 @@ export default function Studio() {
                   className={tool === item.id ? "is-active" : ""}
                   onClick={() => setTool(item.id)}
                   title={`${item.label} (${item.key})`}
+                  aria-label={`${item.label} (${item.key})`}
                   aria-pressed={tool === item.id}
                 >
                   <Icon size={19} />
@@ -909,7 +1231,8 @@ export default function Studio() {
           )}
         </aside>
 
-        <aside className="library-panel">
+        <aside id="design-library" className="library-panel" aria-label="Design library">
+          <div className="panel-mobile-head"><div><small>Design library</small><b>{activeFloor.name}</b></div><button type="button" onClick={() => setLibraryOpen(false)} aria-label="Close design library"><X size={18} /></button></div>
           <div className="panel-scroll">
             <Section title="Site">
               <div className="site-line"><span>Rectangular plot</span><b>{project.plot.width}&apos; × {project.plot.length}&apos;</b></div>
@@ -922,12 +1245,13 @@ export default function Studio() {
             </Section>
 
             <Section title="Exterior systems" action={<span className="section-hint">LIGHTWEIGHT</span>}>
+              {!activeFloorRooms.length && <p className="technical-note is-locked">Place the first room to unlock hosted balconies and façade features.</p>}
               <div className="room-library">
-                <button type="button" onClick={() => addDefaultBalcony(activeFloor.level > 0 ? "balcony" : "terrace")}>
+                <button type="button" disabled={!activeFloorRooms.length} onClick={() => addDefaultBalcony(activeFloor.level > 0 ? "balcony" : "terrace")}>
                   <span style={{ background: "#b8aea0" }} /><div><b>{activeFloor.level > 0 ? "Add balcony" : "Add terrace"}</b><small>Slab + configurable railing</small></div><Plus size={14} />
                 </button>
                 {(["canopy", "frame", "sunshade"] as FacadeFeatureKind[]).map((kind) => (
-                  <button type="button" key={kind} onClick={() => addDefaultFacadeFeature(kind)}>
+                  <button type="button" key={kind} disabled={!activeFloorRooms.length} onClick={() => addDefaultFacadeFeature(kind)}>
                     <span style={{ background: kind === "frame" ? "#9f6653" : kind === "canopy" ? "#69756f" : "#aaa79f" }} /><div><b>Add {kind}</b><small>Exterior-wall hosted feature</small></div><Plus size={14} />
                   </button>
                 ))}
@@ -937,7 +1261,7 @@ export default function Studio() {
               </button>
             </Section>
 
-            <Section title="Rooms" action={<span className="section-hint">CLICK TO PLACE</span>}>
+            <Section id="room-library-section" title="Rooms" action={<span className="section-hint">CLICK TO PLACE</span>}>
               <label className="field field-full"><span>Footprint shape</span><select value={roomShape} onChange={(event) => setRoomShape(event.target.value as Exclude<RoomShape, "custom">)}><option value="rectangle">Rectangle</option><option value="l-shape">L-shaped</option><option value="t-shape">T-shaped</option><option value="u-shape">U-shaped</option></select></label>
               <div className="room-library">
                 {roomTypes.map((type) => (
@@ -973,6 +1297,7 @@ export default function Studio() {
                       key={floor.id}
                       type="button"
                       className={floor.id === project.view.activeFloorId ? "is-active" : ""}
+                      aria-current={floor.id === project.view.activeFloorId ? "true" : undefined}
                       onClick={() => safeCommit({ type: "set_active_floor", floorId: floor.id })}
                     >
                       <Layers3 size={15} /><span><b>{floor.name}</b><small>{roomCount} {roomCount === 1 ? "room" : "rooms"} · {floor.height} ft{stairCount ? ` · ${stairCount} stair connection${stairCount === 1 ? "" : "s"}` : ""}</small></span>
@@ -991,6 +1316,20 @@ export default function Studio() {
               />
               <p className="technical-note">Changing a storey height re-levels every floor above it and recomputes each connected stair&rsquo;s rise, riser count, and tread depth.</p>
             </Section>
+
+            <Section title="Elements" action={<span className="section-hint">KEYBOARD ACCESSIBLE</span>}>
+              <p className="technical-note element-intro">Select an element here to inspect it without using the drawing canvas.</p>
+              <div className="element-navigator">
+                {navigableElements.map((element) => (
+                  <button key={element.id} type="button" className={selectedId === element.id ? "is-active" : ""} aria-current={selectedId === element.id ? "true" : undefined} onClick={() => selectElement(element.id)}>
+                    {element.kind === "room" ? <Square size={14} /> : element.kind === "wall" ? <Minus size={14} /> : element.kind === "opening" ? <DoorOpen size={14} /> : element.kind === "stair" ? <Layers3 size={14} /> : <PanelTop size={14} />}
+                    <span><b>{elementLabel(project, element.id).split(" · ")[0]}</b><small>{elementLabel(project, element.id).split(" · ").slice(1).join(" · ") || activeFloor.name}</small></span>
+                    <ChevronRight size={14} />
+                  </button>
+                ))}
+                {!navigableElements.length && <p className="empty-elements">No elements on this floor yet.</p>}
+              </div>
+            </Section>
           </div>
           <div className="library-foot">
             <span>Grid 1 ft</span><span>Snap 6 in</span><span>Units ft</span>
@@ -999,6 +1338,7 @@ export default function Studio() {
 
         <section className="canvas-stage">
           <div className="canvas-toolbar">
+            <IconButton label="Open design library" onClick={() => setLibraryOpen(true)}><PanelLeftOpen size={17} /></IconButton>
             <div className="metric-strip">
               <span><small>NET FLOOR</small><b>{metrics.totalNetFloorArea.toLocaleString()} <i>sq ft</i></b></span>
               <span><small>GROSS</small><b>{metrics.grossCoveredArea.toLocaleString()} <i>sq ft</i></b></span>
@@ -1017,8 +1357,10 @@ export default function Studio() {
                   <option value="top">Top overview</option>
                 </select>
               )}
-              <IconButton label="Focus whole project" onClick={() => safeCommit({ type: "focus_element" })}><Scan size={16} /></IconButton>
-              <IconButton label="Capture snapshot" onClick={() => void captureSnapshot({ download: true })}><Maximize2 size={16} /></IconButton>
+              {project.view.mode === "2d" && <IconButton label={showPlanLabels ? "Hide room labels" : "Show room labels"} active={showPlanLabels} onClick={() => setShowPlanLabels((value) => !value)}><Eye size={16} /></IconButton>}
+              <button type="button" className="labeled-control" aria-label="Focus whole project" onClick={() => safeCommit({ type: "focus_element" })}><Scan size={16} /><span>Fit</span></button>
+              <button type="button" className="labeled-control" aria-label="Capture current view as PNG" onClick={() => void captureSnapshot({ download: true })}><Maximize2 size={16} /><span>Snapshot</span></button>
+              <IconButton label="Open inspector" onClick={() => setInspectorOpen(true)}><PanelRightOpen size={17} /></IconButton>
             </div>
           </div>
 
@@ -1028,6 +1370,7 @@ export default function Studio() {
                 project={project}
                 tool={tool}
                 roomType={roomType}
+                showLabels={showPlanLabels}
                 selectedId={selectedId}
                 svgRef={svgRef}
                 onSelect={setSelectedId}
@@ -1052,27 +1395,59 @@ export default function Studio() {
                 onWalkFloorChange={handleWalkFloorChange}
               />
             )}
+            {project.view.mode === "2d" && !project.rooms.length && !project.walls.length && !project.stairs.length && (
+              <div className="starter-card" role="region" aria-label="Getting started">
+                <span className="starter-kicker">START HERE</span>
+                <h2>Build your first floor in four steps.</h2>
+                <ol><li>Choose a room and place it on the plot.</li><li>Add walls, doors, and windows.</li><li>Create another floor and connect it with stairs.</li><li>Review Checks, then explore in 3D.</li></ol>
+                <button type="button" onClick={openRoomLibrary}><Square size={15} /> Choose a room</button>
+                <button type="button" className="starter-secondary" onClick={loadExampleProject}><Building2 size={15} /> Load example residence</button>
+                <small>Shortcuts: R room · W wall · D door · N window · S stair</small>
+              </div>
+            )}
           </div>
 
           <div className="statusbar">
             <span><span className="status-dot" /> {activeFloor.name}</span>
             <span>{toolItems.find((item) => item.id === tool)?.label}</span>
-            <span className="status-message">{project.view.mode === "3d" && navigationMode === "walk" ? "WASD / arrows to move · Follow the stair flights and landing to change levels · Minimap tracks your floor and room" : tool === "room" ? `Click the plot to place a ${roomType.toLowerCase()}` : tool === "stair" ? `Click the plan to place a ${stairTypeLabel[stairType]} stair between adjacent floors` : tool === "door" || tool === "window" ? `Click a wall to add a ${tool} · Click an existing ${tool} to remove it` : project.view.mode === "3d" ? "Drag to orbit · Shift-drag to pan · Scroll to zoom" : "Drag rooms and stairs to move · Draw walls with orthogonal / 45° snapping"}</span>
+            <span className="status-message">{project.view.mode === "3d" && navigationMode === "walk" ? "WASD / arrows to move · Follow the stair flights and landing to change levels · Minimap tracks your floor and room" : tool === "room" ? `Click the plot to place a ${roomType.toLowerCase()}` : tool === "stair" ? `Click the plan to place a ${stairTypeLabel[stairType]} stair between adjacent floors` : tool === "door" || tool === "window" ? `Click a wall to add a ${tool} · Click an existing ${tool} to remove it` : project.view.mode === "3d" ? "Drag to orbit · Right-drag or Shift-drag to pan · Scroll to zoom" : "Drag rooms and stairs to move · Draw walls with orthogonal / 45° snapping"}</span>
             {debugMode && <span>Project v{project.version}</span>}
           </div>
         </section>
 
-        <aside className="inspector">
-          <div className="inspector-tabs">
-            <button className={inspectorTab === "properties" ? "is-active" : ""} onClick={() => setInspectorTab("properties")}>Properties</button>
-            <button className={inspectorTab === "activity" ? "is-active" : ""} onClick={() => setInspectorTab("activity")}>History</button>
-            <button className={inspectorTab === "checks" ? "is-active" : ""} onClick={() => setInspectorTab("checks")}>
+        <aside id="studio-inspector" className="inspector" aria-label="Project inspector">
+          <div className="panel-mobile-head"><div><small>Inspector</small><b>{selectedId ? elementLabel(project, selectedId).split(" · ")[0] : project.name}</b></div><button type="button" onClick={() => setInspectorOpen(false)} aria-label="Close inspector"><X size={18} /></button></div>
+          <div className="inspector-tabs" role="tablist" aria-label="Inspector views" onKeyDown={(event) => {
+            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+            event.preventDefault();
+            const tabs: InspectorTab[] = ["properties", "activity", "checks"];
+            const current = tabs.indexOf(inspectorTab);
+            const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (current + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+            setInspectorTab(tabs[next]);
+            window.requestAnimationFrame(() => document.getElementById(`inspector-tab-${tabs[next]}`)?.focus());
+          }}>
+            <button id="inspector-tab-properties" type="button" role="tab" tabIndex={inspectorTab === "properties" ? 0 : -1} aria-selected={inspectorTab === "properties"} aria-controls="inspector-panel" className={inspectorTab === "properties" ? "is-active" : ""} onClick={() => setInspectorTab("properties")}>Properties</button>
+            <button id="inspector-tab-activity" type="button" role="tab" tabIndex={inspectorTab === "activity" ? 0 : -1} aria-selected={inspectorTab === "activity"} aria-controls="inspector-panel" className={inspectorTab === "activity" ? "is-active" : ""} onClick={() => setInspectorTab("activity")}>History</button>
+            <button id="inspector-tab-checks" type="button" role="tab" tabIndex={inspectorTab === "checks" ? 0 : -1} aria-selected={inspectorTab === "checks"} aria-controls="inspector-panel" className={inspectorTab === "checks" ? "is-active" : ""} onClick={() => setInspectorTab("checks")}>
               Checks {validation.issueCount > 0 && <em>{validation.issueCount}</em>}
             </button>
           </div>
-          <div className="inspector-scroll">
+          <div id="inspector-panel" className="inspector-scroll" role="tabpanel" aria-labelledby={`inspector-tab-${inspectorTab}`}>
             {inspectorTab === "properties" && (
               <>
+                {activeIssue && (
+                  <div className="active-issue" role="region" aria-label="Selected layout issue">
+                    <div><span className={`issue-severity ${activeIssue.severity}`}><CircleAlert size={14} /></span><small>ISSUE {activeIssueIndex + 1} OF {validation.issueCount}</small></div>
+                    <h2>{activeIssue.code.replaceAll("_", " ")}</h2>
+                    <b>{activeIssue.elementIds.map((id) => elementLabel(project, id)).join(" + ")}</b>
+                    <p>{activeIssue.message}</p>
+                    <small>{activeIssue.suggestion}</small>
+                    <div className="issue-navigation">
+                      <button type="button" onClick={() => { setInspectorTab("checks"); setActiveIssueId(undefined); }}><ChevronLeft size={14} /> All checks</button>
+                      <span><button type="button" aria-label="Previous issue" onClick={() => moveIssue(-1)}><ChevronLeft size={14} /></button><button type="button" aria-label="Next issue" onClick={() => moveIssue(1)}><ChevronRight size={14} /></button></span>
+                    </div>
+                  </div>
+                )}
                 <div className="selection-title">
                   <span className="selection-icon">
                     {selectedRoom ? <Square size={17} /> : selectedWall ? <Minus size={17} /> : selectedOpening ? <DoorOpen size={17} /> : selectedStair ? <Layers3 size={17} /> : selectedBalcony ? <PanelTop size={17} /> : selectedFacadeFeature ? <Maximize2 size={17} /> : <Grid2X2 size={17} />}
@@ -1081,7 +1456,7 @@ export default function Studio() {
                     <small>{selectedRoom ? selectedRoom.type : selectedWall ? "Wall" : selectedOpening ? selectedOpening.kind : selectedStair ? "Staircase" : selectedBalcony ? selectedBalcony.kind : selectedFacadeFeature ? "Façade feature" : "Project site"}</small>
                     <h2>{selectedRoom?.name ?? (selectedWall ? selectedWall.roomIds.length > 1 ? "Shared wall" : selectedWall.side ? `${selectedWall.side} wall` : "Independent wall" : selectedOpening ? `${selectedOpening.kind[0].toUpperCase()}${selectedOpening.kind.slice(1)}` : selectedStair ? "Staircase" : selectedBalcony ? selectedBalcony.name : selectedFacadeFeature ? selectedFacadeFeature.kind[0].toUpperCase() + selectedFacadeFeature.kind.slice(1) : project.name)}</h2>
                   </div>
-                  {selectedId && <button type="button" onClick={deleteSelected} title="Delete selected element"><Trash2 size={16} /></button>}
+                  {selectedId && <button type="button" onClick={deleteSelected} title="Delete selected element" aria-label={`Delete ${elementLabel(project, selectedId)}`}><Trash2 size={16} /></button>}
                 </div>
 
                 {selectedRoom ? (
@@ -1260,14 +1635,22 @@ export default function Studio() {
 
             {inspectorTab === "activity" && (
               <div className="activity-panel">
-                <div className="panel-intro"><History size={17} /><div><h2>Shared activity</h2><p>Human and agent actions use the same project history.</p></div></div>
+                <div className="panel-intro"><History size={17} /><div><h2>Project history</h2><p>Design edits are separated from temporary view changes. Human and agent edits share Undo and Redo.</p></div></div>
+                <div className="activity-filters" role="group" aria-label="Filter history">
+                  {(["design", "view", "all"] as ActivityFilter[]).map((filter) => <button key={filter} type="button" aria-pressed={activityFilter === filter} className={activityFilter === filter ? "is-active" : ""} onClick={() => setActivityFilter(filter)}>{filter[0].toUpperCase() + filter.slice(1)}</button>)}
+                </div>
+                <div className="activity-filters is-secondary" role="group" aria-label="Filter history by actor">
+                  {(["all", "human", "agent"] as const).map((actor) => <button key={actor} type="button" aria-pressed={activityActor === actor} className={activityActor === actor ? "is-active" : ""} onClick={() => setActivityActor(actor)}>{actor[0].toUpperCase() + actor.slice(1)}</button>)}
+                </div>
+                {pastCount > 0 && <details className="history-milestones"><summary>Restore an earlier design version</summary><div>{pastRef.current.slice(-5).reverse().map((snapshot) => <button key={`${snapshot.version}:${snapshot.updatedAt}`} type="button" onClick={() => restoreSnapshot(snapshot)}><span><b>Version {snapshot.version}</b><small>{snapshot.activity[0]?.description.replace(/^You /, "") ?? "Saved design state"}</small></span><History size={14} /></button>)}</div></details>}
                 <div className="activity-list">
-                  {project.activity.map((entry) => (
+                  {filteredActivity.map((entry) => (
                     <div key={entry.id} className={`activity-item actor-${entry.actor}`}>
                       <span className="activity-avatar">{entry.actor === "agent" ? <Sparkles size={12} /> : entry.actor === "human" ? "Y" : "S"}</span>
                       <div><p>{entry.description}</p><small>{formatTime(entry.timestamp)}{debugMode ? ` · v${entry.version}` : ""}</small></div>
                     </div>
                   ))}
+                  {!filteredActivity.length && <p className="empty-activity">No {activityFilter} activity yet.</p>}
                 </div>
               </div>
             )}
@@ -1280,12 +1663,15 @@ export default function Studio() {
                 </div>
                 <button className="validate-button" type="button" onClick={runValidation}><Check size={15} /> Validate current layout</button>
                 <div className="issue-list">
-                  {validation.issues.map((issue) => (
-                    <button key={issue.id} type="button" onClick={() => { setSelectedId(issue.elementIds[0]); setInspectorTab("properties"); safeCommit({ type: "focus_element", elementId: issue.elementIds[0] }); }}>
+                  {validation.issues.map((issue) => {
+                    const matchingIssues = validation.issues.filter((item) => item.code === issue.code);
+                    const matchingIndex = matchingIssues.findIndex((item) => item.id === issue.id);
+                    return (
+                    <button key={issue.id} type="button" onClick={() => focusIssue(issue.id)}>
                       <span className={`issue-severity ${issue.severity}`}><CircleAlert size={14} /></span>
-                      <div><b>{issue.code.replaceAll("_", " ")}</b><p>{issue.message}</p><small>{issue.suggestion}</small></div>
+                      <div><b>{issue.code.replaceAll("_", " ")}{matchingIssues.length > 1 ? ` · ${matchingIndex + 1}/${matchingIssues.length}` : ""}</b><strong>{issue.elementIds.map((id) => elementLabel(project, id)).join(" + ") || "Project site"}</strong><p>{issue.message}</p><small>{issue.suggestion}</small></div>
                     </button>
-                  ))}
+                  );})}
                 </div>
                 <p className="check-disclaimer">Geometric preflight only — not a building-code, structural, or permit review.</p>
               </div>
@@ -1294,12 +1680,27 @@ export default function Studio() {
         </aside>
       </div>
 
+      {(libraryOpen || inspectorOpen) && <button type="button" className="panel-backdrop" aria-label="Close open panel" onClick={() => { setLibraryOpen(false); setInspectorOpen(false); }} />}
+
+      {helpOpen && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setHelpOpen(false); }}>
+          <section className="help-dialog" role="dialog" aria-modal="true" aria-labelledby="studio-help-title">
+            <div className="modal-heading"><div><span><CircleHelp size={18} /></span><div><small>STUDIO GUIDE</small><h2 id="studio-help-title">Design with confidence</h2></div></div><button ref={helpCloseRef} type="button" onClick={() => setHelpOpen(false)} aria-label="Close help"><X size={18} /></button></div>
+            <div className="help-grid">
+              <div><h3>Getting started</h3><ol><li>Place rooms from the Design library.</li><li>Add openings and stairs directly on the plan.</li><li>Use Properties for precise dimensions.</li><li>Run Checks, then explore the model in 3D.</li></ol></div>
+              <div><h3>Keyboard shortcuts</h3><dl>{toolItems.map((item) => <div key={item.id}><dt><kbd>{item.key}</kbd></dt><dd>{item.label}</dd></div>)}<div><dt><kbd>Arrows</kbd></dt><dd>Move a selected room by 6 in; hold Shift for 1 ft</dd></div><div><dt><kbd>⌥ + ↑</kbd></dt><dd>Resize a selected room; hold Shift for 1 ft</dd></div><div><dt><kbd>⌘Z</kbd></dt><dd>Undo design edit</dd></div><div><dt><kbd>?</kbd></dt><dd>Open this guide</dd></div><div><dt><kbd>Esc</kbd></dt><dd>Close or return to Select</dd></div></dl></div>
+            </div>
+            <p className="help-note"><b>Your work stays on this device.</b> ArchMorph autosaves locally. Export Project JSON for a portable backup. Layout Checks are geometric guidance, not building-code, structural, or permit approval.</p>
+          </section>
+        </div>
+      )}
+
       {debugMode && debugOpen && (
-        <div className="debug-drawer" role="dialog" aria-label="WebMCP developer console">
+        <div className="debug-drawer" role="dialog" aria-modal="true" aria-label="WebMCP developer console">
           <div className="debug-header">
             <div><span className="debug-icon"><Braces size={18} /></span><div><h2>WebMCP developer console</h2><p>Live tools operating the same project model as the editor</p></div></div>
             <div className="debug-status"><span className={nativeStatus ? "is-live" : ""} />{nativeStatus ? "Registered in browser" : "Local tool harness"} · {webTools.length} tools</div>
-            <button type="button" onClick={() => setDebugOpen(false)} aria-label="Close developer console"><X size={18} /></button>
+            <button ref={debugCloseRef} type="button" onClick={() => setDebugOpen(false)} aria-label="Close developer console"><X size={18} /></button>
           </div>
           <div className="debug-body">
             <section className="debug-tools">
@@ -1317,14 +1718,15 @@ export default function Studio() {
                 <label><span>Input JSON</span><textarea aria-label="WebMCP input JSON" spellCheck={false} value={debugInput} onChange={(event) => setDebugInput(event.target.value)} /></label>
                 <button type="button" className="run-tool-button" onClick={() => void runDebugTool()}><Sparkles size={13} /> Execute tool</button>
               </div>
+              {!webTools.find((item) => item.name === debugToolName)?.annotations?.readOnlyHint && <p className="debug-write-warning"><CircleAlert size={13} /> This tool can change the shared project or view. Design edits create an Undo step.</p>}
               {toolCalls.length ? <div className="call-list">{toolCalls.map((call) => <details key={call.id}><summary><span className={`call-dot ${call.status}`} /><code>{call.name}</code><b>{call.status}</b>{call.modified && <em>shared state changed</em>}<small>{call.duration !== undefined ? `${call.duration} ms` : "running"}</small></summary><pre>{compactJson(call.error ? { input: call.input, error: call.error } : { input: call.input, output: call.output })}</pre></details>)}</div> : <div className="empty-calls"><Code2 size={24} /><p>No tool calls yet</p><span>Connect a compatible agent, or test an inspection above.</span></div>}
             </section>
           </div>
-          <div className="debug-foot"><span><span className="status-dot" />Shared model <code>{project.id}</code></span><span>Current version <b>{project.version}</b></span><span>Human changes and WebMCP calls share Undo / Redo</span></div>
+          <div className="debug-foot"><span><span className="status-dot" />Shared model <code>{project.id}</code></span><span>Current version <b>{project.version}</b></span><span>Human and WebMCP design edits share Undo / Redo</span></div>
         </div>
       )}
 
-      {toast && <div className="toast"><Check size={15} />{toast}</div>}
+      {toast && <div className="toast" role="status" aria-live="polite"><Check size={15} /><span>{toast.message}</span>{toast.action === "undo" && <button type="button" onClick={() => { undo(); setToast(undefined); }}>Undo</button>}</div>}
     </main>
   );
 }

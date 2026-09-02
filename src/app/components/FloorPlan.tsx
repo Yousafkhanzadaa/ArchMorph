@@ -39,6 +39,7 @@ type FloorPlanProps = {
   project: Project;
   tool: CanvasTool;
   roomType: RoomType;
+  showLabels?: boolean;
   selectedId?: string;
   svgRef: RefObject<SVGSVGElement | null>;
   onSelect: (id?: string) => void;
@@ -77,6 +78,7 @@ export default function FloorPlan({
   project,
   tool,
   roomType,
+  showLabels = true,
   selectedId,
   svgRef,
   onSelect,
@@ -372,10 +374,12 @@ export default function FloorPlan({
       className={`floor-plan floor-plan--${tool}`}
       role="img"
       aria-label={`Architectural floor plan for ${project.name}`}
+      aria-describedby="floor-plan-description"
       onPointerMove={handlePointerMove}
       onPointerUp={finishPointerAction}
       onPointerCancel={() => { setDrag(undefined); setAlignmentGuides({}); }}
     >
+      <desc id="floor-plan-description">Interactive drawing canvas. Use the keyboard-accessible Elements list in the Design library to select rooms, openings, and stairs without a pointer.</desc>
       <defs>
         <pattern id="minor-grid" width="1" height="1" patternUnits="userSpaceOnUse">
           <path d="M 1 0 L 0 0 0 1" fill="none" stroke="#b7bbb8" strokeOpacity="0.18" strokeWidth="0.04" />
@@ -475,9 +479,11 @@ export default function FloorPlan({
         const area = roomArea(room);
         const vertices = roomVertices(room);
         const centroid = roomInteriorPoint(room);
-        const compactLabel = !selected && (room.width < 7 || room.length < 6 || area < 55);
+        const labelCapacity = Math.max(5, Math.floor(room.width / 0.62));
+        const compactLabel = !selected && (room.width < 7 || room.length < 6 || area < 55 || room.name.length > labelCapacity);
         const mediumLabel = !selected && !compactLabel && (room.width < 10 || room.length < 8 || area < 90);
-        const visibleName = roomLabel(room).length > 18 && !selected ? `${roomLabel(room).slice(0, 16)}…` : roomLabel(room);
+        const maximumCharacters = selected ? 18 : Math.min(18, labelCapacity);
+        const visibleName = roomLabel(room).length > maximumCharacters ? `${roomLabel(room).slice(0, Math.max(4, maximumCharacters - 1))}…` : roomLabel(room);
         return (
           <g key={room.id} className={`room-group ${selected ? "is-selected" : ""}`}>
             <title>{room.name} · {area} sq ft · {room.width} × {room.length} ft</title>
@@ -490,11 +496,11 @@ export default function FloorPlan({
               vectorEffect="non-scaling-stroke"
               onPointerDown={(event) => handleRoomPointerDown(event, room)}
             />
-            <g pointerEvents="none" className="room-label">
+            {(showLabels || selected) && <g pointerEvents="none" className="room-label">
               <text x={centroid.x} y={centroid.y + (compactLabel ? 0.3 : -0.35)} textAnchor="middle" className={`room-name ${compactLabel ? "is-compact" : ""}`}>{visibleName}</text>
               {!compactLabel && <text x={centroid.x} y={centroid.y + 1.05} textAnchor="middle" className="room-area">{area} sq ft</text>}
               {!compactLabel && !mediumLabel && <text x={room.x + room.width / 2} y={room.y + room.length - 0.65} textAnchor="middle" className="room-size">{room.width}&apos; × {room.length}&apos;</text>}
-            </g>
+            </g>}
             {selected && (
               <>
                 <line x1={room.x} y1={room.y - 0.65} x2={room.x + room.width} y2={room.y - 0.65} className="selection-dimension" pointerEvents="none" />
