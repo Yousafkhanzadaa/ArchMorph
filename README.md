@@ -14,6 +14,8 @@ ArchMorph is a browser-based architectural concept-design environment where a pe
 
 Coordinate clicking is fragile in an architectural editor. A small visual error can select the wrong wall, place an opening outside its host, or edit the wrong floor. ArchMorph instead exposes 57 architectural operations through `document.modelContext.registerTool()`.
 
+The landing page is WebMCP-enabled too: an agent can inspect the product surface, control the live model's complete/section presentation and drawing layers, then open the studio through four focused route-scoped tools. Clicking the layer toggles or the section button runs the same four definitions, so the title block above the model attributes each change to the person or the agent. Entering the studio releases that landing catalog and replaces it with the full architectural tool surface.
+
 The agent works with stable floor, room, wall, opening, and stair identifiers. Human actions and WebMCP calls both pass through the same operation pipeline, so they share:
 
 - one canonical project model;
@@ -114,6 +116,7 @@ The under-three-minute recording plan and narration are ready in [`docs/DEMO_VID
 | [`src/app/components/ModelView.tsx`](src/app/components/ModelView.tsx) | Three.js model, orbit navigation, and Walk Mode |
 | [`src/lib/persistence.ts`](src/lib/persistence.ts) | Local project library, import/export, and schema migration |
 | [`src/lib/webmcp-tools.ts`](src/lib/webmcp-tools.ts) | Typed WebMCP tool catalog |
+| [`src/lib/landing-webmcp-tools.ts`](src/lib/landing-webmcp-tools.ts) | Route-scoped landing inspection, presentation, and navigation tools |
 
 The project uses Next.js 16, React 19, TypeScript, Three.js, SVG, Tailwind CSS, vinext, Vite, and Cloudflare/OpenAI Sites integration.
 

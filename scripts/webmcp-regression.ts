@@ -9,6 +9,108 @@ import {
   createArchMorphTools,
   type ToolRuntime,
 } from "../src/lib/webmcp-tools.ts";
+import {
+  DEFAULT_LANDING_LAYERS,
+  LANDING_LAYER_KEYS,
+  LANDING_SCHEDULE,
+  STUDIO_TOOL_COUNT,
+  createLandingTools,
+  describeLandingCall,
+  type LandingState,
+  type LandingToolRuntime,
+} from "../src/lib/landing-webmcp-tools.ts";
+
+let landingState: LandingState = {
+  view: "complete",
+  layers: { ...DEFAULT_LANDING_LAYERS },
+};
+let studioNavigationCalls = 0;
+const landingRuntime: LandingToolRuntime = {
+  getState: () => ({ ...landingState, layers: { ...landingState.layers } }),
+  setView: (view) => {
+    landingState = { ...landingState, view };
+  },
+  setLayer: (layer, visible) => {
+    landingState = { ...landingState, layers: { ...landingState.layers, [layer]: visible } };
+  },
+  openStudio: () => {
+    studioNavigationCalls += 1;
+  },
+};
+const landingTools = createLandingTools(landingRuntime);
+const landingNames = landingTools.map((tool) => tool.name);
+
+assert.equal(landingTools.length, 4, "the landing page should expose four focused WebMCP tools");
+assert.equal(new Set(landingNames).size, landingTools.length, "landing WebMCP tool names must be unique");
+for (const tool of landingTools) {
+  assert.match(tool.name, /^[A-Za-z0-9_.-]{1,128}$/, `${tool.name} must use a specification-compatible name`);
+  assert.ok(tool.description.length > 0 && tool.description.length <= 500, `${tool.name} needs a concise description`);
+  assert.equal(tool.inputSchema.type, "object", `${tool.name} must accept an object input`);
+  assert.equal(tool.inputSchema.additionalProperties, false, `${tool.name} must reject undeclared top-level properties`);
+}
+const landingCategories = new Set(landingTools.map((tool) => tool.category));
+assert.deepEqual([...landingCategories].sort(), ["inspect", "navigate", "present"], "the landing catalog should stay inspect/present/navigate");
+assert.equal(landingTools.find((tool) => tool.name === "inspect_landing_page")!.annotations?.readOnlyHint, true);
+for (const tool of landingTools) {
+  if (tool.name === "inspect_landing_page") continue;
+  assert.equal(tool.annotations?.readOnlyHint, false, `${tool.name} changes what the visitor sees and must not claim to be read-only`);
+}
+
+const landingInspection = await landingTools.find((tool) => tool.name === "inspect_landing_page")!.execute({}) as {
+  state: LandingState;
+  capabilities: { landingTools: number; studioTools: number };
+  schedule: { value: string }[];
+  tools: { name: string; category: string; description: string }[];
+};
+assert.equal(landingInspection.state.view, "complete");
+assert.equal(landingInspection.capabilities.landingTools, landingTools.length, "inspection should report the catalog it belongs to");
+assert.deepEqual(landingInspection.tools.map((tool) => tool.name), landingNames, "inspection should advertise every landing tool");
+assert.equal(
+  landingInspection.schedule[0]!.value,
+  String(STUDIO_TOOL_COUNT),
+  "the schedule an agent reads should quote the same tool count the page renders",
+);
+
+const viewResult = await landingTools.find((tool) => tool.name === "set_landing_model_view")!.execute({ view: "section" }) as { changed: boolean };
+assert.equal(landingState.view, "section", "the landing view tool should update the visible hero state");
+assert.equal(viewResult.changed, true, "a real presentation change should be reported as changed");
+const repeatedView = await landingTools.find((tool) => tool.name === "set_landing_model_view")!.execute({ view: "section" }) as { changed: boolean };
+assert.equal(repeatedView.changed, false, "re-setting the current view should report no change");
+await landingTools.find((tool) => tool.name === "set_landing_model_layer")!.execute({ layer: "dimensions", visible: false });
+assert.equal(landingState.layers.dimensions, false, "the landing layer tool should update the visible hero state");
+for (const layer of LANDING_LAYER_KEYS) {
+  const result = await landingTools.find((tool) => tool.name === "set_landing_model_layer")!.execute({ layer, visible: true }) as { state: LandingState };
+  assert.equal(result.state.layers[layer], true, `${layer} should be an addressable landing layer`);
+}
+assert.throws(
+  () => landingTools.find((tool) => tool.name === "set_landing_model_layer")!.execute({ layer: "furniture", visible: false }),
+  /layer must be one of/,
+  "landing tools should reject unknown layers",
+);
+assert.throws(
+  () => landingTools.find((tool) => tool.name === "set_landing_model_layer")!.execute({ layer: "envelope" }),
+  /visible must be true or false/,
+  "landing tools should require an explicit visibility",
+);
+assert.throws(
+  () => landingTools.find((tool) => tool.name === "set_landing_model_view")!.execute({}),
+  /view must be one of/,
+  "landing tools should require a declared view",
+);
+assert.equal(describeLandingCall("set_landing_model_view", { view: "section" }), "Section view");
+assert.equal(describeLandingCall("set_landing_model_layer", { layer: "envelope", visible: false }), "Envelope hidden");
+assert.equal(describeLandingCall("inspect_landing_page"), "Page inspected");
+assert.equal(LANDING_SCHEDULE.length, 3, "the hero schedule should keep its three specification rows");
+const cancelledLandingNavigation = new AbortController();
+cancelledLandingNavigation.abort(new DOMException("Landing navigation cancelled", "AbortError"));
+assert.throws(
+  () => landingTools.find((tool) => tool.name === "open_studio")!.execute({}, { signal: cancelledLandingNavigation.signal }),
+  /Landing navigation cancelled/,
+  "landing navigation should respect native cancellation",
+);
+assert.equal(studioNavigationCalls, 0, "cancelled landing navigation must not open the studio");
+await landingTools.find((tool) => tool.name === "open_studio")!.execute({});
+assert.equal(studioNavigationCalls, 1, "the landing navigation tool should open the studio");
 
 let project = createInitialProject();
 let snapshotCalls = 0;
@@ -254,7 +356,13 @@ const summaryRooms = (JSON.parse(summary) as { rooms: Array<{ area: number; carp
 assert.ok(summaryRooms.every((room) => typeof room.area === "number" && typeof room.carpetArea === "number"),
   "inspect_floor should report each room's area without a second round trip");
 
+assert.equal(
+  tools.length,
+  STUDIO_TOOL_COUNT,
+  "STUDIO_TOOL_COUNT is quoted on the landing page and in open_studio; it must match the real studio catalog",
+);
+
 const exported = await tools.find((tool) => tool.name === "export_plan")!.execute({ format: "json", download: false }) as { projectVersion: number };
 assert.equal(exported.projectVersion, project.version, "exports should identify the current project version");
 
-console.log(`WebMCP regression passed: ${tools.length} tools, ${expectedReadOnly.size} read-only tools, inspect_floor summary ${summary.length} vs full ${full.length} chars, representative execution verified.`);
+console.log(`WebMCP regression passed: ${landingTools.length} landing tools, ${tools.length} studio tools, ${expectedReadOnly.size} read-only studio tools, inspect_floor summary ${summary.length} vs full ${full.length} chars, representative execution verified.`);
