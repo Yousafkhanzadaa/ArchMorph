@@ -133,12 +133,24 @@
 
 .footer {
   position: fixed;
-  left: clamp(24px, 4.8vw, 82px);
+  left: 50%;
   bottom: 4px;
   z-index: 10;
   display: flex;
   align-items: center;
+  justify-content: center;
+  gap: 8px;
   min-height: 20px;
+  padding: 6px 12px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.footer > span {
+  color: var(--landing-muted);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: .75rem;
+  line-height: 1.25;
 }
 
 .footer a {
@@ -180,7 +192,6 @@
   .brand small { display: none; }
   .brandMark { width: 32px; height: 32px; }
   .navCta { min-height: 34px; font-size: 8px; }
-  .footer { left: 17px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -29,6 +29,7 @@ export default function Home() {
       </main>
 
       <footer className={styles.footer}>
+        <span>Meet the creator</span>
         <a href="https://musfk.me" target="_blank" rel="noopener noreferrer">
           musfk.me<span className="visually-hidden"> (opens in a new tab)</span>
         </a>
