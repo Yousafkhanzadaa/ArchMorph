@@ -2,7 +2,7 @@
 
 import { ArrowUpRight } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import {
   DEFAULT_LANDING_LAYERS,
   LANDING_PRODUCT,
@@ -47,7 +47,7 @@ const OPENING: HeroSignal = {
   elevation: 0,
 };
 
-export default function Hero({ children }: { children?: ReactNode }) {
+export default function Hero() {
   const router = useRouter();
   const [hovered, setHovered] = useState<"studio" | "section" | null>(null);
   const [sectionLocked, setSectionLocked] = useState(false);
@@ -235,7 +235,6 @@ export default function Hero({ children }: { children?: ReactNode }) {
             Explore the 3D model
           </button>
         </div>
-        {children}
       </div>
 
       <dl className={styles.schedule}>
