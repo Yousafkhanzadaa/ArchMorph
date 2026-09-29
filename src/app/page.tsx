@@ -3,9 +3,9 @@ import Hero from "./components/Hero";
 import styles from "./landing.module.css";
 
 const socialLinks = [
-  { label: "X", handle: "@xmusfk", href: "https://x.com/xmusfk" },
-  { label: "Instagram", handle: "@musfk", href: "https://www.instagram.com/musfk/" },
-  { label: "LinkedIn", handle: "musfk", href: "https://www.linkedin.com/in/musfk/" },
+  { label: "X", handle: "@xmusfk", href: "https://x.com/xmusfk", icon: "/icons/x.svg" },
+  { label: "Instagram", handle: "@musfk", href: "https://www.instagram.com/musfk/", icon: "/icons/instagram.svg" },
+  { label: "LinkedIn", handle: "musfk", href: "https://www.linkedin.com/in/musfk/", icon: "/icons/linkedin.svg" },
 ];
 
 export default function Home() {
@@ -31,26 +31,31 @@ export default function Home() {
       </nav>
 
       <main>
-        <Hero />
+        <Hero>
+          <div className={styles.creator}>
+            <p>Connect with the creator</p>
+            <nav className={styles.socialLinks} aria-label="Creator social profiles">
+              {socialLinks.map(({ label, handle, href, icon }) => (
+                <a
+                  key={label}
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`${label}: ${handle} (opens in a new tab)`}
+                >
+                  {/* Local SVG brand marks need no image optimization. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={icon} alt="" width={18} height={18} />
+                  <span className={styles.socialText}>
+                    <strong>{label}</strong>
+                    <span>{handle}</span>
+                  </span>
+                </a>
+              ))}
+            </nav>
+          </div>
+        </Hero>
       </main>
-
-      <footer className={styles.footer}>
-        <p>Connect with the creator</p>
-        <nav className={styles.socialLinks} aria-label="Creator social profiles">
-          {socialLinks.map(({ label, handle, href }) => (
-            <a
-              key={label}
-              href={href}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={`${label}: ${handle} (opens in a new tab)`}
-            >
-              <strong>{label}</strong>
-              <span>{handle}</span>
-            </a>
-          ))}
-        </nav>
-      </footer>
     </div>
   );
 }
