@@ -145,17 +145,18 @@
   display: inline-flex;
   align-items: center;
   min-height: 20px;
-  color: var(--landing-muted);
+  color: var(--landing-ink);
   font-family: var(--font-geist-mono), monospace;
-  font-size: .75rem;
+  font-size: .875rem;
+  font-weight: 650;
   line-height: 1.25;
-  text-decoration: none;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
 }
 
 .footer a:hover {
-  color: var(--landing-ink);
-  text-decoration: underline;
-  text-underline-offset: 4px;
+  color: #b45430;
 }
 
 .footer a:focus-visible {
