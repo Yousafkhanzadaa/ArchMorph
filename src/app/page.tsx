@@ -2,9 +2,15 @@ import { ArrowUpRight } from "lucide-react";
 import Hero from "./components/Hero";
 import styles from "./landing.module.css";
 
+const socialLinks = [
+  { label: "X", handle: "@xmusfk", href: "https://x.com/xmusfk" },
+  { label: "Instagram", handle: "@musfk", href: "https://www.instagram.com/musfk/" },
+  { label: "LinkedIn", handle: "musfk", href: "https://www.linkedin.com/in/musfk/" },
+];
+
 export default function Home() {
   return (
-    <main className={styles.page}>
+    <div className={styles.page}>
       <nav className={styles.nav} aria-label="Primary navigation">
         <div className={styles.brand} aria-label="ArchMorph home">
           <span className={styles.brandMark}>AM</span>
@@ -24,7 +30,27 @@ export default function Home() {
         </a>
       </nav>
 
-      <Hero />
-    </main>
+      <main>
+        <Hero />
+      </main>
+
+      <footer className={styles.footer}>
+        <p>Connect with the creator</p>
+        <nav className={styles.socialLinks} aria-label="Creator social profiles">
+          {socialLinks.map(({ label, handle, href }) => (
+            <a
+              key={label}
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`${label}: ${handle} (opens in a new tab)`}
+            >
+              <strong>{label}</strong>
+              <span>{handle}</span>
+            </a>
+          ))}
+        </nav>
+      </footer>
+    </div>
   );
 }
