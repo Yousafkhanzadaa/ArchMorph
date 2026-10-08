@@ -22,6 +22,8 @@ import {
   type Project,
 } from "@/lib/architecture";
 import { buildSpatialModel, openingFrameFor, orientedSlopeFrame, resolveWalkPosition } from "@/lib/spatial3d";
+import { buildFloorSlab, buildParapetSurfaces, buildRoofDeck, buildWallSurfaces, fitPerspectiveView, presentationBounds, type SurfacePatch } from "@/lib/model-presentation";
+import { batchModelMeshes, createModelPalette, selectionGeometry, surfaceGeometry } from "@/lib/model-materials";
 
 type ModelViewProps = {
   project: Project;
@@ -55,11 +57,6 @@ const STAIR_LANDING_CLEARANCE = 0.75;
 const STAIR_ARRIVAL_PROGRESS = 0.06;
 const STAIR_SOFFIT_OFFSET = 0.34;
 const FLOOR_SLAB_THICKNESS = 0.18;
-const CEILING_THICKNESS = 0.1;
-
-function colorWithSelection(base: string, selected: boolean) {
-  return selected ? "#d8663f" : base;
-}
 
 function meshBox(
   size: [number, number, number],
@@ -126,7 +123,22 @@ export default function ModelView({
   const minimapMarkerRef = useRef<SVGGElement | null>(null);
   const minimapRoomLabelRef = useRef<HTMLSpanElement | null>(null);
   const minimapRoomRefs = useRef(new Map<string, SVGPolygonElement>());
+  const liveRef = useRef({ project, selectedId, onSelect, onWalkFloorChange });
+  const selectionRef = useRef<((id?: string) => void) | undefined>(undefined);
+  const renderedSceneKeyRef = useRef<string | undefined>(undefined);
+  // History/read operations and selection do not invalidate GPU resources.
+  const sceneKey = JSON.stringify([project.id, project.plot, project.floors, project.rooms, project.walls,
+    project.openings, project.stairs, project.balconies, project.facadeFeatures, project.roof,
+    project.siteBoundary, project.exteriorFinish, project.view, navigationMode]);
   useEffect(() => {
+    liveRef.current = { project, selectedId, onSelect, onWalkFloorChange };
+    const canvas = canvasRef.current;
+    if (canvas && renderedSceneKeyRef.current === sceneKey) canvas.dataset.projectVersion = String(project.version);
+  });
+  useEffect(() => {
+    const { project, selectedId } = liveRef.current;
+    const onSelect = (id?: string) => liveRef.current.onSelect(id);
+    const onWalkFloorChange = (id: string) => liveRef.current.onWalkFloorChange(id);
     const host = hostRef.current;
     const canvas = canvasRef.current;
     if (!host || !canvas) return;
@@ -138,16 +150,18 @@ export default function ModelView({
       return connection ? [connection] : [];
     });
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(navigationMode === "walk" ? "#dce5e4" : "#e7e8e4");
-    scene.fog = new THREE.Fog(scene.background, navigationMode === "walk" ? 48 : 80, navigationMode === "walk" ? 105 : 170);
-
-    const camera = new THREE.PerspectiveCamera(navigationMode === "walk" ? 68 : 34, 1, 0.1, 500);
+    scene.background = new THREE.Color("#e6e9e8");
+    const modelBounds = presentationBounds(project);
+    const modelSize = new THREE.Vector3().fromArray(modelBounds.max).sub(new THREE.Vector3().fromArray(modelBounds.min));
+    const modelRadius = Math.max(12, modelSize.length() / 2);
+    scene.fog = new THREE.Fog(scene.background, modelRadius * 12, modelRadius * 22);
+    const camera = new THREE.PerspectiveCamera(navigationMode === "walk" ? 68 : 38, Math.max(1, host.clientWidth) / Math.max(1, host.clientHeight), 0.08, modelRadius * 25);
     camera.rotation.order = "YXZ";
     // A browser without WebGL (hardware acceleration off, a locked-down embedded view) must cost the
     // user the 3D view only. Letting this throw would take the whole studio down with it.
     let renderer: THREE.WebGLRenderer;
     try {
-      renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+      renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: false });
     } catch {
       host.dataset.webglUnavailable = "true";
       return;
@@ -157,8 +171,18 @@ export default function ModelView({
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = navigationMode === "walk" ? 1.25 : 1.08;
+    renderer.shadowMap.autoUpdate = false;
+    renderer.shadowMap.needsUpdate = true;
+    renderer.toneMapping = THREE.NeutralToneMapping;
+    renderer.toneMappingExposure = navigationMode === "walk" ? 1.12 : 1.02;
+    const palette = createModelPalette(renderer);
+    scene.environment = palette.environment;
+    scene.environmentIntensity = 0.45;
+    let frame = 0;
+    let disposed = false;
+    const requestRender = () => {
+      if (!frame && !disposed && !document.hidden) frame = requestAnimationFrame(time => animate(time));
+    };
 
     const controls = new OrbitControls(camera, canvas);
     controls.enabled = navigationMode === "orbit";
@@ -166,16 +190,18 @@ export default function ModelView({
     controls.dampingFactor = 0.07;
     controls.screenSpacePanning = true;
     controls.minDistance = 7;
-    controls.maxDistance = 180;
+    controls.maxDistance = modelRadius * 10;
     controls.maxPolarAngle = Math.PI / 2.02;
 
     const maxDimension = Math.max(project.plot.width, project.plot.length);
-    const center = new THREE.Vector3(project.plot.width / 2, 3.2, project.plot.length / 2);
-    const focusedRoom = project.rooms.find((room) => room.id === project.view.focusElementId);
-    const focusedCenter = focusedRoom ? roomInteriorPoint(focusedRoom) : undefined;
-    const target = focusedCenter
-      ? new THREE.Vector3(focusedCenter.x, 3.2, focusedCenter.y)
-      : center;
+    const center = new THREE.Vector3().fromArray(modelBounds.min).add(new THREE.Vector3().fromArray(modelBounds.max)).multiplyScalar(0.5);
+    const fitCamera = () => {
+      const fit = fitPerspectiveView(presentationBounds(project, project.view.focusElementId), project.view.cameraPreset, camera.aspect, camera.fov);
+      camera.position.fromArray(fit.position);
+      controls.target.fromArray(fit.target);
+      controls.maxDistance = Math.max(modelRadius * 10, fit.distance * 3);
+      camera.lookAt(controls.target);
+    };
     const orbitViewKey = `${project.view.cameraPreset}:${project.view.focusElementId ?? "project"}:${project.plot.width}x${project.plot.length}`;
 
     if (navigationMode === "orbit") {
@@ -185,20 +211,7 @@ export default function ModelView({
         controls.target.fromArray(storedPose.target);
         camera.lookAt(controls.target);
       } else {
-        const distance = maxDimension * 0.82;
-        const height = Math.max(24, maxDimension * 0.48);
-        const positions: Record<string, THREE.Vector3> = {
-          front: new THREE.Vector3(project.plot.width / 2, height, -distance),
-          rear: new THREE.Vector3(project.plot.width / 2, height, project.plot.length + distance),
-          left: new THREE.Vector3(-distance, height, project.plot.length / 2),
-          right: new THREE.Vector3(project.plot.width + distance, height, project.plot.length / 2),
-          top: new THREE.Vector3(project.plot.width / 2, maxDimension * 1.25, project.plot.length / 2 + 0.01),
-          "front-left": new THREE.Vector3(-distance * 0.62, height, -distance * 0.62),
-          "front-right": new THREE.Vector3(project.plot.width + distance * 0.62, height, -distance * 0.62),
-        };
-        camera.position.copy(positions[project.view.cameraPreset] ?? positions["front-right"]);
-        controls.target.copy(target);
-        camera.lookAt(target);
+        fitCamera();
       }
     } else {
       const floor = project.floors.find((item) => item.id === project.view.activeFloorId) ?? project.floors[0];
@@ -258,29 +271,40 @@ export default function ModelView({
       camera.rotation.set(storedPose?.pitch ?? 0, storedPose?.yaw ?? safeStart.yaw, 0);
     }
 
-    const ambient = new THREE.HemisphereLight("#f8fbff", "#81776d", navigationMode === "walk" ? 3.1 : 2.4);
+    const ambient = new THREE.HemisphereLight("#e2edff", "#b5a48e", navigationMode === "walk" ? 1.75 : 1.35);
     scene.add(ambient);
-    const sun = new THREE.DirectionalLight("#fff8e9", navigationMode === "walk" ? 3.1 : 3.8);
-    sun.position.set(-30, 55, -35);
+    const sun = new THREE.DirectionalLight("#fff4df", 3);
+    sun.position.copy(center).add(new THREE.Vector3(-0.8, 1.6, -1).multiplyScalar(modelRadius * 2));
+    sun.target.position.copy(center);
+    scene.add(sun.target);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.camera.left = -80;
-    sun.shadow.camera.right = 80;
-    sun.shadow.camera.top = 80;
-    sun.shadow.camera.bottom = -80;
+    sun.shadow.camera.left = -modelRadius * 1.15;
+    sun.shadow.camera.right = modelRadius * 1.15;
+    sun.shadow.camera.top = modelRadius * 1.15;
+    sun.shadow.camera.bottom = -modelRadius * 1.15;
+    sun.shadow.camera.near = modelRadius;
+    sun.shadow.camera.far = modelRadius * 7;
+    sun.shadow.bias = -0.00015;
+    sun.shadow.normalBias = 0.035;
+    sun.shadow.radius = 3.4;
     scene.add(sun);
+    const fill = new THREE.DirectionalLight("#dceaff", navigationMode === "walk" ? 0.65 : 0.45);
+    fill.position.copy(center).add(new THREE.Vector3(modelRadius, modelRadius, modelRadius));
+    scene.add(fill);
 
     const ground = new THREE.Mesh(
-      new THREE.BoxGeometry(project.plot.width + 18, 0.35, project.plot.length + 18),
-      new THREE.MeshStandardMaterial({ color: "#d8d8d2", roughness: 0.95 }),
+      new THREE.PlaneGeometry(modelRadius * 50, modelRadius * 50),
+      new THREE.MeshStandardMaterial({ color: "#cdd2cc", roughness: 0.95 }),
     );
-    ground.position.set(project.plot.width / 2, -0.22, project.plot.length / 2);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.set(project.plot.width / 2, -0.18, project.plot.length / 2);
     ground.receiveShadow = true;
     scene.add(ground);
 
     const plotSlab = new THREE.Mesh(
       new THREE.BoxGeometry(project.plot.width, 0.16, project.plot.length),
-      new THREE.MeshStandardMaterial({ color: "#eeeee9", roughness: 0.88 }),
+      palette.get("floor-tile"),
     );
     plotSlab.position.set(project.plot.width / 2, -0.06, project.plot.length / 2);
     plotSlab.receiveShadow = true;
@@ -290,97 +314,53 @@ export default function ModelView({
     grid.position.set(project.plot.width / 2, 0.035, project.plot.length / 2);
     const gridMaterial = grid.material as THREE.Material;
     gridMaterial.transparent = true;
-    gridMaterial.opacity = navigationMode === "walk" ? 0.08 : 0.28;
+    gridMaterial.opacity = navigationMode === "walk" ? 0.015 : 0.045;
     scene.add(grid);
 
     const boundary = new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.BoxGeometry(project.plot.width, 0.05, project.plot.length)),
-      new THREE.LineBasicMaterial({ color: "#26342c" }),
+      new THREE.LineBasicMaterial({ color: "#8b9690", transparent: true, opacity: 0.5 }),
     );
     boundary.position.set(project.plot.width / 2, 0.08, project.plot.length / 2);
     scene.add(boundary);
 
     const selectable: THREE.Object3D[] = [];
-    const finishMaterial = (finishId: keyof typeof exteriorFinishPresets, selected = false) => {
-      const finish = exteriorFinishPresets[finishId];
-      return new THREE.MeshStandardMaterial({
-        color: colorWithSelection(finish.color, selected),
-        roughness: finish.roughness,
-        metalness: finish.metalness,
-      });
+    const finishMaterial = (finishId: keyof typeof exteriorFinishPresets) => palette.finish(finishId);
+    const addSurfaces = (patches: SurfacePatch[], material: THREE.Material) => {
+      if (!patches.length) return;
+      const { geometry, ids } = surfaceGeometry(patches);
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.userData.triangleElementIds = ids;
+      mesh.castShadow = mesh.receiveShadow = true;
+      scene.add(mesh);
     };
     const wallFinish = (wallIds: string[]) => {
       const wall = wallIds.map((id) => project.walls.find((item) => item.id === id)).find((item) => item?.exterior);
       return wall?.finish ?? project.exteriorFinish;
     };
 
-    for (const room of project.rooms) {
-      const floor = floorById.get(room.floorId);
-      if (!floor) continue;
-      const slabVoids = stairConnections
-        .filter((connection) => connection.upperFloor.id === floor.id)
-        .map(({ stair }) => stairPlanOutline(stair))
-        .filter((outline) => outline.some((point) => roomContainsPoint(room, point)));
-      const slabMaterial = new THREE.MeshStandardMaterial({
-        color: colorWithSelection(room.color, selectedId === room.id),
-        roughness: 0.82,
-        transparent: room.type === "Courtyard",
-        opacity: room.type === "Courtyard" ? 0.45 : 1,
-      });
-      const slab = new THREE.Mesh(planExtrusion(roomVertices(room), FLOOR_SLAB_THICKNESS, slabVoids), slabMaterial);
-      slab.position.y = floor.elevation + FLOOR_SLAB_THICKNESS;
-      slab.receiveShadow = true;
-      slab.userData.elementId = room.id;
-      selectable.push(slab);
-      scene.add(slab);
+    for (const room of project.rooms) addSurfaces(buildFloorSlab(project, room), palette.floor(room.type));
+    for (const floor of project.floors) addSurfaces(buildRoofDeck(project, floor.id, spatial), palette.get("roof"));
 
-      if (room.type !== "Courtyard") {
-        const ceilingVoids = stairConnections
-          .filter((connection) => connection.lowerFloor.id === floor.id)
-          .map(({ stair }) => stairPlanOutline(stair))
-          .filter((outline) => outline.some((point) => roomContainsPoint(room, point)));
-        const ceilingMaterial = new THREE.MeshStandardMaterial({ color: "#f0eee7", roughness: 0.94 });
-        const ceiling = new THREE.Mesh(planExtrusion(roomVertices(room), CEILING_THICKNESS, ceilingVoids), ceilingMaterial);
-        ceiling.position.y = floor.elevation + floor.height;
-        ceiling.castShadow = true;
-        ceiling.receiveShadow = true;
-        ceiling.userData.elementId = room.id;
-        selectable.push(ceiling);
-        scene.add(ceiling);
-      }
+    let wallPieceCount = spatial.wallVolumes.length;
+    const wallSurfaces = buildWallSurfaces(project, spatial);
+    const wallGroups = new Map<string, SurfacePatch[]>();
+    for (const patch of wallSurfaces) {
+      const key = patch.finish ?? "interior";
+      const group = wallGroups.get(key) ?? [];
+      group.push(patch); wallGroups.set(key, group);
     }
-
-    let wallPieceCount = 0;
-    for (const volume of spatial.wallVolumes) {
-      const floor = floorById.get(volume.floorId);
-      if (!floor || volume.width <= 0 || volume.length <= 0) continue;
-      const selected = volume.wallIds.includes(selectedId ?? "");
-      const exterior = volume.wallIds.some((wallId) => project.walls.find((wall) => wall.id === wallId)?.exterior);
-      const finish = exteriorFinishPresets[wallFinish(volume.wallIds)];
-      const mesh = meshBox(
-        [volume.width, volume.top - volume.bottom, volume.length],
-        [volume.x + volume.width / 2, floor.elevation + (volume.bottom + volume.top) / 2, volume.z + volume.length / 2],
-        0,
-        new THREE.MeshStandardMaterial({ color: colorWithSelection(exterior ? finish.color : "#e6e1d6", selected), roughness: exterior ? finish.roughness : 0.84, metalness: exterior ? finish.metalness : 0 }),
-      );
-      mesh.userData.elementId = volume.wallIds[0];
-      mesh.userData.wallIds = volume.wallIds;
-      selectable.push(mesh);
-      scene.add(mesh);
-      wallPieceCount += 1;
-    }
+    for (const [finish, patches] of wallGroups) addSurfaces(patches, palette.finish(finish as keyof typeof exteriorFinishPresets | "interior"));
     for (const solid of spatial.wallSolids) {
       const floor = floorById.get(solid.floorId);
       const length = Math.hypot(solid.x2 - solid.x1, solid.z2 - solid.z1);
       if (!floor || !length) continue;
-      const selected = solid.wallIds.includes(selectedId ?? "");
       const exterior = solid.wallIds.some((wallId) => project.walls.find((wall) => wall.id === wallId)?.exterior);
-      const finish = exteriorFinishPresets[wallFinish(solid.wallIds)];
       const mesh = meshBox(
         [length, solid.top - solid.bottom, solid.thickness],
         [(solid.x1 + solid.x2) / 2, floor.elevation + (solid.bottom + solid.top) / 2, (solid.z1 + solid.z2) / 2],
         -Math.atan2(solid.z2 - solid.z1, solid.x2 - solid.x1),
-        new THREE.MeshStandardMaterial({ color: colorWithSelection(exterior ? finish.color : "#e6e1d6", selected), roughness: exterior ? finish.roughness : 0.84, metalness: exterior ? finish.metalness : 0 }),
+        palette.finish(exterior ? wallFinish(solid.wallIds) : "interior"),
       );
       mesh.userData.elementId = solid.wallIds[0];
       mesh.userData.wallIds = solid.wallIds;
@@ -389,27 +369,10 @@ export default function ModelView({
       wallPieceCount += 1;
     }
 
-    let renderedParapetCount = 0;
-    if (project.roof.parapetEnabled) {
-      const topFloor = [...project.floors].sort((a, b) => b.level - a.level)[0];
-      if (topFloor) {
-        const material = finishMaterial(project.roof.finish);
-        for (const wall of project.walls.filter((item) => item.floorId === topFloor.id && item.exterior)) {
-          const length = Math.hypot(wall.x2 - wall.x1, wall.y2 - wall.y1);
-          if (!length) continue;
-          const parapet = meshBox(
-            [length, project.roof.parapetHeight, project.roof.parapetThickness],
-            [(wall.x1 + wall.x2) / 2, topFloor.elevation + topFloor.height + project.roof.parapetHeight / 2, (wall.y1 + wall.y2) / 2],
-            -Math.atan2(wall.y2 - wall.y1, wall.x2 - wall.x1),
-            material,
-          );
-          parapet.userData.elementId = wall.id;
-          selectable.push(parapet);
-          scene.add(parapet);
-          renderedParapetCount += 1;
-        }
-      }
-    }
+    const parapets = buildParapetSurfaces(project);
+    addSurfaces(parapets, finishMaterial(project.roof.finish));
+    addSurfaces(buildParapetSurfaces(project, true), palette.get("coping"));
+    const renderedParapetCount = project.roof.parapetEnabled ? parapets.length : 0;
 
     let renderedBoundaryPieceCount = 0;
     if (project.siteBoundary.enabled) {
@@ -456,20 +419,19 @@ export default function ModelView({
     for (const balcony of project.balconies) {
       const floor = floorById.get(balcony.floorId);
       if (!floor) continue;
-      const selected = selectedId === balcony.id;
       const slabTop = floor.elevation + Math.max(FLOOR_SLAB_THICKNESS, balcony.slabThickness);
       const slab = meshBox(
         [balcony.width, balcony.slabThickness, balcony.length],
         [balcony.x + balcony.width / 2, floor.elevation + balcony.slabThickness / 2, balcony.y + balcony.length / 2],
         0,
-        finishMaterial(balcony.finish, selected),
+        finishMaterial(balcony.finish),
       );
       slab.userData.elementId = balcony.id;
       selectable.push(slab);
       scene.add(slab);
       renderedBalconyCount += 1;
       if (!balcony.railing.enabled) continue;
-      const railMaterial = finishMaterial("metal", selected);
+      const railMaterial = palette.get("frame");
       const addRailPiece = (size: [number, number, number], position: [number, number, number]) => {
         const piece = meshBox(size, position, 0, railMaterial);
         piece.userData.elementId = balcony.id;
@@ -522,7 +484,7 @@ export default function ModelView({
             : { x: -1, z: 0 };
       const anchor = { x: wall.x1 + tx * feature.offset, z: wall.y1 + tz * feature.offset };
       const rotation = -Math.atan2(wall.y2 - wall.y1, wall.x2 - wall.x1);
-      const material = finishMaterial(feature.finish, selectedId === feature.id);
+      const material = finishMaterial(feature.finish);
       const addFeaturePiece = (size: [number, number, number], y: number, projectionCenter: number, tangentCenter = 0) => {
         const piece = meshBox(
           size,
@@ -553,14 +515,9 @@ export default function ModelView({
       const { opening } = frame;
       const floor = floorById.get(opening.floorId);
       if (!floor) continue;
-      const selected = selectedId === opening.id;
       const elevation = floor.elevation;
-      const depth = Math.max(0.18, frame.wall.thickness + 0.08);
-      const frameMaterial = new THREE.MeshStandardMaterial({
-        color: colorWithSelection(opening.kind === "door" ? "#80624f" : "#4f6b71", selected),
-        roughness: opening.kind === "door" ? 0.68 : 0.42,
-        metalness: opening.kind === "window" ? 0.2 : 0,
-      });
+      const depth = Math.max(0.16, frame.wall.thickness * 0.55);
+      const frameMaterial = palette.get(opening.kind === "door" ? "door" : "frame");
 
       if (opening.kind === "door") {
         renderedDoorCount += 1;
@@ -590,6 +547,9 @@ export default function ModelView({
         header.userData.elementId = opening.id;
         selectable.push(header);
         scene.add(header);
+        const threshold = meshBox([opening.width - jambWidth * 2, 0.06, frame.wall.thickness + 0.12], [frame.x, elevation + FLOOR_SLAB_THICKNESS - 0.03, frame.z], -frame.angle, palette.get("coping"));
+        threshold.userData.elementId = opening.id;
+        scene.add(threshold);
 
         const hingeDirection = opening.hingeSide === "end" ? 1 : -1;
         const hingeX = frame.x + frame.dirX * hingeDirection * opening.width / 2;
@@ -602,17 +562,22 @@ export default function ModelView({
             ? [frame.x, elevation + opening.height / 2, frame.z]
             : [hingeX + frame.normalX * swingSign * opening.width / 2, elevation + opening.height / 2, hingeZ + frame.normalZ * swingSign * opening.width / 2],
           isClosed ? -frame.angle : -(frame.angle + swingSign * Math.PI / 2),
-          new THREE.MeshStandardMaterial({ color: colorWithSelection("#9b765c", selected), roughness: 0.72 }),
+          palette.get("door"),
         );
         panel.userData.elementId = opening.id;
         panel.userData.openAngle = isClosed ? 0 : 90 * swingSign;
         selectable.push(panel);
         scene.add(panel);
+        const handle = meshBox([0.32, 0.055, 0.055], [0, 0, 0], 0, palette.get("hardware"));
+        handle.position.set(opening.width * 0.32, -opening.height / 2 + 3.15, 0.11).applyAxisAngle(new THREE.Vector3(0, 1, 0), panel.rotation.y).add(panel.position);
+        handle.rotation.y = panel.rotation.y;
+        handle.userData.elementId = opening.id;
+        scene.add(handle);
         renderedDoorPanelCount += 1;
       } else {
         renderedWindowCount += 1;
         const sill = opening.sillHeight ?? 0;
-        const rail = 0.16;
+        const rail = 0.105;
         const centerY = elevation + sill + opening.height / 2;
         const visibleTransmittance = opening.visibleTransmittance ?? (opening.glazing === "privacy" ? 0.35 : 0.7);
         for (const side of [-1, 1]) {
@@ -641,20 +606,27 @@ export default function ModelView({
           selectable.push(railMesh);
           scene.add(railMesh);
         }
+        const sillMesh = meshBox([opening.width + 0.12, 0.09, frame.wall.thickness + 0.22], [frame.x, elevation + sill - 0.045, frame.z], -frame.angle, palette.get("coping"));
+        sillMesh.userData.elementId = opening.id;
+        scene.add(sillMesh);
         const glass = meshBox(
           [Math.max(0.2, opening.width - 0.24), Math.max(0.2, opening.height - 0.24), 0.045],
           [frame.x, centerY, frame.z],
           -frame.angle,
           new THREE.MeshPhysicalMaterial({
-            color: colorWithSelection(opening.glazing === "privacy" ? "#c4d2d0" : opening.glazing === "low-e" ? "#96bdb9" : "#9bc8d4", selected),
+            color: opening.glazing === "privacy" ? "#d1d9d6" : opening.glazing === "low-e" ? "#aec2b9" : "#c1d2d7",
             transparent: true,
             opacity: opening.glazing === "privacy" ? 0.72 : Math.max(0.22, 0.5 - visibleTransmittance * 0.3),
-            transmission: selected || opening.glazing === "privacy" ? 0 : Math.max(0.08, Math.min(0.72, visibleTransmittance * 0.78)),
+            // Environment reflections avoid the extra full-scene transmission pass.
+            transmission: 0,
+            envMapIntensity: 1.25,
+            depthWrite: false,
             roughness: opening.glazing === "privacy" ? 0.48 : 0.12,
-            metalness: 0.06,
+            metalness: 0.15,
             side: THREE.DoubleSide,
           }),
         );
+        glass.castShadow = glass.receiveShadow = false;
         glass.userData.elementId = opening.id;
         glass.userData.visibleTransmittance = visibleTransmittance;
         glass.userData.solarHeatGainCoefficient = opening.solarHeatGainCoefficient;
@@ -686,19 +658,9 @@ export default function ModelView({
       const lowerElevation = connection?.lowerFloor.elevation ?? floor.elevation;
       const rise = connection?.rise ?? floor.height * 0.72;
       const layout = stairLayout(stair);
-      const selected = selectedId === stair.id;
-      const stairMaterial = new THREE.MeshStandardMaterial({
-        color: colorWithSelection("#aaa69d", selected),
-        roughness: 0.86,
-      });
-      const supportMaterial = new THREE.MeshStandardMaterial({
-        color: colorWithSelection("#77776f", selected),
-        roughness: 0.78,
-      });
-      const riserMaterial = new THREE.MeshStandardMaterial({
-        color: colorWithSelection("#918e87", selected),
-        roughness: 0.9,
-      });
+      const stairMaterial = palette.get("coping");
+      const supportMaterial = palette.finish("concrete");
+      const riserMaterial = palette.finish("interior");
       const treadThickness = 0.18;
       layout.flights.forEach((flight, flightIndex) => {
         renderedStairFlightCount += 1;
@@ -707,6 +669,7 @@ export default function ModelView({
         const flightBase = lowerElevation + rise * flight.progressStart;
         const stepLength = flight.length / treadCount;
         const riserHeight = flightRise / (treadCount + 1);
+        const supportOffset = Math.max(STAIR_SOFFIT_OFFSET, riserHeight + treadThickness);
         const start = stairPlanPoint(stair, flight.start.u, flight.start.v);
         const end = stairPlanPoint(stair, flight.end.u, flight.end.v);
         const flightYaw = Math.atan2(end.x - start.x, end.y - start.y);
@@ -751,8 +714,8 @@ export default function ModelView({
         const soffit = meshSlopeBox(
           Math.max(0.2, flight.width - 0.22),
           0.14,
-          new THREE.Vector3(start.x, flightBase - STAIR_SOFFIT_OFFSET, start.y),
-          new THREE.Vector3(end.x, flightBase + flightRise - STAIR_SOFFIT_OFFSET, end.y),
+          new THREE.Vector3(start.x, flightBase - supportOffset, start.y),
+          new THREE.Vector3(end.x, flightBase + flightRise - supportOffset, end.y),
           supportMaterial,
         );
         if (soffit) {
@@ -768,14 +731,27 @@ export default function ModelView({
           const stringer = meshSlopeBox(
             0.16,
             0.24,
-            new THREE.Vector3(stringerStart.x, flightBase - 0.2, stringerStart.y),
-            new THREE.Vector3(stringerEnd.x, flightBase + flightRise - 0.2, stringerEnd.y),
+            new THREE.Vector3(stringerStart.x, flightBase - supportOffset, stringerStart.y),
+            new THREE.Vector3(stringerEnd.x, flightBase + flightRise - supportOffset, stringerEnd.y),
             supportMaterial,
           );
           if (stringer) {
             stringer.userData.elementId = stair.id;
             selectable.push(stringer);
             scene.add(stringer);
+          }
+          const rail = meshSlopeBox(0.09, 0.09,
+            new THREE.Vector3(stringerStart.x, flightBase + 3, stringerStart.y),
+            new THREE.Vector3(stringerEnd.x, flightBase + flightRise + 3, stringerEnd.y),
+            palette.get("frame"));
+          if (rail) { rail.userData.elementId = stair.id; scene.add(rail); }
+          const postCount = Math.min(6, Math.max(2, Math.ceil(flight.length / 4) + 1));
+          for (let index = 0; index < postCount; index++) {
+            const fraction = index / (postCount - 1);
+            const point = localPointAt(flight.length * fraction, side);
+            const plan = stairPlanPoint(stair, point.u, point.v);
+            const post = meshBox([0.07, 3, 0.07], [plan.x, flightBase + flightRise * fraction + 1.5, plan.y], flightYaw, palette.get("frame"));
+            post.userData.elementId = stair.id; scene.add(post);
           }
         }
       });
@@ -793,6 +769,33 @@ export default function ModelView({
       }
     }
 
+    const batches = batchModelMeshes(scene, [ground]);
+    selectable.splice(0, selectable.length, ...batches);
+    const selectionMaterial = new THREE.MeshBasicMaterial({ color: "#d78954", transparent: true, opacity: 0.16, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    const outlineMaterial = new THREE.LineBasicMaterial({ color: "#bf6335", transparent: true, opacity: 0.85 });
+    let highlight: THREE.Mesh | undefined;
+    let outline: THREE.LineSegments | undefined;
+    const updateSelection = (id?: string) => {
+      if (highlight) { scene.remove(highlight); highlight.geometry.dispose(); }
+      if (outline) { scene.remove(outline); outline.geometry.dispose(); }
+      highlight = undefined; outline = undefined;
+      const geometry = selectionGeometry(batches, id);
+      if (geometry && navigationMode === "orbit") {
+        highlight = new THREE.Mesh(geometry, selectionMaterial);
+        outline = new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 25), outlineMaterial);
+        scene.add(highlight, outline);
+      } else geometry?.dispose();
+      requestRender();
+    };
+    selectionRef.current = updateSelection;
+    controls.addEventListener("change", requestRender);
+    canvas.dataset.sceneGeneration = String(Number(canvas.dataset.sceneGeneration ?? 0) + 1);
+    renderedSceneKeyRef.current = sceneKey;
+    canvas.dataset.projectId = project.id;
+    canvas.dataset.projectVersion = String(project.version);
+    canvas.dataset.viewSignature = JSON.stringify(project.view);
+    canvas.dataset.meshBatches = String(batches.length);
+    canvas.dataset.wallSurfaceCount = String(wallSurfaces.length);
     canvas.dataset.navigationMode = navigationMode;
     canvas.dataset.wallPieceCount = String(wallPieceCount);
     canvas.dataset.doorCount = String(project.openings.filter((item) => item.kind === "door").length);
@@ -808,13 +811,19 @@ export default function ModelView({
     canvas.dataset.balconyCount = String(renderedBalconyCount);
     canvas.dataset.railingPieceCount = String(renderedRailingPieceCount);
     canvas.dataset.facadeFeaturePieceCount = String(renderedFacadeFeaturePieceCount);
+    // PMREM generation uses this renderer too; request the building's shadow only after it exists.
+    renderer.shadowMap.needsUpdate = true;
 
     const resize = () => {
       const width = Math.max(1, host.clientWidth);
       const heightPx = Math.max(1, host.clientHeight);
       renderer.setSize(width, heightPx, false);
-      camera.aspect = width / heightPx;
+      const nextAspect = width / heightPx;
+      const aspectChanged = Math.abs(camera.aspect - nextAspect) > 0.001;
+      camera.aspect = nextAspect;
       camera.updateProjectionMatrix();
+      if (navigationMode === "orbit" && aspectChanged) fitCamera();
+      requestRender();
     };
     resize();
     const observer = new ResizeObserver(resize);
@@ -828,6 +837,7 @@ export default function ModelView({
       yaw -= movementX * 0.0022;
       pitch = Math.max(-Math.PI * 0.46, Math.min(Math.PI * 0.46, pitch - movementY * 0.0022));
       camera.rotation.set(pitch, yaw, 0);
+      requestRender();
     };
     const handleSelectionPointerDown = (event: PointerEvent) => {
       selectionPointerStart = event.button === 0 ? { x: event.clientX, y: event.clientY } : undefined;
@@ -876,7 +886,9 @@ export default function ModelView({
       pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(pointer, camera);
       const hit = raycaster.intersectObjects(selectable, false)[0];
-      onSelect(hit?.object.userData.elementId);
+      const pickedId = hit?.object.userData.triangleElementIds?.[hit.faceIndex ?? -1] ?? hit?.object.userData.elementId;
+      canvas.dataset.pickedElementId = pickedId ?? "";
+      onSelect(pickedId);
     };
     canvas.addEventListener("pointerdown", handleSelectionPointerDown);
     canvas.addEventListener("pointermove", handleSelectionPointerMove);
@@ -911,7 +923,8 @@ export default function ModelView({
 
     const canWalkUnderStair = (connection: (typeof activeStairConnections)[number], x: number, z: number) => {
       if (activeFloor?.id !== connection.lowerFloor.id) return false;
-      const undersideClearance = stairProgress(connection, x, z) * connection.rise - STAIR_SOFFIT_OFFSET;
+      const supportOffset = Math.max(STAIR_SOFFIT_OFFSET, connection.riserHeight + FLOOR_SLAB_THICKNESS);
+      const undersideClearance = stairProgress(connection, x, z) * connection.rise - supportOffset;
       return undersideClearance >= WALK_BODY_HEIGHT;
     };
 
@@ -1028,6 +1041,7 @@ export default function ModelView({
       event.preventDefault();
       pressed.add(event.code);
       if (direction && !event.repeat) moveWalkCamera(direction.x * 0.25, direction.z * 0.25);
+      requestRender();
     };
     const handleKeyUp = (event: KeyboardEvent) => pressed.delete(event.code);
     const handleMouseMove = (event: MouseEvent) => {
@@ -1042,12 +1056,22 @@ export default function ModelView({
     document.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("pointerlockchange", updatePointerState);
 
-    let frame = 0;
     let previousTime = performance.now();
+    let renderCount = 0;
+    const renderScene = () => {
+      renderer.render(scene, camera);
+      canvas.dataset.drawCalls = String(renderer.info.render.calls);
+      canvas.dataset.triangles = String(renderer.info.render.triangles);
+      canvas.dataset.textureCount = String(renderer.info.memory.textures);
+      canvas.dataset.renderCount = String(++renderCount);
+    };
     const animate = (time = performance.now()) => {
+      frame = 0;
       const delta = Math.min(0.05, Math.max(0, (time - previousTime) / 1000));
       previousTime = time;
-      if (navigationMode === "orbit") controls.update();
+      if (navigationMode === "orbit") {
+        if (controls.update()) requestRender();
+      }
       else {
         let moveX = 0;
         let moveZ = 0;
@@ -1063,6 +1087,7 @@ export default function ModelView({
           const fast = pressed.has("ShiftLeft") || pressed.has("ShiftRight");
           const speed = fast ? 8 : 5;
           moveWalkCamera((moveX / magnitude) * speed * delta, (moveZ / magnitude) * speed * delta);
+          requestRender();
         }
         camera.rotation.set(pitch, yaw, 0);
         if (!transitionRequested) {
@@ -1100,10 +1125,29 @@ export default function ModelView({
           element.classList.toggle("is-current", roomId === currentRoom?.id);
         });
       }
-      renderer.render(scene, camera);
-      frame = requestAnimationFrame(animate);
+      renderScene();
     };
-    animate();
+    const clearMovement = () => pressed.clear();
+    const visibilityChanged = () => {
+      if (document.hidden) { cancelAnimationFrame(frame); frame = 0; clearMovement(); }
+      else { previousTime = performance.now(); requestRender(); }
+    };
+    const reframe = (event: Event) => {
+      if (navigationMode !== "orbit") return;
+      const view = (event as CustomEvent<Project["view"]>).detail ?? project.view;
+      const fit = fitPerspectiveView(presentationBounds(project, view.focusElementId), view.cameraPreset, camera.aspect, camera.fov);
+      // Clear any remaining damping before assigning the requested architectural view.
+      const damping = controls.enableDamping;
+      controls.enableDamping = false;
+      controls.reset();
+      camera.position.fromArray(fit.position); controls.target.fromArray(fit.target);
+      camera.lookAt(controls.target); controls.update(); controls.enableDamping = damping; requestRender();
+    };
+    canvas.addEventListener("archmorph:snapshot", renderScene);
+    canvas.addEventListener("archmorph:frame-view", reframe);
+    document.addEventListener("visibilitychange", visibilityChanged);
+    window.addEventListener("blur", clearMovement);
+    requestRender();
 
     return () => {
       if (navigationMode === "orbit") {
@@ -1113,6 +1157,9 @@ export default function ModelView({
           target: controls.target.toArray() as [number, number, number],
         };
       }
+      disposed = true;
+      selectionRef.current = undefined;
+      renderedSceneKeyRef.current = undefined;
       cancelAnimationFrame(frame);
       observer.disconnect();
       canvas.removeEventListener("pointerdown", handleSelectionPointerDown);
@@ -1124,8 +1171,13 @@ export default function ModelView({
       window.removeEventListener("keyup", handleKeyUp);
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("pointerlockchange", updatePointerState);
+      canvas.removeEventListener("archmorph:snapshot", renderScene);
+      canvas.removeEventListener("archmorph:frame-view", reframe);
+      document.removeEventListener("visibilitychange", visibilityChanged);
+      window.removeEventListener("blur", clearMovement);
       if (document.pointerLockElement === canvas) document.exitPointerLock();
       controls.dispose();
+      selectionMaterial.dispose(); outlineMaterial.dispose();
       scene.traverse((object) => {
         const mesh = object as THREE.Mesh;
         if (mesh.geometry) mesh.geometry.dispose();
@@ -1134,9 +1186,12 @@ export default function ModelView({
           materials.forEach((material) => material.dispose());
         }
       });
+      sun.shadow.dispose();
+      palette.dispose();
       renderer.dispose();
     };
-  }, [canvasRef, navigationMode, onSelect, onWalkFloorChange, project, selectedId]);
+  }, [canvasRef, navigationMode, sceneKey]);
+  useEffect(() => { selectionRef.current?.(selectedId); }, [selectedId, sceneKey]);
 
   const doors = project.openings.filter((item) => item.kind === "door").length;
   const windows = project.openings.filter((item) => item.kind === "window").length;
@@ -1166,7 +1221,6 @@ export default function ModelView({
         aria-label={`${navigationMode === "walk" ? "Walkthrough" : "Interactive 3D model"} of ${project.name}`}
         aria-describedby="model-navigation-help model-sync-status"
       />
-      <div className="model-view__horizon" aria-hidden="true" />
       <div className="model-view__gl-error" role="alert">
         <span>3D UNAVAILABLE</span>
         <strong>This browser could not start WebGL.</strong>

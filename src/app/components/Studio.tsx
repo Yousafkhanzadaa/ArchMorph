@@ -44,6 +44,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import {
   useCallback,
   useEffect,
@@ -106,7 +107,10 @@ import {
 } from "@/lib/persistence";
 import { createArchMorphTools } from "@/lib/webmcp-tools";
 import FloorPlan, { type CanvasTool } from "./FloorPlan";
-import ModelView from "./ModelView";
+const ModelView = dynamic(() => import("./ModelView"), {
+  ssr: false,
+  loading: () => <div className="model-view" role="status" aria-live="polite"><div className="model-view__empty"><strong>Preparing 3D model…</strong></div></div>,
+});
 
 type InspectorTab = "properties" | "activity" | "checks";
 type ActivityFilter = "design" | "view" | "all";
@@ -461,9 +465,8 @@ export default function Studio() {
   const hydrated = useSyncExternalStore(subscribeHydration, getClientHydrationSnapshot, getServerHydrationSnapshot);
   const [selectedElementId, setSelectedId] = useState<string>();
   const [planTool, setTool] = useState<CanvasTool>("select");
-  // Selection belongs to the floor it lives on, and drawing tools belong to the plan. Deriving both
-  // means an element hidden by a floor change, or a tool left behind by a jump into 3D, cannot linger.
-  const selectedId = selectedElementId && elementIsOnFloor(project, selectedElementId, project.view.activeFloorId)
+  // The plan selects its active floor; orbit can select every visible storey of the building.
+  const selectedId = selectedElementId && (project.view.mode === "3d" || elementIsOnFloor(project, selectedElementId, project.view.activeFloorId))
     ? selectedElementId
     : undefined;
   const tool: CanvasTool = project.view.mode === "2d" ? planTool : "select";
@@ -583,6 +586,9 @@ export default function Studio() {
           };
           projectRef.current = next;
           setProject(next);
+          if (operation.type === "focus_element" || operation.type === "set_camera") {
+            canvasRef.current?.dispatchEvent(new CustomEvent("archmorph:frame-view", { detail: next.view }));
+          }
           if (next.view.focusElementId !== previous.view.focusElementId) setSelectedId(next.view.focusElementId);
           if (next.view.mode !== "2d") setTool("select");
           return presentationOutcome;
@@ -638,8 +644,15 @@ export default function Studio() {
     const current = projectRef.current;
     let dataUrl: string;
     if (current.view.mode === "3d") {
-      const canvas = canvasRef.current;
-      if (!canvas) throw new Error("The 3D canvas is not ready.");
+      let canvas = canvasRef.current;
+      const deadline = performance.now() + 8000;
+      while (!canvas || canvas.dataset.projectId !== current.id || canvas.dataset.projectVersion !== String(current.version) || canvas.dataset.viewSignature !== JSON.stringify(current.view)) {
+        options?.signal?.throwIfAborted();
+        if (performance.now() >= deadline) throw new Error("The 3D model is still preparing. Try the snapshot again when it appears.");
+        await new Promise<void>(resolve => window.setTimeout(resolve, 32));
+        canvas = canvasRef.current;
+      }
+      canvas.dispatchEvent(new Event("archmorph:snapshot"));
       dataUrl = canvas.toDataURL("image/png");
     } else {
       if (!svgRef.current) throw new Error("The floor plan is not ready.");

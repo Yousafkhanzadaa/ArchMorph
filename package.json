@@ -8,7 +8,8 @@
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
     "lint": "eslint",
     "test:architecture": "node --experimental-strip-types scripts/architecture-regression.ts",
-    "test:webmcp": "node --experimental-strip-types scripts/webmcp-regression.ts"
+    "test:webmcp": "node --experimental-strip-types scripts/webmcp-regression.ts",
+    "test:model": "node --experimental-strip-types scripts/model-presentation-regression.ts"
   },
   "dependencies": {
     "@types/three": "^0.185.4",
