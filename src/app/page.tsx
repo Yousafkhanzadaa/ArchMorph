@@ -10,12 +10,12 @@ export default function Home() {
           <span className={styles.brandMark}>AM</span>
           <span>
             <strong>ArchMorph</strong>
-            <small>Human + Agent Studio</small>
+            <small>Home design studio</small>
           </span>
         </div>
 
         <div className={styles.navMeta} aria-label="Application status">
-          <span><i /> WebMCP live</span>
+          <span><i /> Plan · 3D · Walk</span>
           <span>Concept model · 06</span>
         </div>
 

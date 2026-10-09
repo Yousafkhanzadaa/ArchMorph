@@ -198,8 +198,8 @@ export default function Hero() {
     >
       <div className={styles.head}>
         <p className={styles.eyebrow}>
-          <span>WebMCP-native</span>
-          Architecture in motion
+          <span>Your home, taking shape</span>
+          Human + AI studio
         </p>
         <h1 id="hero-title">ArchMorph</h1>
         <p className={styles.tagline}>{LANDING_PRODUCT.tagline}</p>
@@ -207,8 +207,8 @@ export default function Hero() {
 
       <div className={styles.body}>
         <p className={styles.intro}>
-          Draw with intent. Let an agent inspect, shape, measure, and validate the same
-          live building model—then step inside the result.
+          Start with your land. Arrange the rooms you want, explore the house in 3D,
+          and walk through your idea. Develop the same architectural model with an AI.
         </p>
 
         <div className={styles.actions}>

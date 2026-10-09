@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test:architecture": "node --experimental-strip-types scripts/architecture-regression.ts",
     "test:webmcp": "node --experimental-strip-types scripts/webmcp-regression.ts",
-    "test:model": "node --experimental-strip-types scripts/model-presentation-regression.ts"
+    "test:model": "node --experimental-strip-types scripts/model-presentation-regression.ts",
+    "test:studio": "node --experimental-strip-types scripts/studio-priority-regression.ts"
   },
   "dependencies": {
     "@types/three": "^0.185.4",

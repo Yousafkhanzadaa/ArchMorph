@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import {
   type Balcony,
   type Opening,
@@ -36,7 +36,9 @@ type SpanDragState =
   | { kind: "measure"; start: Point; current: Point; armed?: boolean };
 type DragState =
   | { kind: "move-room"; id: string; start: Point; origin: Point; room: Room }
-  | { kind: "resize-room"; id: string; room: Room }
+  | { kind: "resize-room"; id: string; room: Room; origin: Room; anchor: "north-west" | "north-east" | "south-west" | "south-east" }
+  | { kind: "move-opening"; id: string; opening: Opening; origin: Opening; start: Point }
+  | { kind: "pan"; start: Point; origin: Point }
   | { kind: "edit-room-vertex"; id: string; vertexIndex: number; room: Room }
   | { kind: "move-wall"; id: string; start: Point; origin: Wall; wall: Wall }
   | { kind: "move-stair"; id: string; start: Point; origin: Stair; stair: Stair }
@@ -52,11 +54,14 @@ type FloorPlanProps = {
   roomType: RoomType;
   showLabels?: boolean;
   selectedId?: string;
+  connectionRoomIds?: string[];
+  connectionElementIds?: string[];
   svgRef: RefObject<SVGSVGElement | null>;
   onSelect: (id?: string) => void;
   onCreateRoom: (point: Point, type: RoomType) => void;
   onMoveRoom: (id: string, point: Point) => void;
-  onResizeRoom: (id: string, width: number, length: number) => void;
+  onResizeRoom: (id: string, width: number, length: number, anchor?: "north-west" | "north-east" | "south-west" | "south-east") => void;
+  onMoveOpening: (id: string, offset: number) => void;
   onUpdateRoomVertices: (id: string, vertices: Point[]) => void;
   onAddWall: (start: Point, end: Point) => void;
   onMoveWall: (id: string, dx: number, dy: number) => void;
@@ -92,11 +97,14 @@ export default function FloorPlan({
   roomType,
   showLabels = true,
   selectedId,
+  connectionRoomIds,
+  connectionElementIds,
   svgRef,
   onSelect,
   onCreateRoom,
   onMoveRoom,
   onResizeRoom,
+  onMoveOpening,
   onUpdateRoomVertices,
   onAddWall,
   onMoveWall,
@@ -109,8 +117,11 @@ export default function FloorPlan({
   const floorId = project.view.activeFloorId;
   const [drag, setDrag] = useState<DragState>();
   const [alignmentGuides, setAlignmentGuides] = useState<{ vertical?: number; horizontal?: number }>({});
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
+  const [panMode, setPanMode] = useState(false);
   const [measurement, setMeasurement] = useState<{ start: Point; end: Point }>();
-  const gestureContext = `${floorId}:${tool}`;
+  const gestureContext = `${floorId}:${tool}:${project.id}`;
   const [activeGestureContext, setActiveGestureContext] = useState(gestureContext);
   // Switching tools, changing floors, or pressing Escape abandons a span waiting for its second click.
   if (activeGestureContext !== gestureContext) {
@@ -130,10 +141,24 @@ export default function FloorPlan({
     return connection?.targetFloor.id === floorId && stair.floorId !== floorId;
   });
   const northRotation = { North: 0, East: -90, South: 180, West: 90 }[project.plot.orientation];
-  const viewBox = useMemo(
+  const exportViewBox = useMemo(
     () => `${-8} ${-7} ${project.plot.width + 16} ${project.plot.length + 19}`,
     [project.plot.length, project.plot.width],
   );
+
+  const width = (project.plot.width + 16) / zoom;
+  const height = (project.plot.length + 19) / zoom;
+  const viewBox = `${project.plot.width / 2 - width / 2 + pan.x} ${project.plot.length / 2 + 2.5 - height / 2 + pan.y} ${width} ${height}`;
+  const resetViewport = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
+  useEffect(() => {
+    const svg = localSvgRef.current;
+    if (!svg) return;
+    const wheel = (event: WheelEvent) => { event.preventDefault(); setZoom(value => Math.max(1, Math.min(6, value * (event.deltaY < 0 ? 1.12 : 1 / 1.12)))); };
+    const frame = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
+    svg.addEventListener("wheel", wheel, { passive: false });
+    svg.addEventListener("archmorph:frame-plan", frame);
+    return () => { svg.removeEventListener("wheel", wheel); svg.removeEventListener("archmorph:frame-plan", frame); };
+  }, []);
 
   const setRefs = (node: SVGSVGElement | null) => {
     localSvgRef.current = node;
@@ -245,6 +270,7 @@ export default function FloorPlan({
    */
   const handlePlanPointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
     const point = toPoint(event);
+    if (panMode || event.shiftKey || event.button === 1) { event.currentTarget.setPointerCapture(event.pointerId); setDrag({ kind: "pan", start: point, origin: pan }); return; }
     onSelect(undefined);
     if (tool === "room") { onCreateRoom(point, roomType); return; }
     if (tool === "stair") { onAddStair(point); return; }
@@ -262,7 +288,7 @@ export default function FloorPlan({
   };
 
   const handleStairPointerDown = (event: ReactPointerEvent<SVGGElement>, stair: Stair, linked: boolean) => {
-    if (tool !== "select") return;
+    if (tool !== "select" || panMode || event.shiftKey) return;
     event.stopPropagation();
     onSelect(stair.id);
     if (linked) return;
@@ -271,7 +297,7 @@ export default function FloorPlan({
   };
 
   const handleBalconyPointerDown = (event: ReactPointerEvent<SVGGElement>, balcony: Balcony) => {
-    if (tool !== "select") return;
+    if (tool !== "select" || panMode || event.shiftKey) return;
     event.stopPropagation();
     onSelect(balcony.id);
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -279,7 +305,7 @@ export default function FloorPlan({
   };
 
   const handleRoomPointerDown = (event: ReactPointerEvent<SVGElement>, room: Room) => {
-    if (tool !== "select") return;
+    if (tool !== "select" || panMode || event.shiftKey) return;
     event.stopPropagation();
     onSelect(room.id);
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -287,10 +313,10 @@ export default function FloorPlan({
     setDrag({ kind: "move-room", id: room.id, start: point, origin: { x: room.x, y: room.y }, room });
   };
 
-  const handleResizePointerDown = (event: ReactPointerEvent<SVGCircleElement>, room: Room) => {
+  const handleResizePointerDown = (event: ReactPointerEvent<SVGCircleElement>, room: Room, anchor: "north-west" | "north-east" | "south-west" | "south-east") => {
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
-    setDrag({ kind: "resize-room", id: room.id, room });
+    setDrag({ kind: "resize-room", id: room.id, room, origin: room, anchor });
   };
 
   const handleVertexPointerDown = (event: ReactPointerEvent<SVGCircleElement>, room: Room, vertexIndex: number) => {
@@ -311,7 +337,7 @@ export default function FloorPlan({
       onAddOpening(tool, wall.id, Math.max(tool === "door" ? 1.5 : 2, centeredOffset));
       return;
     }
-    if (tool !== "select") return;
+    if (tool !== "select" || panMode || event.shiftKey) return;
     event.stopPropagation();
     onSelect(wall.id);
     if (!wall.roomIds.length) {
@@ -330,16 +356,31 @@ export default function FloorPlan({
       const y = Math.max(0, Math.min(project.plot.length - drag.room.length, snap(drag.origin.y + dy)));
       const translated = { ...drag.room, x, y, vertices: drag.room.vertices?.map((vertex) => ({ x: vertex.x + x - drag.room.x, y: vertex.y + y - drag.room.y })) };
       setDrag({ ...drag, room: alignRoom(translated) });
+    } else if (drag.kind === "pan") {
+      setPan({ x: pan.x + drag.start.x - point.x, y: pan.y + drag.start.y - point.y });
+    } else if (drag.kind === "move-opening") {
+      const wall = walls.find(item => item.id === drag.origin.wallId)!;
+      const length = wallLength(wall);
+      const delta = ((point.x - drag.start.x) * (wall.x2 - wall.x1) + (point.y - drag.start.y) * (wall.y2 - wall.y1)) / length;
+      const offset = Math.max(drag.origin.width / 2, Math.min(length - drag.origin.width / 2, snap(drag.origin.offset + delta)));
+      setDrag({ ...drag, opening: { ...drag.origin, offset } });
     } else if (drag.kind === "resize-room") {
-      let width = Math.max(3, Math.min(project.plot.width - drag.room.x, snap(point.x - drag.room.x)));
-      let length = Math.max(3, Math.min(project.plot.length - drag.room.y, snap(point.y - drag.room.y)));
-      const resizeGuides = guidesExcluding(drag.id);
-      const vertical = nearestGuide(drag.room.x + width, resizeGuides.vertical);
-      const horizontal = nearestGuide(drag.room.y + length, resizeGuides.horizontal);
-      if (vertical) width = snap(width + vertical.delta);
-      if (horizontal) length = snap(length + horizontal.delta);
+      const origin = drag.origin;
+      const east = drag.anchor.endsWith("east");
+      const south = drag.anchor.startsWith("south");
+      const fixedX = east ? origin.x + origin.width : origin.x;
+      const fixedY = south ? origin.y + origin.length : origin.y;
+      const guides = guidesExcluding(drag.id);
+      const vertical = nearestGuide(point.x, guides.vertical);
+      const horizontal = nearestGuide(point.y, guides.horizontal);
+      const movingX = Math.max(0, Math.min(project.plot.width, vertical?.edge ?? point.x));
+      const movingY = Math.max(0, Math.min(project.plot.length, horizontal?.edge ?? point.y));
+      const width = Math.max(3, east ? fixedX - movingX : movingX - fixedX);
+      const length = Math.max(3, south ? fixedY - movingY : movingY - fixedY);
+      const x = east ? fixedX - width : origin.x;
+      const y = south ? fixedY - length : origin.y;
       setAlignmentGuides({ vertical: vertical?.edge, horizontal: horizontal?.edge });
-      setDrag({ ...drag, room: { ...drag.room, width, length } });
+      setDrag({ ...drag, room: { ...origin, x, y, width, length, vertices: origin.vertices?.map(vertex => ({ x: x + (vertex.x - origin.x) * width / origin.width, y: y + (vertex.y - origin.y) * length / origin.length })) } });
     } else if (drag.kind === "edit-room-vertex") {
       const vertices = roomVertices(drag.room);
       const index = drag.vertexIndex;
@@ -405,8 +446,9 @@ export default function FloorPlan({
       onMoveRoom(drag.id, { x: drag.room.x, y: drag.room.y });
     }
     if (drag.kind === "resize-room" && (drag.room.width !== project.rooms.find((room) => room.id === drag.id)?.width || drag.room.length !== project.rooms.find((room) => room.id === drag.id)?.length)) {
-      onResizeRoom(drag.id, drag.room.width, drag.room.length);
+      onResizeRoom(drag.id, drag.room.width, drag.room.length, drag.anchor);
     }
+    if (drag.kind === "move-opening" && drag.opening.offset !== drag.origin.offset) onMoveOpening(drag.id, drag.opening.offset);
     if (drag.kind === "edit-room-vertex") onUpdateRoomVertices(drag.id, roomVertices(drag.room));
     if (drag.kind === "move-wall" && (drag.wall.x1 !== drag.origin.x1 || drag.wall.y1 !== drag.origin.y1 || drag.wall.x2 !== drag.origin.x2 || drag.wall.y2 !== drag.origin.y2)) {
       onMoveWall(drag.id, drag.wall.x1 - drag.origin.x1, drag.wall.y1 - drag.origin.y1);
@@ -426,10 +468,12 @@ export default function FloorPlan({
   const selectedRoom = rooms.find((room) => room.id === selectedId);
 
   return (
+    <>
     <svg
       ref={setRefs}
+      data-export-view-box={exportViewBox}
       viewBox={viewBox}
-      className={`floor-plan floor-plan--${tool}`}
+      className={`floor-plan floor-plan--${tool} ${panMode ? "is-panning" : ""}`}
       role="img"
       aria-label={`Architectural floor plan for ${project.name}`}
       aria-describedby="floor-plan-description"
@@ -499,11 +543,11 @@ export default function FloorPlan({
         <line x1="0" y1={project.plot.length + 2.5} x2={project.plot.width} y2={project.plot.length + 2.5} />
         <line x1="0" y1={project.plot.length + 1.7} x2="0" y2={project.plot.length + 3.2} />
         <line x1={project.plot.width} y1={project.plot.length + 1.7} x2={project.plot.width} y2={project.plot.length + 3.2} />
-        <text x={project.plot.width / 2} y={project.plot.length + 4.1} textAnchor="middle">{project.plot.width}&apos;–0&quot;</text>
+        <text x={project.plot.width / 2} y={project.plot.length + 4.1} textAnchor="middle">{project.plot.width} ft</text>
         <line x1={project.plot.width + 2.5} y1="0" x2={project.plot.width + 2.5} y2={project.plot.length} />
         <line x1={project.plot.width + 1.7} y1="0" x2={project.plot.width + 3.2} y2="0" />
         <line x1={project.plot.width + 1.7} y1={project.plot.length} x2={project.plot.width + 3.2} y2={project.plot.length} />
-        <text x={project.plot.width + 4} y={project.plot.length / 2} textAnchor="middle" transform={`rotate(90 ${project.plot.width + 4} ${project.plot.length / 2})`}>{project.plot.length}&apos;–0&quot;</text>
+        <text x={project.plot.width + 4} y={project.plot.length / 2} textAnchor="middle" transform={`rotate(90 ${project.plot.width + 4} ${project.plot.length / 2})`}>{project.plot.length} ft</text>
       </g>
 
       <g className="north-arrow" transform={`translate(${project.plot.width + 5.3} 5) rotate(${northRotation})`} pointerEvents="none">
@@ -543,7 +587,7 @@ export default function FloorPlan({
             {selected && (
               <>
                 <line x1={room.x} y1={room.y - 0.65} x2={room.x + room.width} y2={room.y - 0.65} className="selection-dimension" pointerEvents="none" />
-                <text x={room.x + room.width / 2} y={room.y - 1} textAnchor="middle" className="selection-dimension-text" pointerEvents="none">{room.width}&apos;–0&quot;</text>
+                <text x={room.x + room.width / 2} y={room.y - 1} textAnchor="middle" className="selection-dimension-text" pointerEvents="none">{room.width} ft</text>
               </>
             )}
           </g>
@@ -566,6 +610,8 @@ export default function FloorPlan({
               <line
                 x1={wall.x1} y1={wall.y1} x2={wall.x2} y2={wall.y2}
                 className="wall-visible"
+                data-drawing-stroke="#29362f"
+                data-drawing-stroke-width={wall.thickness}
                 stroke={selected ? "#d65b32" : "#29362f"}
                 strokeWidth={selected ? Math.max(0.62, wall.thickness) : wall.thickness}
                 strokeLinecap="square"
@@ -598,7 +644,7 @@ export default function FloorPlan({
           const y1 = center.y - ty * feature.width / 2 + normal.y * projection;
           const x2 = center.x + tx * feature.width / 2 + normal.x * projection;
           const y2 = center.y + ty * feature.width / 2 + normal.y * projection;
-          return <line key={feature.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke={selectedId === feature.id ? "#d65b32" : "#866d55"} strokeWidth={selectedId === feature.id ? 0.4 : Math.max(0.18, feature.thickness)} strokeLinecap="square" onPointerDown={(event) => { if (tool !== "select") return; event.stopPropagation(); onSelect(feature.id); }}><title>{feature.kind} · {feature.width} ft</title></line>;
+          return <line key={feature.id} x1={x1} y1={y1} x2={x2} y2={y2} data-drawing-stroke="#866d55" data-drawing-stroke-width={Math.max(0.18, feature.thickness)} stroke={selectedId === feature.id ? "#d65b32" : "#866d55"} strokeWidth={selectedId === feature.id ? 0.4 : Math.max(0.18, feature.thickness)} strokeLinecap="square" onPointerDown={(event) => { if (tool !== "select" || panMode || event.shiftKey) return; event.stopPropagation(); onSelect(feature.id); }}><title>{feature.kind} · {feature.width} ft</title></line>;
         })}
       </g>
 
@@ -616,7 +662,7 @@ export default function FloorPlan({
                 : { x1: balcony.x + balcony.width, y1: balcony.y, x2: balcony.x + balcony.width, y2: balcony.y + balcony.length };
           return <g key={balcony.id} className={`balcony ${selected ? "is-selected" : ""}`} onPointerDown={(event) => handleBalconyPointerDown(event, balcony)}>
             <title>{balcony.name} · {balcony.width} × {balcony.length} ft</title>
-            <rect x={balcony.x} y={balcony.y} width={balcony.width} height={balcony.length} fill="#c8c1b3" fillOpacity="0.38" stroke={selected ? "#d65b32" : "#786f63"} strokeWidth={selected ? 0.3 : 0.12} />
+            <rect x={balcony.x} y={balcony.y} width={balcony.width} height={balcony.length} fill="#c8c1b3" fillOpacity="0.38" data-drawing-stroke="#786f63" data-drawing-stroke-width="0.12" stroke={selected ? "#d65b32" : "#786f63"} strokeWidth={selected ? 0.3 : 0.12} />
             {balcony.railing.enabled && balcony.railing.sides.map((side) => <line key={side} {...sideLine(side)} stroke="#52635b" strokeWidth="0.2" strokeDasharray={balcony.railing.style === "solid" ? undefined : "0.45 0.25"} />)}
             <text x={balcony.x + balcony.width / 2} y={balcony.y + balcony.length / 2 + 0.25} textAnchor="middle" fontSize="0.68" fontWeight="700" pointerEvents="none">{balcony.kind.toUpperCase()}</text>
           </g>;
@@ -624,7 +670,8 @@ export default function FloorPlan({
       </g>
 
       <g className="openings">
-        {openings.map((opening) => {
+        {openings.map((rawOpening) => {
+          const opening = drag?.kind === "move-opening" && drag.id === rawOpening.id ? drag.opening : rawOpening;
           const geometry = openingGeometry(opening, walls);
           if (!geometry) return null;
           const focused = opening.id === project.view.focusElementId;
@@ -634,9 +681,10 @@ export default function FloorPlan({
               transform={`translate(${geometry.x} ${geometry.y}) rotate(${geometry.angle})`}
               filter={focused ? "url(#focus-glow)" : undefined}
               onPointerDown={(event) => {
-                if (tool !== "select" && tool !== "door" && tool !== "window") return;
+                if ((tool !== "select" && tool !== "door" && tool !== "window") || panMode || event.shiftKey) return;
                 event.stopPropagation();
                 onSelect(opening.id);
+                if (tool === "select") { event.currentTarget.setPointerCapture(event.pointerId); setDrag({ kind: "move-opening", id: opening.id, opening, origin: opening, start: toPoint(event) }); }
               }}
               className={`opening opening--${opening.kind}`}
             >
@@ -765,16 +813,16 @@ export default function FloorPlan({
         </g>
       )}
 
+      {connectionRoomIds && <g className="connection-highlights" pointerEvents="none">{rooms.filter(room => connectionRoomIds.includes(room.id)).map(room => <polygon key={room.id} points={roomVertices(room).map(point => `${point.x},${point.y}`).join(" ")} fill="none" stroke="#2d805b" strokeWidth="0.3" strokeDasharray="0.5 0.25" />)}{openings.filter(opening => connectionElementIds?.includes(opening.id)).map(opening => { const center = openingGeometry(opening, walls); return center ? <circle key={opening.id} cx={center.x} cy={center.y} r={1.2} fill="none" stroke="#2d805b" strokeWidth="0.2" /> : null; })}<text x="0" y={project.plot.length + 5} className="measurement-text">Entrance connections · schematic</text></g>}
       {selectedRoom && tool === "select" && (() => {
         const room = roomForRender(selectedRoom);
         const vertices = roomVertices(room);
         return (
           <g className="room-edit-handles">
-            <circle
-              cx={room.x + room.width} cy={room.y + room.length} r="0.52"
-              className="resize-handle"
-              onPointerDown={(event) => handleResizePointerDown(event, room)}
-            />
+            {(["north-west", "north-east", "south-west", "south-east"] as const).map((corner) => {
+              const anchor = { "north-west": "south-east", "north-east": "south-west", "south-west": "north-east", "south-east": "north-west" }[corner] as "north-west" | "north-east" | "south-west" | "south-east";
+              return <circle key={corner} cx={room.x + (corner.endsWith("east") ? room.width : 0)} cy={room.y + (corner.startsWith("south") ? room.length : 0)} r="0.52" className="resize-handle" onPointerDown={(event) => handleResizePointerDown(event, room, anchor)}><title>Resize from {corner.replace("-", " ")}</title></circle>;
+            })}
             {(room.shape ?? "rectangle") !== "rectangle" && vertices.map((point, index) => (
               <circle key={`${room.id}-vertex-${index}`} cx={point.x} cy={point.y} r="0.42" className="resize-handle room-vertex-handle" onPointerDown={(event) => handleVertexPointerDown(event, room, index)} />
             ))}
@@ -788,5 +836,7 @@ export default function FloorPlan({
         </text>
       )}
     </svg>
+    <div className="plan-zoom-controls" role="group" aria-label="Plan navigation"><button type="button" aria-label="Zoom out plan" disabled={zoom <= 1} onClick={() => setZoom(value => Math.max(1, value / 1.25))}>−</button><button type="button" aria-label="Reset plan zoom" onClick={resetViewport}>{Math.round(zoom * 100)}%</button><button type="button" aria-label="Zoom in plan" disabled={zoom >= 6} onClick={() => setZoom(value => Math.min(6, value * 1.25))}>+</button><button type="button" aria-pressed={panMode} onClick={() => setPanMode(value => !value)}>Pan</button></div>
+    </>
   );
 }

@@ -292,7 +292,7 @@ export default function ModelView({
       const roomCenter = {
         x: startCenter?.x ?? project.plot.width / 2,
         z: startCenter?.y ?? project.plot.length / 2,
-        yaw: 0,
+        yaw: Math.PI,
       };
       const activeConnections = stairConnections.filter(
         (connection) => connection.lowerFloor.id === floor?.id || connection.upperFloor.id === floor?.id,
@@ -1164,6 +1164,8 @@ export default function ModelView({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (navigationMode !== "walk") return;
+      const target = event.target as HTMLElement | null;
+      if (event.defaultPrevented || target?.closest("[role='dialog'], input, textarea, select, [contenteditable='true']")) return;
       const direction = directionForKey(event.code);
       if (!direction && event.code !== "ShiftLeft" && event.code !== "ShiftRight") return;
       event.preventDefault();
@@ -1172,6 +1174,13 @@ export default function ModelView({
       interacted();
     };
     const handleKeyUp = (event: KeyboardEvent) => pressed.delete(event.code);
+    const handleWalkInput = (event: Event) => {
+      if (navigationMode !== "walk") return;
+      const { code, active } = (event as CustomEvent<{ code: string; active: boolean }>).detail;
+      if (!directionForKey(code)) return;
+      if (active) { const direction = directionForKey(code)!; if (!pressed.has(code)) moveWalkCamera(direction.x * 0.25, direction.z * 0.25); pressed.add(code); previousTime = performance.now(); requestRender(); }
+      else pressed.delete(code);
+    };
     const handleMouseMove = (event: MouseEvent) => {
       if (navigationMode !== "walk" || document.pointerLockElement !== canvas) return;
       updateLook(event.movementX, event.movementY);
@@ -1284,6 +1293,7 @@ export default function ModelView({
       // budget on the next task instead of keeping a large export buffer allocated.
       settleTimer = window.setTimeout(() => { setResolution("settled"); requestRender(); }, 0);
     };
+    canvas.addEventListener("archmorph:walk-input", handleWalkInput);
     canvas.addEventListener("archmorph:snapshot", snapshotRender);
     canvas.addEventListener("archmorph:frame-view", reframe);
     document.addEventListener("visibilitychange", visibilityChanged);
@@ -1315,6 +1325,7 @@ export default function ModelView({
       window.removeEventListener("keyup", handleKeyUp);
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("pointerlockchange", updatePointerState);
+      canvas.removeEventListener("archmorph:walk-input", handleWalkInput);
       canvas.removeEventListener("archmorph:snapshot", snapshotRender);
       canvas.removeEventListener("archmorph:frame-view", reframe);
       document.removeEventListener("visibilitychange", visibilityChanged);
@@ -1362,6 +1373,8 @@ export default function ModelView({
   const markerSize = Math.max(project.plot.width, project.plot.length) / 45;
   const activeFloorIndex = project.floors.findIndex((floor) => floor.id === activeFloor?.id);
   const minimapWallMaskId = "walk-minimap-wall-mask";
+
+  const walkInput = (code: string, active: boolean) => canvasRef.current?.dispatchEvent(new CustomEvent("archmorph:walk-input", { detail: { code, active } }));
 
   return (
     <div className={`model-view is-${navigationMode}`} ref={hostRef}>
@@ -1484,6 +1497,10 @@ export default function ModelView({
               </g>
             </svg>
           </aside>
+          <div className="walk-controls" role="group" aria-label="Walk movement controls">
+            {[{ code: "KeyW", label: "Move forward", glyph: "↑" }, { code: "KeyA", label: "Move left", glyph: "←" }, { code: "KeyS", label: "Move backward", glyph: "↓" }, { code: "KeyD", label: "Move right", glyph: "→" }].map(({ code, label, glyph }) => <button key={code} type="button" aria-label={label} onPointerDown={(event) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); walkInput(code, true); }} onPointerUp={() => walkInput(code, false)} onPointerCancel={() => walkInput(code, false)} onLostPointerCapture={() => walkInput(code, false)} onBlur={() => walkInput(code, false)} onKeyDown={(event) => { if (event.key === " " || event.key === "Enter") { event.preventDefault(); walkInput(code, true); } }} onKeyUp={() => walkInput(code, false)}>{glyph}</button>)}
+            <small>Hold to move · drag the view to look</small>
+          </div>
           <div className="model-view__walk-help" id="model-navigation-help">
             <b>WALK MODE</b>
             <span>Click to lock look, or drag to look · WASD / arrows to move · Walk onto stairs to change levels · Esc releases mouse</span>

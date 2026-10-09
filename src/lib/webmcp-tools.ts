@@ -366,13 +366,14 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
       name: "resize_room",
       category: "edit",
       description:
-        "Resize one room to an exact width and length in feet while preserving its current position.",
+        "Resize a room to exact dimensions in feet. Optional anchor holds that corner fixed; defaults to north-west.",
       inputSchema: {
         type: "object",
         properties: {
           roomId,
           width: { type: "number", minimum: 3 },
           length: { type: "number", minimum: 3 },
+          anchor: { type: "string", enum: ["north-west", "north-east", "south-west", "south-east"] },
         },
         required: ["roomId", "width", "length"],
         additionalProperties: false,
@@ -382,7 +383,15 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
         roomId: requiredString(input, "roomId"),
         width: requiredNumber(input, "width"),
         length: requiredNumber(input, "length"),
+        anchor: optionalString(input, "anchor") as "north-west" | "north-east" | "south-west" | "south-east" | undefined,
       }).result,
+    },
+    {
+      name: "adjust_shared_boundary",
+      category: "edit",
+      description: "Adjust the complete shared edge of two aligned rectangular rooms atomically. Both rooms retain at least 3 ft; opening hosts, exterior features, and wall finishes are preserved or the entire edit is rejected.",
+      inputSchema: { type: "object", properties: { roomId, neighborRoomId: { type: "string" }, position: { type: "number", description: "New shared edge x or y position in feet, inferred from adjacency." } }, required: ["roomId", "neighborRoomId", "position"], additionalProperties: false },
+      execute: input => runtime.perform({ type: "adjust_shared_boundary", roomId: requiredString(input, "roomId"), neighborRoomId: requiredString(input, "neighborRoomId"), position: requiredNumber(input, "position") }).result,
     },
     {
       name: "update_room_vertices",
@@ -549,7 +558,9 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
           height: { type: "number", minimum: 1, maximum: 8, default: 4 },
           sillHeight: { type: "number", minimum: 0, maximum: 8, default: 3 },
           windowType: { type: "string", enum: ["fixed", "casement", "sliding", "awning"], default: "fixed" },
-          operable: { type: "boolean", default: false },
+          operable: { type: "boolean", description: "Derived from type; a fixed window cannot be operable." },
+          clearWidth: { type: ["number", "null"], exclusiveMinimum: 0, description: "Known unobstructed opening width when fully open, in feet. Omit if unknown; null clears an existing value." },
+          clearHeight: { type: ["number", "null"], exclusiveMinimum: 0, description: "Known unobstructed opening height when fully open, in feet. Omit if unknown; null clears an existing value." },
           glazing: { type: "string", enum: ["clear", "low-e", "privacy"], default: "clear" },
           solarHeatGainCoefficient: { type: "number", minimum: 0, maximum: 1, description: "Concept SHGC input; verify against a rated product." },
           visibleTransmittance: { type: "number", minimum: 0, maximum: 1, description: "Concept visible-transmittance input; verify against a rated product." },
@@ -568,6 +579,8 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
         sillHeight: optionalNumber(input, "sillHeight"),
         windowType: optionalString(input, "windowType") as "fixed" | "casement" | "sliding" | "awning" | undefined,
         operable: optionalBoolean(input, "operable"),
+        clearWidth: input.clearWidth === null ? null : optionalNumber(input, "clearWidth"),
+        clearHeight: input.clearHeight === null ? null : optionalNumber(input, "clearHeight"),
         glazing: optionalString(input, "glazing") as "clear" | "low-e" | "privacy" | undefined,
         solarHeatGainCoefficient: optionalNumber(input, "solarHeatGainCoefficient"),
         visibleTransmittance: optionalNumber(input, "visibleTransmittance"),
@@ -592,7 +605,9 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
           swingDirection: { type: "string", enum: ["inward", "outward"] },
           state: { type: "string", enum: ["open", "closed"] },
           windowType: { type: "string", enum: ["fixed", "casement", "sliding", "awning"] },
-          operable: { type: "boolean" },
+          operable: { type: "boolean", description: "Setting true alone changes a fixed window to casement; false sets type to fixed." },
+          clearWidth: { type: ["number", "null"], exclusiveMinimum: 0, description: "Known unobstructed opening width when fully open, in feet. Omit if unknown; null clears an existing value." },
+          clearHeight: { type: ["number", "null"], exclusiveMinimum: 0, description: "Known unobstructed opening height when fully open, in feet. Omit if unknown; null clears an existing value." },
           glazing: { type: "string", enum: ["clear", "low-e", "privacy"] },
           solarHeatGainCoefficient: { type: "number", minimum: 0, maximum: 1 },
           visibleTransmittance: { type: "number", minimum: 0, maximum: 1 },
@@ -614,6 +629,8 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
         state: optionalString(input, "state") as "open" | "closed" | undefined,
         windowType: optionalString(input, "windowType") as "fixed" | "casement" | "sliding" | "awning" | undefined,
         operable: optionalBoolean(input, "operable"),
+        clearWidth: input.clearWidth === null ? null : optionalNumber(input, "clearWidth"),
+        clearHeight: input.clearHeight === null ? null : optionalNumber(input, "clearHeight"),
         glazing: optionalString(input, "glazing") as "clear" | "low-e" | "privacy" | undefined,
         solarHeatGainCoefficient: optionalNumber(input, "solarHeatGainCoefficient"),
         visibleTransmittance: optionalNumber(input, "visibleTransmittance"),
@@ -677,7 +694,9 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
           height: { type: "number", minimum: 1, maximum: 8 },
           sillHeight: { type: "number", minimum: 0, maximum: 8 },
           windowType: { type: "string", enum: ["fixed", "casement", "sliding", "awning"] },
-          operable: { type: "boolean" },
+          operable: { type: "boolean", description: "Setting true alone changes a fixed window to casement; false sets type to fixed." },
+          clearWidth: { type: ["number", "null"], exclusiveMinimum: 0, description: "Known unobstructed opening width when fully open, in feet. Omit if unknown; null clears an existing value." },
+          clearHeight: { type: ["number", "null"], exclusiveMinimum: 0, description: "Known unobstructed opening height when fully open, in feet. Omit if unknown; null clears an existing value." },
           glazing: { type: "string", enum: ["clear", "low-e", "privacy"] },
           solarHeatGainCoefficient: { type: "number", minimum: 0, maximum: 1 },
           visibleTransmittance: { type: "number", minimum: 0, maximum: 1 },
@@ -698,6 +717,8 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
           sillHeight: optionalNumber(input, "sillHeight"),
           windowType: optionalString(input, "windowType") as "fixed" | "casement" | "sliding" | "awning" | undefined,
           operable: optionalBoolean(input, "operable"),
+        clearWidth: input.clearWidth === null ? null : optionalNumber(input, "clearWidth"),
+        clearHeight: input.clearHeight === null ? null : optionalNumber(input, "clearHeight"),
           glazing: optionalString(input, "glazing") as "clear" | "low-e" | "privacy" | undefined,
           solarHeatGainCoefficient: optionalNumber(input, "solarHeatGainCoefficient"),
           visibleTransmittance: optionalNumber(input, "visibleTransmittance"),
@@ -1023,7 +1044,7 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
       execute: (input) => {
         const room = runtime.getProject().rooms.find((item) => item.id === requiredString(input, "roomId"));
         if (!room) throw new Error("Room does not exist.");
-        return { roomId: room.id, name: room.name, shape: room.shape ?? "rectangle", vertices: room.vertices, width: room.width, length: room.length, netRoomArea: roomArea(room), carpetArea: roomCarpetArea(runtime.getProject(), room), area: roomArea(room), areaDefinition: "netRoomArea is measured to wall centrelines; carpetArea is the finished area inside the bounding walls. The area alias is retained for compatibility.", unit: "sq ft" };
+        return { roomId: room.id, name: room.name, shape: room.shape ?? "rectangle", vertices: room.vertices, width: room.width, length: room.length, netRoomArea: roomArea(room), carpetArea: roomCarpetArea(runtime.getProject(), room), area: roomArea(room), areaDefinition: "netRoomArea is measured to wall centrelines; carpetArea estimates usable area from average wall thickness, without finishes, independent partitions, or stair-void deductions. The area alias is retained for compatibility.", unit: "sq ft" };
       },
     },
     {

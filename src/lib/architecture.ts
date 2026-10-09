@@ -205,6 +205,9 @@ export type Opening = {
   state?: DoorState;
   windowType?: WindowType;
   operable?: boolean;
+  /** Actual unobstructed opening when fully open; unknown until supplied by the designer. */
+  clearWidth?: number;
+  clearHeight?: number;
   glazing?: GlazingType;
   solarHeatGainCoefficient?: number;
   visibleTransmittance?: number;
@@ -297,6 +300,8 @@ export type Project = {
   activity: ActivityEntry[];
   version: number;
   updatedAt: string;
+  /** Local persistence revision; changes after each successful save, including restored designs. */
+  revisionId?: string;
 };
 
 export type ValidationIssue = {
@@ -321,6 +326,7 @@ export type ValidationIssue = {
     | "ROOM_DAYLIGHT_SHORTFALL"
     | "ROOM_NO_VENTILATION"
     | "BEDROOM_NO_EGRESS"
+    | "BEDROOM_EGRESS_UNVERIFIED"
     | "INVALID_BALCONY"
     | "INVALID_SITE_BOUNDARY"
     | "INVALID_FACADE_FEATURE";
@@ -406,7 +412,8 @@ export type ArchitectureOperation =
       vertices: PlanPoint[];
     }
   | { type: "move_room"; roomId: string; x: number; y: number }
-  | { type: "resize_room"; roomId: string; width: number; length: number }
+  | { type: "resize_room"; roomId: string; width: number; length: number; anchor?: "north-west" | "north-east" | "south-west" | "south-east" }
+  | { type: "adjust_shared_boundary"; roomId: string; neighborRoomId: string; position: number }
   | { type: "update_room_vertices"; roomId: string; vertices: PlanPoint[] }
   | { type: "update_room"; roomId: string; name?: string; roomType?: RoomType }
   | { type: "delete_room"; roomId: string }
@@ -443,6 +450,8 @@ export type ArchitectureOperation =
       state?: DoorState;
       windowType?: WindowType;
       operable?: boolean;
+      clearWidth?: number | null;
+      clearHeight?: number | null;
       glazing?: GlazingType;
       solarHeatGainCoefficient?: number;
       visibleTransmittance?: number;
@@ -462,6 +471,8 @@ export type ArchitectureOperation =
       state?: DoorState;
       windowType?: WindowType;
       operable?: boolean;
+      clearWidth?: number | null;
+      clearHeight?: number | null;
       glazing?: GlazingType;
       solarHeatGainCoefficient?: number;
       visibleTransmittance?: number;
@@ -1238,16 +1249,28 @@ function assertOpeningPlacement(project: Project, opening: Opening, ignoredId?: 
 
 function assertWindowPerformance(opening: Opening) {
   if (opening.kind !== "window") return;
+  for (const [label, value, maximum] of [["Clear width", opening.clearWidth, opening.width], ["Clear height", opening.clearHeight, opening.height]] as const) {
+    if (value !== undefined && (!Number.isFinite(value) || value <= 0 || value > maximum)) {
+      throw new Error(`${label} must be positive and no larger than the nominal window dimension.`);
+    }
+  }
   const bounded = [
     ["Solar heat-gain coefficient", opening.solarHeatGainCoefficient, 0, 1],
     ["Visible transmittance", opening.visibleTransmittance, 0, 1],
     ["U-factor", opening.uFactor, 0.1, 2],
   ] as const;
   for (const [label, value, minimum, maximum] of bounded) {
-    if (value === undefined || value < minimum || value > maximum) {
+    if (value === undefined || !Number.isFinite(value) || value < minimum || value > maximum) {
       throw new Error(`${label} must be between ${minimum} and ${maximum}.`);
     }
   }
+}
+
+function windowOperation(type?: WindowType, operable?: boolean, previous?: Opening) {
+  if (type === "fixed" && operable === true) throw new Error("A fixed window cannot be operable. Choose casement, sliding, or awning.");
+  if (operable === false || type === "fixed") return { windowType: "fixed" as const, operable: false };
+  const windowType = type ?? (previous?.windowType === "fixed" && operable === true ? "casement" : previous?.windowType ?? (operable ? "casement" : "fixed"));
+  return { windowType, operable: windowType !== "fixed" };
 }
 
 function assertAllOpeningsValid(project: Project) {
@@ -1431,7 +1454,7 @@ export function projectMetrics(project: Project, floorId = project.view.activeFl
     floorAreaRatio: plotArea ? round(totalGrossCoveredArea / plotArea, 3) : 0,
     measurementDefinitions: {
       netRoomArea: "Room-polygon area measured to wall centrelines. This is not finished carpet area — see carpetArea.",
-      carpetArea: "Finished floor area inside the bounding walls on the selected floor, excluding courtyards.",
+      carpetArea: "Estimated usable area on the selected floor using average boundary-wall thickness. Excludes courtyards; does not deduct finishes, stair voids, or independent partitions.",
       totalNetFloorArea: "Sum of centreline room areas on the selected floor, excluding courtyards.",
       grossCoveredArea: "Built-up area on the selected floor, measured to the outer face of the external walls.",
       openSiteArea: "Plot area remaining outside the gross ground-floor building footprint.",
@@ -1679,6 +1702,24 @@ function restoreRoomWallFinishes(project: Project, roomId: string, finishes: Map
   });
 }
 
+/** A bounded two-room edit: only complete, aligned edges of rectangular rooms are supported. */
+export function sharedRoomBoundary(project: Project, roomId: string, neighborRoomId: string) {
+  const a = project.rooms.find(room => room.id === roomId);
+  const b = project.rooms.find(room => room.id === neighborRoomId);
+  if (!a || !b || a.id === b.id || a.floorId !== b.floorId || [a, b].some(room => (room.shape ?? "rectangle") !== "rectangle")) return;
+  const close = (first: number, second: number) => Math.abs(first - second) < 0.01;
+  if ([a, b].some(room => room.vertices && (room.vertices.length !== 4 || room.vertices.some(point =>
+    ![room.x, room.x + room.width].some(x => close(point.x, x)) || ![room.y, room.y + room.length].some(y => close(point.y, y)))))) return;
+  if (close(a.y, b.y) && close(a.length, b.length) && (close(a.x + a.width, b.x) || close(b.x + b.width, a.x))) {
+    const [first, second] = a.x < b.x ? [a, b] : [b, a];
+    return { axis: "x" as const, first, second, position: second.x, min: first.x + 3, max: second.x + second.width - 3 };
+  }
+  if (close(a.x, b.x) && close(a.width, b.width) && (close(a.y + a.length, b.y) || close(b.y + b.length, a.y))) {
+    const [first, second] = a.y < b.y ? [a, b] : [b, a];
+    return { axis: "y" as const, first, second, position: second.y, min: first.y + 3, max: second.y + second.length - 3 };
+  }
+}
+
 function shapeVertices(shape: Exclude<RoomShape, "custom">, x: number, y: number, width: number, length: number) {
   if (shape === "rectangle") return undefined;
   if (shape === "l-shape") return [
@@ -1826,8 +1867,8 @@ export function migrateProject(input: Project): Project {
     const legacySolarFactor = opening.solarTransmittance;
     return {
       ...opening,
-      windowType: opening.windowType ?? "fixed",
-      operable: opening.operable ?? false,
+      windowType: opening.operable === false ? "fixed" : opening.windowType === "fixed" && opening.operable ? "casement" : opening.windowType ?? (opening.operable ? "casement" : "fixed"),
+      operable: opening.operable ?? (opening.windowType !== undefined && opening.windowType !== "fixed"),
       glazing,
       solarHeatGainCoefficient: opening.solarHeatGainCoefficient ?? legacySolarFactor ?? defaults.solarHeatGainCoefficient,
       visibleTransmittance: opening.visibleTransmittance ?? defaults.visibleTransmittance,
@@ -1950,6 +1991,7 @@ function assertNoRoomOverlap(project: Project, candidate: Room, ignoreRoomId?: s
 }
 
 function assertRoomInsidePlot(project: Project, room: Pick<Room, "x" | "y" | "width" | "length"> & Partial<Pick<Room, "vertices">>) {
+  if (![room.x, room.y, room.width, room.length].every(Number.isFinite)) throw new Error("Room position and dimensions must be finite numbers.");
   if (room.vertices?.length) {
     assertRoomVertices(project, room.vertices);
     return;
@@ -2247,12 +2289,18 @@ export function applyOperation(
       const previousRoom = project.rooms[index];
       const nextWidth = round(operation.width);
       const nextLength = round(operation.length);
+      const anchor = operation.anchor ?? "north-west";
+      if (!["north-west", "north-east", "south-west", "south-east"].includes(anchor)) throw new Error("Choose a valid room resize anchor.");
+      const x = anchor.endsWith("east") ? round(previousRoom.x + previousRoom.width - nextWidth) : previousRoom.x;
+      const y = anchor.startsWith("south") ? round(previousRoom.y + previousRoom.length - nextLength) : previousRoom.y;
       const resizedVertices = previousRoom.vertices?.map((point) => ({
-        x: round(previousRoom.x + (point.x - previousRoom.x) * nextWidth / previousRoom.width),
-        y: round(previousRoom.y + (point.y - previousRoom.y) * nextLength / previousRoom.length),
+        x: round(x + (point.x - previousRoom.x) * nextWidth / previousRoom.width),
+        y: round(y + (point.y - previousRoom.y) * nextLength / previousRoom.length),
       }));
       const room = {
         ...previousRoom,
+        x,
+        y,
         width: nextWidth,
         length: nextLength,
         vertices: resizedVertices,
@@ -2270,6 +2318,39 @@ export function applyOperation(
       project.view.focusElementId = room.id;
       description = `${who} resized ${room.name} to ${room.width} × ${room.length} ft`;
       result = { room, area: roomArea(room), metrics: projectMetrics(project, room.floorId) };
+      break;
+    }
+    case "adjust_shared_boundary": {
+      const boundary = sharedRoomBoundary(project, operation.roomId, operation.neighborRoomId);
+      if (!boundary) throw new Error("This edit requires two rectangular rooms sharing one complete aligned edge.");
+      const position = round(operation.position);
+      if (!Number.isFinite(position) || position < boundary.min || position > boundary.max) throw new Error("Both rooms must retain at least 3 ft in the adjusted direction.");
+      const { first, second, axis } = boundary;
+      const firstNext = axis === "x" ? { ...first, width: round(position - first.x) } : { ...first, length: round(position - first.y) };
+      const secondNext = axis === "x" ? { ...second, x: position, width: round(second.x + second.width - position) } : { ...second, y: position, length: round(second.y + second.length - position) };
+      for (const [old, next] of [[first, firstNext], [second, secondNext]]) {
+        next.vertices = old.vertices?.map(point => ({ x: round(next.x + (point.x - old.x) * next.width / old.width), y: round(next.y + (point.y - old.y) * next.length / old.length) }));
+        assertRoomInsidePlot(project, next);
+      }
+      const targets = new Map([...roomOpeningTargets(project, first, firstNext), ...roomOpeningTargets(project, second, secondNext)]);
+      for (const opening of project.openings) {
+        const wall = project.walls.find(item => item.id === opening.wallId);
+        if (!wall || !wall.roomIds.includes(first.id) || !wall.roomIds.includes(second.id)) continue;
+        const center = openingCenter(wall, opening);
+        targets.set(opening.id, axis === "x" ? { x: position, y: center.y } : { x: center.x, y: position });
+      }
+      const features = new Map([...roomFacadeFeatureTargets(project, first, firstNext), ...roomFacadeFeatureTargets(project, second, secondNext)]);
+      const finishes = [roomWallFinishes(project, first.id), roomWallFinishes(project, second.id)];
+      project.rooms = project.rooms.map(room => room.id === first.id ? firstNext : room.id === second.id ? secondNext : room);
+      assertNoRoomOverlap(project, firstNext, first.id);
+      assertNoRoomOverlap(project, secondNext, second.id);
+      rebuildCanonicalTopology(project, targets, true, features);
+      restoreRoomWallFinishes(project, first.id, finishes[0]);
+      restoreRoomWallFinishes(project, second.id, finishes[1]);
+      assertAllOpeningsValid(project);
+      project.view.focusElementId = operation.roomId;
+      description = `${who} adjusted the shared boundary between ${first.name} and ${second.name}`;
+      result = { rooms: [firstNext, secondNext], axis, position, metrics: projectMetrics(project, first.floorId) };
       break;
     }
     case "update_room_vertices": {
@@ -2387,8 +2468,9 @@ export function applyOperation(
           swingDirection: operation.swingDirection ?? "inward",
           state: operation.state ?? "open",
         } : {
-          windowType: operation.windowType ?? "fixed",
-          operable: operation.operable ?? false,
+          ...windowOperation(operation.windowType, operation.operable),
+          clearWidth: operation.clearWidth ?? undefined,
+          clearHeight: operation.clearHeight ?? undefined,
           glazing: operation.glazing ?? "clear",
           solarHeatGainCoefficient: operation.solarHeatGainCoefficient ?? operation.solarTransmittance ?? glazingPerformanceDefaults[operation.glazing ?? "clear"].solarHeatGainCoefficient,
           visibleTransmittance: operation.visibleTransmittance ?? glazingPerformanceDefaults[operation.glazing ?? "clear"].visibleTransmittance,
@@ -2423,8 +2505,9 @@ export function applyOperation(
         handing: operation.handing ?? previous.handing,
         swingDirection: operation.swingDirection ?? previous.swingDirection,
         state: operation.state ?? previous.state,
-        windowType: operation.windowType ?? previous.windowType,
-        operable: operation.operable ?? previous.operable,
+        ...(previous.kind === "window" ? windowOperation(operation.windowType, operation.operable, previous) : {}),
+        clearWidth: operation.clearWidth === null ? undefined : operation.clearWidth ?? previous.clearWidth,
+        clearHeight: operation.clearHeight === null ? undefined : operation.clearHeight ?? previous.clearHeight,
         glazing,
         solarHeatGainCoefficient: operation.solarHeatGainCoefficient ?? operation.solarTransmittance ?? glazingDefaults?.solarHeatGainCoefficient ?? previous.solarHeatGainCoefficient,
         visibleTransmittance: operation.visibleTransmittance ?? glazingDefaults?.visibleTransmittance ?? previous.visibleTransmittance,
@@ -3299,20 +3382,28 @@ export function validateLayout(project: Project, floorId?: string): ValidationRe
     }
 
     if (room.type === "Bedroom") {
-      const escape = windows.find((opening) => opening.width * opening.height >= EGRESS_MIN_CLEAR_AREA
+      const candidates = windows.filter((opening) => opening.operable && opening.windowType !== "fixed"
+        && project.walls.find((wall) => wall.id === opening.wallId)?.exterior
         && (opening.sillHeight ?? 0) <= EGRESS_MAX_SILL
         && opening.width >= EGRESS_MIN_CLEAR_WIDTH
         && opening.height >= EGRESS_MIN_CLEAR_HEIGHT);
+      const escape = candidates.find((opening) => opening.clearWidth !== undefined && opening.clearHeight !== undefined
+        && Number.isFinite(opening.clearWidth) && Number.isFinite(opening.clearHeight) && opening.clearWidth <= opening.width && opening.clearHeight <= opening.height
+        && opening.clearWidth >= EGRESS_MIN_CLEAR_WIDTH && opening.clearHeight >= EGRESS_MIN_CLEAR_HEIGHT
+        && opening.clearWidth * opening.clearHeight >= EGRESS_MIN_CLEAR_AREA);
       if (!escape) {
+        const unknown = candidates.some((opening) => opening.clearWidth === undefined || opening.clearHeight === undefined);
         issues.push({
           id: createId("issue"),
-          code: "BEDROOM_NO_EGRESS",
+          code: unknown ? "BEDROOM_EGRESS_UNVERIFIED" : "BEDROOM_NO_EGRESS",
           severity: "warning",
-          message: `${room.name} has no window that meets the emergency escape concept: at least ${EGRESS_MIN_CLEAR_AREA} sq ft clear, 20 in wide, 24 in high, with a sill no higher than 44 in.`,
+          message: unknown
+            ? `${room.name} has an openable exterior window, but its actual clear opening is unknown. Nominal window size cannot establish an escape opening.`
+            : `${room.name} has no recorded openable exterior window meeting the concept escape dimensions: ${EGRESS_MIN_CLEAR_AREA} sq ft clear, 20 in wide, 24 in high, with a sill no higher than 44 in.`,
           elementIds: [room.id, ...windows.map((opening) => opening.id)],
-          evidence: { windowCount: windows.length, requiredClearArea: EGRESS_MIN_CLEAR_AREA, maxSillInches: 44, minClearWidthInches: 20, minClearHeightInches: 24, basis: "2021 IRC R310 concept" },
-          suggestion: `Provide one exterior window in ${room.name} of at least ${EGRESS_MIN_CLEAR_AREA} sq ft with its sill at or below 44 in.`,
-          possibleCorrection: "Use add_window or set_window_properties to enlarge an exterior window and lower its sill.",
+          evidence: { windowCount: windows.length, operableCandidateCount: candidates.length, clearOpeningKnown: !unknown, requiredClearArea: EGRESS_MIN_CLEAR_AREA, maxSillInches: 44, minClearWidthInches: 20, minClearHeightInches: 24, basis: "Internal concept thresholds; local requirements, product operation, exterior discharge, and alternative escape routes are unverified." },
+          suggestion: unknown ? "Record the unobstructed width and height when fully open from the intended product, then discuss the escape route with your architect." : "Review an openable exterior window or alternative escape route with your architect. Record actual clear dimensions; fixed glazing cannot serve as an escape opening.",
+          possibleCorrection: "Use set_window_properties to set an operable window type and known clearWidth/clearHeight; nominal size alone is insufficient.",
         });
       }
     }
@@ -3385,7 +3476,7 @@ export function inspectRoom(project: Project, roomId: string) {
     netRoomArea: roomArea(room),
     carpetArea: roomCarpetArea(project, room),
     area: roomArea(room),
-    areaDefinition: "netRoomArea is measured to wall centrelines; carpetArea is the finished area inside the bounding walls. The area alias is retained for compatibility.",
+    areaDefinition: "netRoomArea is measured to wall centrelines; carpetArea estimates usable area from average wall thickness, without finishes, independent partitions, or stair-void deductions. The area alias is retained for compatibility.",
     perimeter: roomPerimeter(room),
     interiorPoint: roomInteriorPoint(room),
     vertices: roomVertices(room),

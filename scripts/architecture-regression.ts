@@ -138,7 +138,7 @@ const metrics = projectMetrics(project);
 assert.ok(metrics.grossCoveredArea > metrics.totalNetFloorArea, "gross area should include canonical wall footprints");
 assert.equal(metrics.openSiteArea, metrics.plotArea - projectMetrics(project).grossCoveredArea);
 
-persistence.saveProjectLocally(project);
+project = await persistence.saveProjectLocally(project);
 const restored = persistence.loadLatestProject()!;
 assert.equal(restored.id, project.id);
 assert.equal(restored.schemaVersion, 7);
@@ -147,15 +147,15 @@ assert.equal(restored.openings.length, project.openings.length);
 assert.equal(restored.view.focusElementId, undefined, "temporary focus state should not be persisted");
 
 const exported = persistence.exportProjectDocument(project);
-const imported = persistence.importProjectDocument(exported);
+const imported = await persistence.importProjectDocument(exported);
 assert.notEqual(imported.id, project.id);
 assert.equal(imported.rooms.length, project.rooms.length);
-const duplicate = persistence.duplicateLocalProject(project);
+const duplicate = await persistence.duplicateLocalProject(project);
 assert.notEqual(duplicate.id, project.id);
 assert.ok(persistence.listSavedProjects().length >= 3);
-const next = persistence.deleteLocalProject(duplicate.id);
+const next = await persistence.deleteLocalProject(duplicate.id);
 assert.ok(next, "deleting one saved project should leave another loadable project");
-const customSiteProject = persistence.createNewLocalProject("Custom Site", { width: 42, length: 75, orientation: "South", setbacks: { front: 7, rear: 5, left: 4, right: 4 } });
+const customSiteProject = await persistence.createNewLocalProject("Custom Site", { width: 42, length: 75, orientation: "South", setbacks: { front: 7, rear: 5, left: 4, right: 4 } });
 assert.deepEqual(customSiteProject.plot, { width: 42, length: 75, orientation: "South", setbacks: { front: 7, rear: 5, left: 4, right: 4 } }, "new projects should accept their own site dimensions instead of sharing a fixed plot");
 
 let multiFloor = createInitialProject();
@@ -394,7 +394,7 @@ performExterior({ type: "move_room", roomId: exteriorProject.rooms.find((room) =
 assert.equal(exteriorProject.facadeFeatures.length, 1, "hosted façade features should follow their room-controlled wall when it moves");
 assert.ok(exteriorProject.walls.some((wall) => wall.exterior && wall.finish === "brick"), "per-wall finish overrides should survive room-controlled topology movement");
 assertOperationRejectedWithoutMutation(exteriorProject, { type: "update_balcony", balconyId: exteriorProject.balconies[0].id, width: 80 }, /inside the plot/);
-const exteriorRoundTrip = persistence.importProjectDocument(persistence.exportProjectDocument(exteriorProject));
+const exteriorRoundTrip = await persistence.importProjectDocument(persistence.exportProjectDocument(exteriorProject));
 assert.equal(exteriorRoundTrip.schemaVersion, 7);
 assert.equal(exteriorRoundTrip.balconies.length, 1);
 assert.equal(exteriorRoundTrip.facadeFeatures.length, 1);
@@ -508,7 +508,7 @@ performHabitat({ type: "add_opening", kind: "window", wallId: bedroomWall.id, of
 const bedroomIssues = validateLayout(habitat).issues.filter((issue) => issue.elementIds.includes(bedroom.id));
 assert.ok(!bedroomIssues.some((issue) => issue.code === "ROOM_DAYLIGHT_SHORTFALL"), "16 sq ft of glazing satisfies daylight for a 130 sq ft bedroom");
 assert.ok(bedroomIssues.some((issue) => issue.code === "ROOM_NO_VENTILATION"), "a fixed window contributes no openable area");
-assert.ok(!bedroomIssues.some((issue) => issue.code === "BEDROOM_NO_EGRESS"), "a 4 x 4 ft window with a 3 ft sill satisfies the escape concept");
+assert.ok(bedroomIssues.some((issue) => issue.code === "BEDROOM_NO_EGRESS"), "fixed glazing cannot satisfy the escape concept");
 
 performHabitat({ type: "create_room", floorId: "floor-ground", name: "Box Room", roomType: "Bedroom", x: 3, y: 30, width: 6, length: 8 });
 assert.ok(

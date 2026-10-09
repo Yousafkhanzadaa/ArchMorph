@@ -139,11 +139,11 @@ const runtime: ToolRuntime = {
 const tools = createArchMorphTools(runtime);
 const names = tools.map((tool) => tool.name);
 
-assert.equal(tools.length, 57, "ArchMorph should expose exactly 57 canonical tools");
+assert.equal(tools.length, 58, "ArchMorph should expose 58 canonical tools, retaining the original tools and shared-boundary editing");
 assert.equal(new Set(names).size, tools.length, "WebMCP tool names must be unique");
 assert.deepEqual(
   Object.fromEntries(["inspect", "edit", "calculate", "present"].map((category) => [category, tools.filter((tool) => tool.category === category).length])),
-  { inspect: 8, edit: 37, calculate: 5, present: 7 },
+  { inspect: 8, edit: 38, calculate: 5, present: 7 },
   "the documented category counts must match the live catalog",
 );
 
