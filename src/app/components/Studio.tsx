@@ -112,7 +112,7 @@ const ModelView = dynamic(() => import("./ModelView"), {
   loading: () => <div className="model-view" role="status" aria-live="polite"><div className="model-view__empty"><strong>Preparing 3D model…</strong></div></div>,
 });
 
-type InspectorTab = "properties" | "activity" | "checks";
+type InspectorTab = "properties" | "checks";
 type ActivityFilter = "design" | "view" | "all";
 type LibraryTab = "spaces" | "levels" | "exterior" | "browse";
 type ToastState = {
@@ -485,11 +485,17 @@ export default function Studio() {
   const [toast, setToast] = useState<ToastState>();
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [libraryTab, setLibraryTab] = useState<LibraryTab>("spaces");
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [showPlanLabels, setShowPlanLabels] = useState(true);
+  const [cutaway, setCutaway] = useState(false);
+  const [focusView, setFocusView] = useState(false);
+  const [siteContext, setSiteContext] = useState(true);
+  const presentationRef = useRef({ cutaway, siteContext });
+  useEffect(() => { presentationRef.current = { cutaway, siteContext }; }, [cutaway, siteContext]);
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>("design");
   const [activityActor, setActivityActor] = useState<"all" | "human" | "agent">("all");
   const [activeIssueId, setActiveIssueId] = useState<string>();
@@ -505,6 +511,9 @@ export default function Studio() {
   const projectButtonRef = useRef<HTMLButtonElement | null>(null);
   const projectMenuRef = useRef<HTMLDivElement | null>(null);
   const exportButtonRef = useRef<HTMLButtonElement | null>(null);
+  const historyButtonRef = useRef<HTMLButtonElement | null>(null);
+  const historyMenuRef = useRef<HTMLDivElement | null>(null);
+  const historyCloseRef = useRef<HTMLButtonElement | null>(null);
   const helpButtonRef = useRef<HTMLButtonElement | null>(null);
   const exportMenuRef = useRef<HTMLDivElement | null>(null);
   const helpCloseRef = useRef<HTMLButtonElement | null>(null);
@@ -550,6 +559,7 @@ export default function Studio() {
     setSavedProjects(listSavedProjects());
     setProjectMenuOpen(false);
     setExportOpen(false);
+    setHistoryOpen(false);
     setActiveIssueId(undefined);
     if (message) notify(message);
   }, [notify]);
@@ -645,8 +655,10 @@ export default function Studio() {
     let dataUrl: string;
     if (current.view.mode === "3d") {
       let canvas = canvasRef.current;
+      const expectedCutaway = presentationRef.current.cutaway && (current.view.navigationMode ?? "orbit") === "orbit" ? current.view.activeFloorId : "";
       const deadline = performance.now() + 8000;
-      while (!canvas || canvas.dataset.projectId !== current.id || canvas.dataset.projectVersion !== String(current.version) || canvas.dataset.viewSignature !== JSON.stringify(current.view)) {
+      while (!canvas || canvas.dataset.projectId !== current.id || canvas.dataset.projectVersion !== String(current.version) || canvas.dataset.viewSignature !== JSON.stringify(current.view)
+        || canvas.dataset.cutawayFloorId !== expectedCutaway || canvas.dataset.siteContext !== String(presentationRef.current.siteContext)) {
         options?.signal?.throwIfAborted();
         if (performance.now() >= deadline) throw new Error("The 3D model is still preparing. Try the snapshot again when it appears.");
         await new Promise<void>(resolve => window.setTimeout(resolve, 32));
@@ -671,6 +683,7 @@ export default function Studio() {
       projectId: current.id,
       projectVersion: current.version,
       view: current.view,
+      ...(current.view.mode === "3d" ? { presentation: { cutawayFloorId: canvasRef.current?.dataset.cutawayFloorId || undefined, siteContext: presentationRef.current.siteContext, width: canvasRef.current?.width, height: canvasRef.current?.height } } : {}),
       filename,
       mimeType: "image/png",
       imageDataUrl: dataUrl,
@@ -904,6 +917,7 @@ export default function Studio() {
       if (shortcut) activatePlanTool(shortcut.id);
       if ((event.key === "Backspace" || event.key === "Delete") && selectedId) deleteSelected();
       if (event.key === "Escape") {
+        setFocusView(false);
         setSelectedId(undefined);
         setTool("select");
       }
@@ -915,11 +929,20 @@ export default function Studio() {
   useEffect(() => {
     const handleDismiss = (event: KeyboardEvent | MouseEvent) => {
       if (event instanceof KeyboardEvent && event.key !== "Escape") return;
+      if (event instanceof KeyboardEvent && historyOpen) {
+        setHistoryOpen(false);
+        historyButtonRef.current?.focus();
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       if (event instanceof MouseEvent) {
         const target = event.target as Node;
         if (projectMenuRef.current?.contains(target) || projectButtonRef.current?.contains(target)) return;
         if (exportMenuRef.current?.contains(target) || exportButtonRef.current?.contains(target)) return;
+        if (historyMenuRef.current?.contains(target) || historyButtonRef.current?.contains(target)) return;
       }
+      setHistoryOpen(false);
       if (projectMenuOpen) {
         setProjectMenuOpen(false);
         if (event instanceof KeyboardEvent) projectButtonRef.current?.focus();
@@ -944,7 +967,11 @@ export default function Studio() {
       document.removeEventListener("keydown", handleDismiss);
       document.removeEventListener("pointerdown", handleDismiss);
     };
-  }, [debugOpen, exportOpen, helpOpen, projectMenuOpen]);
+  }, [debugOpen, exportOpen, helpOpen, historyOpen, projectMenuOpen]);
+
+  useEffect(() => {
+    if (historyOpen) historyCloseRef.current?.focus();
+  }, [historyOpen]);
 
   useEffect(() => {
     if (helpOpen) helpCloseRef.current?.focus();
@@ -1309,7 +1336,7 @@ export default function Studio() {
   };
 
   return (
-    <main className={`studio-shell ${libraryOpen ? "is-library-open" : ""} ${inspectorOpen ? "is-inspector-open" : ""}`}>
+    <main className={`studio-shell ${libraryOpen ? "is-library-open" : ""} ${inspectorOpen ? "is-inspector-open" : ""} ${project.view.mode === "3d" && focusView ? "is-focus-view" : ""}`}>
       <div className="visually-hidden" aria-live="polite" aria-atomic="true">{selectedId ? `Selected ${elementLabel(project, selectedId)}${selectedRoom ? `. Position ${selectedRoom.x} by ${selectedRoom.y} feet. Size ${selectedRoom.width} by ${selectedRoom.length} feet.` : ""}` : `No element selected. ${validation.issueCount} layout ${validation.issueCount === 1 ? "issue" : "issues"}.`}</div>
       <header className="topbar">
         <Link className="brand" href="/" aria-label="ArchMorph home">
@@ -1320,7 +1347,7 @@ export default function Studio() {
           </div>
         </Link>
         <div className="project-switcher">
-          <button ref={projectButtonRef} className="project-title" type="button" title="Project files" aria-haspopup="dialog" aria-controls="project-file-menu" aria-expanded={projectMenuOpen} onClick={() => { setSavedProjects(listSavedProjects()); setProjectMenuOpen((value) => !value); setExportOpen(false); }}>
+          <button ref={projectButtonRef} className="project-title" type="button" title="Project files" aria-haspopup="dialog" aria-controls="project-file-menu" aria-expanded={projectMenuOpen} onClick={() => { setSavedProjects(listSavedProjects()); setProjectMenuOpen((value) => !value); setExportOpen(false); setHistoryOpen(false); }}>
             <Building2 size={14} />
             <span>{project.name}</span>
             <i title={hydrated ? `Autosaved on this device · ${new Date(project.updatedAt).toLocaleString()}` : "Autosaved on this device"}>{hydrated ? savedVersion === project.version ? formatSavedTime(project.updatedAt) : `Saving v${project.version}…` : "Saved locally"}</i>
@@ -1361,6 +1388,40 @@ export default function Studio() {
         <div className="top-actions">
           <IconButton label="Undo" disabled={!pastCount} onClick={undo}><Undo2 size={17} /></IconButton>
           <IconButton label="Redo" disabled={!futureCount} onClick={redo}><Redo2 size={17} /></IconButton>
+          <div className="history-dropdown" onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) setHistoryOpen(false);
+          }}>
+            <button ref={historyButtonRef} type="button" className={`icon-button ${historyOpen ? "is-active" : ""}`} aria-label="Project history" title="Project history" aria-haspopup="dialog" aria-controls="project-history" aria-expanded={historyOpen} onClick={() => {
+              setHistoryOpen(value => !value);
+              setProjectMenuOpen(false);
+              setExportOpen(false);
+            }}><History size={17} /></button>
+            {historyOpen && (
+              <div ref={historyMenuRef} id="project-history" className="history-popover" role="dialog" aria-labelledby="project-history-title">
+                <div className="history-popover-head"><div><h2 id="project-history-title">Project history</h2><p>Recent changes to your home.</p></div><button ref={historyCloseRef} type="button" className="icon-button" aria-label="Close history" onClick={() => { setHistoryOpen(false); historyButtonRef.current?.focus(); }}><X size={16} /></button></div>
+                <div className="history-popover-scroll">
+                  <details className="history-filters"><summary>Filter changes</summary>
+                    <div className="activity-filters" role="group" aria-label="Filter history">
+                      {(["design", "view", "all"] as ActivityFilter[]).map((filter) => <button key={filter} type="button" aria-pressed={activityFilter === filter} className={activityFilter === filter ? "is-active" : ""} onClick={() => setActivityFilter(filter)}>{filter[0].toUpperCase() + filter.slice(1)}</button>)}
+                    </div>
+                    <div className="activity-filters is-secondary" role="group" aria-label="Filter history by actor">
+                      {(["all", "human", "agent"] as const).map((actor) => <button key={actor} type="button" aria-pressed={activityActor === actor} className={activityActor === actor ? "is-active" : ""} onClick={() => setActivityActor(actor)}>{actor[0].toUpperCase() + actor.slice(1)}</button>)}
+                    </div>
+                  </details>
+                  {pastCount > 0 && <details className="history-milestones"><summary>Restore an earlier design version</summary><div>{pastRef.current.slice(-5).reverse().map((snapshot) => <button key={`${snapshot.version}:${snapshot.updatedAt}`} type="button" onClick={() => { restoreSnapshot(snapshot); setHistoryOpen(false); historyButtonRef.current?.focus(); }}><span><b>Version {snapshot.version}</b><small>{snapshot.activity[0]?.description.replace(/^You /, "") ?? "Saved design state"}</small></span><History size={14} /></button>)}</div></details>}
+                  <div className="activity-list">
+                    {filteredActivity.map((entry) => (
+                      <div key={entry.id} className={`activity-item actor-${entry.actor}`}>
+                        <span className="activity-avatar">{entry.actor === "agent" ? <Sparkles size={12} /> : entry.actor === "human" ? "Y" : "S"}</span>
+                        <div><p>{entry.description}</p><small>{formatActivityTime(entry.timestamp)}{debugMode ? ` · v${entry.version}` : ""}</small></div>
+                      </div>
+                    ))}
+                    {!filteredActivity.length && <p className="empty-activity">No {activityFilter === "all" ? "matching" : activityFilter} changes yet.</p>}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
           <div className="top-divider" />
           {debugMode && (
             <button type="button" className={`agent-pill ${nativeStatus ? "is-live" : ""}`} onClick={() => setDebugOpen(true)}>
@@ -1370,7 +1431,7 @@ export default function Studio() {
           )}
           <IconButton buttonRef={helpButtonRef} label="Help and keyboard shortcuts (?)" onClick={() => setHelpOpen(true)}><CircleHelp size={17} /></IconButton>
           <div className="export-switcher">
-            <button ref={exportButtonRef} type="button" className="export-button" aria-haspopup="menu" aria-controls="export-menu" aria-expanded={exportOpen} onClick={() => { setExportOpen((value) => !value); setProjectMenuOpen(false); }}>
+            <button ref={exportButtonRef} type="button" className="export-button" aria-haspopup="menu" aria-controls="export-menu" aria-expanded={exportOpen} onClick={() => { setExportOpen((value) => !value); setProjectMenuOpen(false); setHistoryOpen(false); }}>
               <Download size={15} /> Export <ChevronDown size={13} />
             </button>
             {exportOpen && (
@@ -1558,8 +1619,8 @@ export default function Studio() {
         </aside>
 
         <section className="canvas-stage">
-          <div className="canvas-toolbar">
-            <IconButton label="Open design library" onClick={() => setLibraryOpen(true)}><PanelLeftOpen size={17} /></IconButton>
+          <div className={`canvas-toolbar ${project.view.mode === "3d" ? "is-model-toolbar" : ""}`}>
+            <IconButton label="Open design library" onClick={() => { setFocusView(false); setLibraryOpen(true); }}><PanelLeftOpen size={17} /></IconButton>
             <div className="metric-strip">
               <span><small>NET FLOOR</small><b>{metrics.totalNetFloorArea.toLocaleString()} <i>sq ft</i></b></span>
               <span><small>GROSS</small><b>{metrics.grossCoveredArea.toLocaleString()} <i>sq ft</i></b></span>
@@ -1569,19 +1630,34 @@ export default function Studio() {
               {project.view.mode === "3d" && navigationMode === "orbit" && (
                 <select
                   aria-label="Camera view"
-                  value={project.view.cameraPreset}
-                  onChange={(event) => safeCommit({ type: "set_camera", preset: event.target.value as CameraPreset })}
+                  value={cutaway ? "cutaway" : project.view.cameraPreset}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    setCutaway(next === "cutaway");
+                    safeCommit({ type: "set_camera", preset: next === "cutaway" ? "front-right" : next as CameraPreset });
+                    if (next === "cutaway") safeCommit({ type: "focus_element" });
+                  }}
                 >
-                  <option value="front-right">Perspective</option>
+                  <option value="front-right">Arrival perspective</option>
+                  <option value="front-left">Opposite perspective</option>
                   <option value="front">Street elevation</option>
                   <option value="rear">Rear elevation</option>
+                  <option value="left">Left elevation</option>
+                  <option value="right">Right elevation</option>
                   <option value="top">Top overview</option>
+                  <option value="cutaway">Floor cutaway</option>
+                </select>
+              )}
+              {project.view.mode === "3d" && navigationMode === "orbit" && cutaway && (
+                <select aria-label="Cutaway floor" value={project.view.activeFloorId} onChange={(event) => safeCommit({ type: "set_active_floor", floorId: event.target.value })}>
+                  {[...project.floors].sort((a, b) => a.level - b.level).map(floor => <option key={floor.id} value={floor.id}>{floor.name}</option>)}
                 </select>
               )}
               {project.view.mode === "2d" && <IconButton label={showPlanLabels ? "Hide room labels" : "Show room labels"} active={showPlanLabels} onClick={() => setShowPlanLabels((value) => !value)}><Eye size={16} /></IconButton>}
               <button type="button" className="labeled-control" aria-label="Focus whole project" onClick={() => safeCommit({ type: "focus_element" })}><Scan size={16} /><span>Fit</span></button>
               <button type="button" className="labeled-control" aria-label="Capture current view as PNG" onClick={() => void downloadSnapshot()}><Maximize2 size={16} /><span>Snapshot</span></button>
-              <IconButton label="Open inspector" onClick={() => setInspectorOpen(true)}><PanelRightOpen size={17} /></IconButton>
+              {project.view.mode === "3d" && <IconButton label={focusView ? "Exit focus view" : "Focus view"} active={focusView} onClick={() => { setFocusView(value => !value); setLibraryOpen(false); setInspectorOpen(false); }}><PanelTop size={16} /></IconButton>}
+              <IconButton label="Open inspector" onClick={() => { setFocusView(false); setInspectorOpen(true); }}><PanelRightOpen size={17} /></IconButton>
             </div>
           </div>
 
@@ -1615,6 +1691,8 @@ export default function Studio() {
                 canvasRef={canvasRef}
                 onSelect={setSelectedId}
                 onWalkFloorChange={handleWalkFloorChange}
+                cutawayFloorId={cutaway && navigationMode === "orbit" ? project.view.activeFloorId : undefined}
+                siteContext={siteContext}
               />
             )}
             {project.view.mode === "2d" && !project.rooms.length && !project.walls.length && !project.stairs.length && (
@@ -1630,7 +1708,7 @@ export default function Studio() {
           </div>
 
           <div className="statusbar">
-            <span><span className="status-dot" /> {activeFloor.name}</span>
+            <span><span className="status-dot" /> {cutaway && project.view.mode === "3d" && navigationMode === "orbit" ? `${activeFloor.name} · cutaway` : activeFloor.name}</span>
             <span>{tool === "balcony" ? `Place ${balconyKind}` : toolItems.find((item) => item.id === tool)?.label}</span>
             <span className="status-message">{project.view.mode === "3d" && navigationMode === "walk" ? "WASD / arrows to move · Click to lock look or drag to look · Follow stairs to change levels" : tool === "room" ? `Click the plot to place a ${roomType.toLowerCase()}` : tool === "stair" ? `Click the plan to place a ${stairTypeLabel[stairType]} stair between adjacent floors` : tool === "door" || tool === "window" ? `Click any wall to add one ${tool}; placement exits after success` : tool === "balcony" ? `Click the plan to place a ${balconyKind} · drag it afterwards to reposition` : tool === "wall" ? "Drag to draw a wall, or click the start then the end · 45° snapping · Esc cancels" : tool === "measure" ? "Drag between two points, or click the start then the end · Esc cancels" : project.view.mode === "3d" ? "Drag to orbit · Right-drag or Shift-drag to pan · Scroll to zoom" : "Drag rooms, stairs, balconies, terraces, and independent walls to move"}</span>
             {debugMode && <span>Project v{project.version}</span>}
@@ -1642,14 +1720,13 @@ export default function Studio() {
           <div className="inspector-tabs" role="tablist" aria-label="Inspector views" onKeyDown={(event) => {
             if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
             event.preventDefault();
-            const tabs: InspectorTab[] = ["properties", "activity", "checks"];
+            const tabs: InspectorTab[] = ["properties", "checks"];
             const current = tabs.indexOf(inspectorTab);
             const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (current + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
             setInspectorTab(tabs[next]);
             window.requestAnimationFrame(() => document.getElementById(`inspector-tab-${tabs[next]}`)?.focus());
           }}>
             <button id="inspector-tab-properties" type="button" role="tab" tabIndex={inspectorTab === "properties" ? 0 : -1} aria-selected={inspectorTab === "properties"} aria-controls="inspector-panel" className={inspectorTab === "properties" ? "is-active" : ""} onClick={() => setInspectorTab("properties")}>Properties</button>
-            <button id="inspector-tab-activity" type="button" role="tab" tabIndex={inspectorTab === "activity" ? 0 : -1} aria-selected={inspectorTab === "activity"} aria-controls="inspector-panel" className={inspectorTab === "activity" ? "is-active" : ""} onClick={() => setInspectorTab("activity")}>History</button>
             <button id="inspector-tab-checks" type="button" role="tab" tabIndex={inspectorTab === "checks" ? 0 : -1} aria-selected={inspectorTab === "checks"} aria-controls="inspector-panel" className={inspectorTab === "checks" ? "is-active" : ""} onClick={() => setInspectorTab("checks")}>
               Checks {validation.issueCount > 0 && <em>{validation.issueCount}</em>}
             </button>
@@ -1834,6 +1911,10 @@ export default function Studio() {
                       <label className="field field-full"><span>Façade palette</span><select value={project.exteriorFinish} onChange={(event) => safeCommit({ type: "set_exterior_finish", finish: event.target.value as ExteriorFinishId })}>{Object.entries(exteriorFinishPresets).map(([id, finish]) => <option key={id} value={id}>{finish.label}</option>)}</select></label>
                       <p className="technical-note">{exteriorFinishPresets[project.exteriorFinish].description}</p>
                     </Section>
+                    {project.view.mode === "3d" && <Section title="Presentation">
+                      <label className="presentation-toggle"><input type="checkbox" checked={siteContext} onChange={event => setSiteContext(event.target.checked)} /><span>Show site context</span></label>
+                      <p className="technical-note">Suggested planting and approach paving for the 3D view. Your design and area schedule stay unchanged.</p>
+                    </Section>}
                     <Section title="Flat roof + parapet">
                       <label className="field field-full"><span>Parapet</span><select value={project.roof.parapetEnabled ? "enabled" : "disabled"} onChange={(event) => safeCommit({ type: "set_roof", parapetEnabled: event.target.value === "enabled" })}><option value="enabled">Enabled</option><option value="disabled">Disabled</option></select></label>
                       <div className="field-grid"><NumberField label="Height" value={project.roof.parapetHeight} min={0.5} max={6} step={0.1} onCommit={(parapetHeight) => safeCommit({ type: "set_roof", parapetHeight })} /><NumberField label="Thickness" value={project.roof.parapetThickness} min={0.2} max={2} step={0.05} onCommit={(parapetThickness) => safeCommit({ type: "set_roof", parapetThickness })} /></div>
@@ -1853,28 +1934,6 @@ export default function Studio() {
                   </>
                 )}
               </>
-            )}
-
-            {inspectorTab === "activity" && (
-              <div className="activity-panel">
-                <div className="panel-intro"><History size={17} /><div><h2>Project history</h2><p>Design edits are separated from temporary view changes. Human and agent edits share Undo and Redo.</p></div></div>
-                <div className="activity-filters" role="group" aria-label="Filter history">
-                  {(["design", "view", "all"] as ActivityFilter[]).map((filter) => <button key={filter} type="button" aria-pressed={activityFilter === filter} className={activityFilter === filter ? "is-active" : ""} onClick={() => setActivityFilter(filter)}>{filter[0].toUpperCase() + filter.slice(1)}</button>)}
-                </div>
-                <div className="activity-filters is-secondary" role="group" aria-label="Filter history by actor">
-                  {(["all", "human", "agent"] as const).map((actor) => <button key={actor} type="button" aria-pressed={activityActor === actor} className={activityActor === actor ? "is-active" : ""} onClick={() => setActivityActor(actor)}>{actor[0].toUpperCase() + actor.slice(1)}</button>)}
-                </div>
-                {pastCount > 0 && <details className="history-milestones"><summary>Restore an earlier design version</summary><div>{pastRef.current.slice(-5).reverse().map((snapshot) => <button key={`${snapshot.version}:${snapshot.updatedAt}`} type="button" onClick={() => restoreSnapshot(snapshot)}><span><b>Version {snapshot.version}</b><small>{snapshot.activity[0]?.description.replace(/^You /, "") ?? "Saved design state"}</small></span><History size={14} /></button>)}</div></details>}
-                <div className="activity-list">
-                  {filteredActivity.map((entry) => (
-                    <div key={entry.id} className={`activity-item actor-${entry.actor}`}>
-                      <span className="activity-avatar">{entry.actor === "agent" ? <Sparkles size={12} /> : entry.actor === "human" ? "Y" : "S"}</span>
-                      <div><p>{entry.description}</p><small>{formatActivityTime(entry.timestamp)}{debugMode ? ` · v${entry.version}` : ""}</small></div>
-                    </div>
-                  ))}
-                  {!filteredActivity.length && <p className="empty-activity">No {activityFilter} activity yet.</p>}
-                </div>
-              </div>
             )}
 
             {inspectorTab === "checks" && (

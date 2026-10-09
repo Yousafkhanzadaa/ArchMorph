@@ -3,6 +3,7 @@
 import { useEffect, useRef, type RefObject } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import {
   exteriorFinishPresets,
   roomInteriorPoint,
@@ -22,8 +23,9 @@ import {
   type Project,
 } from "@/lib/architecture";
 import { buildSpatialModel, openingFrameFor, orientedSlopeFrame, resolveWalkPosition } from "@/lib/spatial3d";
-import { buildFloorSlab, buildParapetSurfaces, buildRoofDeck, buildWallSurfaces, fitPerspectiveView, presentationBounds, type SurfacePatch } from "@/lib/model-presentation";
-import { batchModelMeshes, createModelPalette, selectionGeometry, surfaceGeometry } from "@/lib/model-materials";
+import { buildFloorSlab, buildParapetSurfaces, buildRoofDeck, buildWallSurfaces, cutawayCeiling, fitPerspectiveView, landingGuardSegments, presentationBounds, presentationPixelRatio, type PresentationBounds, type PresentationVolume, type SurfacePatch } from "@/lib/model-presentation";
+import { batchModelMeshes, contactOcclusion, createModelPalette, selectionGeometry, surfaceGeometry } from "@/lib/model-materials";
+import { presentationSite } from "@/lib/model-site";
 
 type ModelViewProps = {
   project: Project;
@@ -32,6 +34,8 @@ type ModelViewProps = {
   canvasRef: RefObject<HTMLCanvasElement | null>;
   onSelect: (id?: string) => void;
   onWalkFloorChange: (floorId: string) => void;
+  cutawayFloorId?: string;
+  siteContext?: boolean;
 };
 
 type WalkPose = {
@@ -47,6 +51,8 @@ type OrbitPose = {
   viewKey: string;
   position: [number, number, number];
   target: [number, number, number];
+  lensShift: number;
+  lensShiftX: number;
 };
 
 const WALK_EYE_HEIGHT = 5.4;
@@ -63,8 +69,9 @@ function meshBox(
   position: [number, number, number],
   rotationY: number,
   material: THREE.Material | THREE.Material[],
+  bevel = 0,
 ) {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
+  const mesh = new THREE.Mesh(bevel ? new RoundedBoxGeometry(...size, 1, Math.min(bevel, Math.min(...size) / 3)) : new THREE.BoxGeometry(...size), material);
   mesh.position.set(...position);
   mesh.rotation.y = rotationY;
   mesh.castShadow = true;
@@ -116,6 +123,8 @@ export default function ModelView({
   canvasRef,
   onSelect,
   onWalkFloorChange,
+  cutawayFloorId,
+  siteContext = true,
 }: ModelViewProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const walkPoseRef = useRef<WalkPose | undefined>(undefined);
@@ -126,14 +135,19 @@ export default function ModelView({
   const liveRef = useRef({ project, selectedId, onSelect, onWalkFloorChange });
   const selectionRef = useRef<((id?: string) => void) | undefined>(undefined);
   const renderedSceneKeyRef = useRef<string | undefined>(undefined);
+  const renderedViewKeyRef = useRef<string | undefined>(undefined);
   // History/read operations and selection do not invalidate GPU resources.
   const sceneKey = JSON.stringify([project.id, project.plot, project.floors, project.rooms, project.walls,
     project.openings, project.stairs, project.balconies, project.facadeFeatures, project.roof,
-    project.siteBoundary, project.exteriorFinish, project.view, navigationMode]);
+    project.siteBoundary, project.exteriorFinish, navigationMode,
+    navigationMode === "walk" ? project.view : undefined, cutawayFloorId, siteContext]);
   useEffect(() => {
     liveRef.current = { project, selectedId, onSelect, onWalkFloorChange };
     const canvas = canvasRef.current;
-    if (canvas && renderedSceneKeyRef.current === sceneKey) canvas.dataset.projectVersion = String(project.version);
+    if (canvas && renderedSceneKeyRef.current === sceneKey) {
+      canvas.dataset.projectVersion = String(project.version);
+      canvas.dataset.viewSignature = JSON.stringify(project.view);
+    }
   });
   useEffect(() => {
     const { project, selectedId } = liveRef.current;
@@ -142,6 +156,7 @@ export default function ModelView({
     const host = hostRef.current;
     const canvas = canvasRef.current;
     if (!host || !canvas) return;
+    const buildStarted = performance.now();
 
     const spatial = buildSpatialModel(project, { doorMode: navigationMode === "walk" ? "all-open" : "model" });
     const floorById = new Map(project.floors.map((floor) => [floor.id, floor]));
@@ -150,8 +165,16 @@ export default function ModelView({
       return connection ? [connection] : [];
     });
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color("#e6e9e8");
-    const modelBounds = presentationBounds(project);
+    scene.background = new THREE.Color("#e1e7eb");
+    const ceiling = navigationMode === "orbit" ? cutawayCeiling(project, cutawayFloorId) : Infinity;
+    const visibleFloors = new Set(project.floors.filter(floor => floor.elevation < ceiling).map(floor => floor.id));
+    const visibleProject = { ...project, floors: project.floors.filter(floor => visibleFloors.has(floor.id)), rooms: project.rooms.filter(room => visibleFloors.has(room.floorId)), walls: project.walls.filter(wall => visibleFloors.has(wall.floorId)), balconies: project.balconies.filter(b => visibleFloors.has(b.floorId)), facadeFeatures: project.facadeFeatures.filter(f => visibleFloors.has(project.walls.find(w => w.id === f.wallId)?.floorId ?? "")), stairs: project.stairs.filter(s => visibleFloors.has(s.floorId)), roof: { ...project.roof, parapetEnabled: !cutawayFloorId && project.roof.parapetEnabled } };
+    const boundsFor = (focus?: string): PresentationBounds => {
+      const bounds = presentationBounds(visibleProject, focus);
+      bounds.max[1] = Math.min(bounds.max[1], ceiling);
+      return bounds.min[1] < bounds.max[1] ? bounds : boundsFor();
+    };
+    const modelBounds = boundsFor();
     const modelSize = new THREE.Vector3().fromArray(modelBounds.max).sub(new THREE.Vector3().fromArray(modelBounds.min));
     const modelRadius = Math.max(12, modelSize.length() / 2);
     scene.fog = new THREE.Fog(scene.background, modelRadius * 12, modelRadius * 22);
@@ -167,21 +190,39 @@ export default function ModelView({
       return;
     }
     host.dataset.webglUnavailable = "false";
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(Math.max(1, host.clientWidth), Math.max(1, host.clientHeight), false);
+    renderer.setPixelRatio(presentationPixelRatio(host.clientWidth, host.clientHeight, window.devicePixelRatio));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.shadowMap.autoUpdate = false;
     renderer.shadowMap.needsUpdate = true;
     renderer.toneMapping = THREE.NeutralToneMapping;
-    renderer.toneMappingExposure = navigationMode === "walk" ? 1.12 : 1.02;
+    renderer.toneMappingExposure = navigationMode === "walk" ? 1.04 : 0.96;
+    const paletteStarted = performance.now();
     const palette = createModelPalette(renderer);
+    canvas.dataset.paletteMilliseconds = (performance.now() - paletteStarted).toFixed(1);
     scene.environment = palette.environment;
-    scene.environmentIntensity = 0.45;
+    scene.environmentIntensity = 0.38;
+    if (Number.isFinite(ceiling)) renderer.clippingPlanes = [new THREE.Plane(new THREE.Vector3(0, -1, 0), ceiling + 0.012)];
     let frame = 0;
     let disposed = false;
     const requestRender = () => {
       if (!frame && !disposed && !document.hidden) frame = requestAnimationFrame(time => animate(time));
+    };
+    let resolutionMode: "moving" | "settled" | "snapshot" = "settled";
+    let settleTimer = 0;
+    const setResolution = (mode: typeof resolutionMode) => {
+      resolutionMode = mode;
+      const ratio = presentationPixelRatio(host.clientWidth, host.clientHeight, window.devicePixelRatio, mode);
+      if (Math.abs(renderer.getPixelRatio() - ratio) > 0.01) renderer.setPixelRatio(ratio);
+    };
+    const interacted = () => {
+      host.dataset.interacted = "true";
+      setResolution("moving");
+      window.clearTimeout(settleTimer);
+      settleTimer = window.setTimeout(() => { setResolution("settled"); requestRender(); }, 180);
+      requestRender();
     };
 
     const controls = new OrbitControls(camera, canvas);
@@ -191,18 +232,44 @@ export default function ModelView({
     controls.screenSpacePanning = true;
     controls.minDistance = 7;
     controls.maxDistance = modelRadius * 10;
-    controls.maxPolarAngle = Math.PI / 2.02;
+    controls.maxPolarAngle = Math.PI / 2;
 
-    const maxDimension = Math.max(project.plot.width, project.plot.length);
     const center = new THREE.Vector3().fromArray(modelBounds.min).add(new THREE.Vector3().fromArray(modelBounds.max)).multiplyScalar(0.5);
+    let lensShift = 0;
+    let lensShiftX = 0;
+    let framingMeshes: THREE.Mesh[] = [];
+    const updateProjection = () => { camera.updateProjectionMatrix(); camera.projectionMatrix.elements[9] += lensShift; camera.projectionMatrix.elements[8] += lensShiftX; camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert(); };
+    const composeFrame = (focus?: string) => {
+      // Fit the silhouette itself: a small stair tower should not leave the empty
+      // upper corners of its bounding box occupying half of the presentation.
+      camera.updateMatrixWorld(true);
+      const point = new THREE.Vector3();
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (const mesh of framingMeshes) {
+        const positions = mesh.geometry.getAttribute("position"), ids = mesh.userData.triangleElementIds as Array<string | undefined>;
+        for (let i = 0; i < positions.count; i++) {
+          const id = ids[Math.floor(i / 3)];
+          if (!id || id.startsWith("context:") || (focus && id !== focus)) continue;
+          point.fromBufferAttribute(positions, i);
+          if (point.y > ceiling + 0.001) continue;
+          point.project(camera);
+          minX = Math.min(minX, point.x); maxX = Math.max(maxX, point.x); minY = Math.min(minY, point.y); maxY = Math.max(maxY, point.y);
+        }
+      }
+      if (Number.isFinite(minX)) { lensShiftX += (minX + maxX) / 2; lensShift += (minY + maxY) / 2; updateProjection(); }
+    };
     const fitCamera = () => {
-      const fit = fitPerspectiveView(presentationBounds(project, project.view.focusElementId), project.view.cameraPreset, camera.aspect, camera.fov);
+      const view = liveRef.current.project.view;
+      const fit = fitPerspectiveView(boundsFor(view.focusElementId), view.cameraPreset, camera.aspect, camera.fov, Boolean(cutawayFloorId));
       camera.position.fromArray(fit.position);
       controls.target.fromArray(fit.target);
       controls.maxDistance = Math.max(modelRadius * 10, fit.distance * 3);
       camera.lookAt(controls.target);
+      lensShiftX = 0; lensShift = fit.lensShift; updateProjection(); composeFrame(view.focusElementId);
     };
-    const orbitViewKey = `${project.view.cameraPreset}:${project.view.focusElementId ?? "project"}:${project.plot.width}x${project.plot.length}`;
+    const viewKeyFor = (view: Project["view"]) => `${view.cameraPreset}:${view.focusElementId ?? "project"}:${project.plot.width}x${project.plot.length}:${cutawayFloorId ?? "building"}`;
+    let orbitViewKey = viewKeyFor(project.view);
+    renderedViewKeyRef.current = orbitViewKey;
 
     if (navigationMode === "orbit") {
       const storedPose = orbitPoseRef.current?.viewKey === orbitViewKey ? orbitPoseRef.current : undefined;
@@ -210,6 +277,7 @@ export default function ModelView({
         camera.position.fromArray(storedPose.position);
         controls.target.fromArray(storedPose.target);
         camera.lookAt(controls.target);
+        lensShift = storedPose.lensShift ?? 0; lensShiftX = storedPose.lensShiftX ?? 0; updateProjection();
       } else {
         fitCamera();
       }
@@ -271,14 +339,14 @@ export default function ModelView({
       camera.rotation.set(storedPose?.pitch ?? 0, storedPose?.yaw ?? safeStart.yaw, 0);
     }
 
-    const ambient = new THREE.HemisphereLight("#e2edff", "#b5a48e", navigationMode === "walk" ? 1.75 : 1.35);
+    const ambient = new THREE.HemisphereLight("#e2edff", "#aa9e89", navigationMode === "walk" ? 1.2 : 0.85);
     scene.add(ambient);
     const sun = new THREE.DirectionalLight("#fff4df", 3);
-    sun.position.copy(center).add(new THREE.Vector3(-0.8, 1.6, -1).multiplyScalar(modelRadius * 2));
+    sun.position.copy(center).add(new THREE.Vector3(-0.8, 1.45, -1).multiplyScalar(modelRadius * 2));
     sun.target.position.copy(center);
     scene.add(sun.target);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.mapSize.set(host.clientWidth < 760 ? 1024 : 2048, host.clientWidth < 760 ? 1024 : 2048);
     sun.shadow.camera.left = -modelRadius * 1.15;
     sun.shadow.camera.right = modelRadius * 1.15;
     sun.shadow.camera.top = modelRadius * 1.15;
@@ -289,13 +357,13 @@ export default function ModelView({
     sun.shadow.normalBias = 0.035;
     sun.shadow.radius = 3.4;
     scene.add(sun);
-    const fill = new THREE.DirectionalLight("#dceaff", navigationMode === "walk" ? 0.65 : 0.45);
+    const fill = new THREE.DirectionalLight("#dceaff", navigationMode === "walk" ? 0.4 : 0.22);
     fill.position.copy(center).add(new THREE.Vector3(modelRadius, modelRadius, modelRadius));
     scene.add(fill);
 
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(modelRadius * 50, modelRadius * 50),
-      new THREE.MeshStandardMaterial({ color: "#cdd2cc", roughness: 0.95 }),
+      new THREE.MeshStandardMaterial({ color: "#b2bbb6", roughness: 0.95 }),
     );
     ground.rotation.x = -Math.PI / 2;
     ground.position.set(project.plot.width / 2, -0.18, project.plot.length / 2);
@@ -304,18 +372,11 @@ export default function ModelView({
 
     const plotSlab = new THREE.Mesh(
       new THREE.BoxGeometry(project.plot.width, 0.16, project.plot.length),
-      palette.get("floor-tile"),
+      palette.get("site"),
     );
     plotSlab.position.set(project.plot.width / 2, -0.06, project.plot.length / 2);
     plotSlab.receiveShadow = true;
     scene.add(plotSlab);
-
-    const grid = new THREE.GridHelper(maxDimension + 30, Math.round(maxDimension + 30), "#aeb3ae", "#d0d3cf");
-    grid.position.set(project.plot.width / 2, 0.035, project.plot.length / 2);
-    const gridMaterial = grid.material as THREE.Material;
-    gridMaterial.transparent = true;
-    gridMaterial.opacity = navigationMode === "walk" ? 0.015 : 0.045;
-    scene.add(grid);
 
     const boundary = new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.BoxGeometry(project.plot.width, 0.05, project.plot.length)),
@@ -324,11 +385,37 @@ export default function ModelView({
     boundary.position.set(project.plot.width / 2, 0.08, project.plot.length / 2);
     scene.add(boundary);
 
+    const site = siteContext ? presentationSite(project) : { plants: [], approaches: [] };
+    if (siteContext) {
+      const addContext = (mesh: THREE.Mesh) => { mesh.userData.siteContext = true; mesh.userData.elementId = "context:site"; scene.add(mesh); };
+      const street = meshBox([project.plot.width + 16, 0.06, 10], [project.plot.width / 2, -0.14, -6], 0, palette.get("site"));
+      street.castShadow = false; addContext(street);
+      const curb = meshBox([project.plot.width + 8, 0.22, 0.65], [project.plot.width / 2, -0.025, -0.75], 0, palette.get("coping"), 0.025);
+      curb.castShadow = false; addContext(curb);
+      for (const approach of site.approaches) {
+        const paving = meshBox([approach.width, 0.035, approach.length], [approach.x, 0.045, approach.z], 0, palette.get("paving"));
+        paving.castShadow = false; addContext(paving);
+      }
+      if (!cutawayFloorId) for (const plant of site.plants) {
+        const planter = new THREE.Mesh(new THREE.CylinderGeometry(plant.radius, plant.radius * 0.9, 0.65, 12), palette.finish("concrete"));
+        planter.position.set(plant.x, 0.36, plant.z); planter.castShadow = planter.receiveShadow = true; addContext(planter);
+        const soil = new THREE.Mesh(new THREE.CylinderGeometry(plant.radius * 0.91, plant.radius * 0.91, 0.025, 12), palette.get("bark"));
+        soil.position.set(plant.x, 0.695, plant.z); addContext(soil);
+        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.12, plant.height * 0.65, 6), palette.get("bark"));
+        trunk.position.set(plant.x, plant.height * 0.325 + 0.65, plant.z); trunk.castShadow = true; addContext(trunk);
+        for (let index = 0; index < 3; index++) {
+          const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 1), palette.get("foliage"));
+          crown.position.set(plant.x + (index - 1) * 0.47, plant.height - index * 0.55, plant.z + Math.sin(index * 2) * 0.4);
+          crown.scale.set(1.25 - index * 0.12, 1.45 - index * 0.18, 1.2); crown.castShadow = crown.receiveShadow = true; addContext(crown);
+        }
+      }
+    }
+
     const selectable: THREE.Object3D[] = [];
     const finishMaterial = (finishId: keyof typeof exteriorFinishPresets) => palette.finish(finishId);
     const addSurfaces = (patches: SurfacePatch[], material: THREE.Material) => {
       if (!patches.length) return;
-      const { geometry, ids } = surfaceGeometry(patches);
+      const { geometry, ids } = surfaceGeometry(patches, true);
       const mesh = new THREE.Mesh(geometry, material);
       mesh.userData.triangleElementIds = ids;
       mesh.castShadow = mesh.receiveShadow = true;
@@ -339,11 +426,15 @@ export default function ModelView({
       return wall?.finish ?? project.exteriorFinish;
     };
 
-    for (const room of project.rooms) addSurfaces(buildFloorSlab(project, room), palette.floor(room.type));
-    for (const floor of project.floors) addSurfaces(buildRoofDeck(project, floor.id, spatial), palette.get("roof"));
+    const slabSurfaces = visibleProject.rooms.flatMap(room => {
+      const patches = buildFloorSlab(project, room); addSurfaces(patches, palette.floor(room.type)); return patches;
+    });
+    const roofSurfaces = visibleProject.floors.filter(floor => floor.elevation + floor.height < ceiling).flatMap(floor => {
+      const patches = buildRoofDeck(project, floor.id, spatial); addSurfaces(patches, palette.get("roof")); return patches;
+    });
 
     let wallPieceCount = spatial.wallVolumes.length;
-    const wallSurfaces = buildWallSurfaces(project, spatial);
+    const wallSurfaces = buildWallSurfaces(project, spatial, ceiling);
     const wallGroups = new Map<string, SurfacePatch[]>();
     for (const patch of wallSurfaces) {
       const key = patch.finish ?? "interior";
@@ -354,11 +445,12 @@ export default function ModelView({
     for (const solid of spatial.wallSolids) {
       const floor = floorById.get(solid.floorId);
       const length = Math.hypot(solid.x2 - solid.x1, solid.z2 - solid.z1);
-      if (!floor || !length) continue;
+      if (!floor || !length || floor.elevation + solid.bottom >= ceiling) continue;
+      const top = Math.min(solid.top, ceiling - floor.elevation);
       const exterior = solid.wallIds.some((wallId) => project.walls.find((wall) => wall.id === wallId)?.exterior);
       const mesh = meshBox(
-        [length, solid.top - solid.bottom, solid.thickness],
-        [(solid.x1 + solid.x2) / 2, floor.elevation + (solid.bottom + solid.top) / 2, (solid.z1 + solid.z2) / 2],
+        [length, top - solid.bottom, solid.thickness],
+        [(solid.x1 + solid.x2) / 2, floor.elevation + (solid.bottom + top) / 2, (solid.z1 + solid.z2) / 2],
         -Math.atan2(solid.z2 - solid.z1, solid.x2 - solid.x1),
         palette.finish(exterior ? wallFinish(solid.wallIds) : "interior"),
       );
@@ -369,18 +461,20 @@ export default function ModelView({
       wallPieceCount += 1;
     }
 
-    const parapets = buildParapetSurfaces(project);
+    const parapets = cutawayFloorId ? [] : buildParapetSurfaces(project);
     addSurfaces(parapets, finishMaterial(project.roof.finish));
-    addSurfaces(buildParapetSurfaces(project, true), palette.get("coping"));
+    addSurfaces(cutawayFloorId ? [] : buildParapetSurfaces(project, true), palette.get("coping"));
     const renderedParapetCount = project.roof.parapetEnabled ? parapets.length : 0;
 
     let renderedBoundaryPieceCount = 0;
     if (project.siteBoundary.enabled) {
       const setting = project.siteBoundary;
       const material = finishMaterial(setting.finish);
-      const addBoundaryPiece = (size: [number, number, number], position: [number, number, number]) => {
-        if (size[0] <= 0.05 || size[2] <= 0.05) return;
-        scene.add(meshBox(size, position, 0, material));
+      const addBoundaryPiece = (size: [number, number, number], position: [number, number, number], finish = material) => {
+        const bottom = position[1] - size[1] / 2;
+        const height = Math.min(ceiling, position[1] + size[1] / 2) - bottom;
+        if (size[0] <= 0.05 || size[2] <= 0.05 || height <= 0.001) return;
+        scene.add(meshBox([size[0], height, size[2]], [position[0], bottom + height / 2, position[2]], 0, finish));
         renderedBoundaryPieceCount += 1;
       };
       const halfHeight = setting.height / 2;
@@ -392,18 +486,15 @@ export default function ModelView({
         addBoundaryPiece([project.plot.width - gateEnd, setting.height, t], [(gateEnd + project.plot.width) / 2, halfHeight, 0]);
         const gateMaterial = finishMaterial("metal");
         if (setting.gate.style === "solid") {
-          scene.add(meshBox([setting.gate.width, setting.gate.height, 0.22], [setting.gate.offset, setting.gate.height / 2, -0.03], 0, gateMaterial));
-          renderedBoundaryPieceCount += 1;
+          addBoundaryPiece([setting.gate.width, setting.gate.height, 0.22], [setting.gate.offset, setting.gate.height / 2, -0.03], gateMaterial);
         } else {
           const slatCount = Math.min(12, Math.max(4, Math.round(setting.gate.width / 0.75)));
           for (let index = 0; index < slatCount; index += 1) {
             const x = gateStart + (index + 0.5) * setting.gate.width / slatCount;
-            scene.add(meshBox([0.16, setting.gate.height, 0.16], [x, setting.gate.height / 2, -0.03], 0, gateMaterial));
-            renderedBoundaryPieceCount += 1;
+            addBoundaryPiece([0.16, setting.gate.height, 0.16], [x, setting.gate.height / 2, -0.03], gateMaterial);
           }
           for (const y of [0.35, setting.gate.height - 0.35]) {
-            scene.add(meshBox([setting.gate.width, 0.16, 0.16], [setting.gate.offset, y, -0.03], 0, gateMaterial));
-            renderedBoundaryPieceCount += 1;
+            addBoundaryPiece([setting.gate.width, 0.16, 0.16], [setting.gate.offset, y, -0.03], gateMaterial);
           }
         }
       } else {
@@ -418,7 +509,7 @@ export default function ModelView({
     let renderedRailingPieceCount = 0;
     for (const balcony of project.balconies) {
       const floor = floorById.get(balcony.floorId);
-      if (!floor) continue;
+      if (!floor || !visibleFloors.has(floor.id)) continue;
       const slabTop = floor.elevation + Math.max(FLOOR_SLAB_THICKNESS, balcony.slabThickness);
       const slab = meshBox(
         [balcony.width, balcony.slabThickness, balcony.length],
@@ -472,7 +563,7 @@ export default function ModelView({
     for (const feature of project.facadeFeatures) {
       const wall = project.walls.find((item) => item.id === feature.wallId);
       const floor = wall ? floorById.get(wall.floorId) : undefined;
-      if (!wall || !floor) continue;
+      if (!wall || !floor || !visibleFloors.has(floor.id)) continue;
       const length = wallLength(wall);
       if (!length) continue;
       const tx = (wall.x2 - wall.x1) / length;
@@ -491,6 +582,7 @@ export default function ModelView({
           [anchor.x + tx * tangentCenter + normal.x * projectionCenter, floor.elevation + y, anchor.z + tz * tangentCenter + normal.z * projectionCenter],
           rotation,
           material,
+          0.02,
         );
         piece.userData.elementId = feature.id;
         selectable.push(piece);
@@ -514,7 +606,7 @@ export default function ModelView({
     for (const frame of spatial.openingFrames) {
       const { opening } = frame;
       const floor = floorById.get(opening.floorId);
-      if (!floor) continue;
+      if (!floor || !visibleFloors.has(floor.id)) continue;
       const elevation = floor.elevation;
       const depth = Math.max(0.16, frame.wall.thickness * 0.55);
       const frameMaterial = palette.get(opening.kind === "door" ? "door" : "frame");
@@ -545,9 +637,10 @@ export default function ModelView({
           frameMaterial,
         );
         header.userData.elementId = opening.id;
+        header.userData.horizontalGrain = true;
         selectable.push(header);
         scene.add(header);
-        const threshold = meshBox([opening.width - jambWidth * 2, 0.06, frame.wall.thickness + 0.12], [frame.x, elevation + FLOOR_SLAB_THICKNESS - 0.03, frame.z], -frame.angle, palette.get("coping"));
+        const threshold = meshBox([opening.width - jambWidth * 2, 0.06, frame.wall.thickness + 0.12], [frame.x, elevation + FLOOR_SLAB_THICKNESS - 0.03, frame.z], -frame.angle, palette.get("coping"), 0.012);
         threshold.userData.elementId = opening.id;
         scene.add(threshold);
 
@@ -563,6 +656,7 @@ export default function ModelView({
             : [hingeX + frame.normalX * swingSign * opening.width / 2, elevation + opening.height / 2, hingeZ + frame.normalZ * swingSign * opening.width / 2],
           isClosed ? -frame.angle : -(frame.angle + swingSign * Math.PI / 2),
           palette.get("door"),
+          0.018,
         );
         panel.userData.elementId = opening.id;
         panel.userData.openAngle = isClosed ? 0 : 90 * swingSign;
@@ -606,7 +700,7 @@ export default function ModelView({
           selectable.push(railMesh);
           scene.add(railMesh);
         }
-        const sillMesh = meshBox([opening.width + 0.12, 0.09, frame.wall.thickness + 0.22], [frame.x, elevation + sill - 0.045, frame.z], -frame.angle, palette.get("coping"));
+        const sillMesh = meshBox([opening.width + 0.16, 0.11, frame.wall.thickness + 0.28], [frame.x, elevation + sill - 0.055, frame.z], -frame.angle, palette.get("coping"), 0.012);
         sillMesh.userData.elementId = opening.id;
         scene.add(sillMesh);
         const glass = meshBox(
@@ -614,15 +708,15 @@ export default function ModelView({
           [frame.x, centerY, frame.z],
           -frame.angle,
           new THREE.MeshPhysicalMaterial({
-            color: opening.glazing === "privacy" ? "#d1d9d6" : opening.glazing === "low-e" ? "#aec2b9" : "#c1d2d7",
+            color: opening.glazing === "privacy" ? "#dae2df" : opening.glazing === "low-e" ? "#becfc6" : "#dbe8ee",
             transparent: true,
-            opacity: opening.glazing === "privacy" ? 0.72 : Math.max(0.22, 0.5 - visibleTransmittance * 0.3),
+            opacity: opening.glazing === "privacy" ? 0.68 : Math.max(0.2, 0.44 - visibleTransmittance * 0.25),
             // Environment reflections avoid the extra full-scene transmission pass.
             transmission: 0,
-            envMapIntensity: 1.25,
+            envMapIntensity: 1.8,
             depthWrite: false,
-            roughness: opening.glazing === "privacy" ? 0.48 : 0.12,
-            metalness: 0.15,
+            roughness: opening.glazing === "privacy" ? 0.42 : 0.08,
+            metalness: 0,
             side: THREE.DoubleSide,
           }),
         );
@@ -650,7 +744,7 @@ export default function ModelView({
     let renderedStairLandingCount = 0;
     for (const stair of project.stairs) {
       const floor = floorById.get(stair.floorId);
-      if (!floor) continue;
+      if (!floor || !visibleFloors.has(floor.id)) continue;
       const connection = stairConnection(project, stair);
       if (navigationMode === "walk" && connection
         && connection.lowerFloor.id !== project.view.activeFloorId
@@ -766,10 +860,37 @@ export default function ModelView({
         landing.userData.stairProgress = layout.landing.progress;
         selectable.push(landing);
         scene.add(landing);
+        const landingElevation = lowerElevation + rise * layout.landing.progress;
+        for (const segment of landingGuardSegments(stair)) {
+          const rail = meshSlopeBox(0.09, 0.09,
+            new THREE.Vector3(segment.start.x, landingElevation + 3, segment.start.y),
+            new THREE.Vector3(segment.end.x, landingElevation + 3, segment.end.y), palette.get("frame"));
+          if (rail) { rail.userData.elementId = stair.id; scene.add(rail); }
+          const span = Math.hypot(segment.end.x - segment.start.x, segment.end.y - segment.start.y);
+          const count = Math.min(4, Math.max(2, Math.ceil(span / 4) + 1));
+          for (let index = 0; index < count; index++) {
+            const t = index / (count - 1);
+            const post = meshBox([0.07, 3, 0.07], [segment.start.x + (segment.end.x - segment.start.x) * t, landingElevation + 1.5, segment.start.y + (segment.end.y - segment.start.y) * t], 0, palette.get("frame"));
+            post.userData.elementId = stair.id; scene.add(post);
+          }
+        }
       }
     }
 
-    const batches = batchModelMeshes(scene, [ground]);
+    const occluders: PresentationVolume[] = spatial.wallVolumes.flatMap(volume => {
+      const elevation = floorById.get(volume.floorId)?.elevation ?? 0;
+      const min: [number, number, number] = [volume.x, elevation + volume.bottom, volume.z];
+      const max: [number, number, number] = [volume.x + volume.width, Math.min(ceiling, elevation + volume.top), volume.z + volume.length];
+      return max[1] > min[1] ? [{ min, max, elementIds: volume.wallIds }] : [];
+    });
+    for (const patch of [...slabSurfaces, ...roofSurfaces].filter(p => p.normal[1] === 1)) {
+      occluders.push({ min: [Math.min(...patch.points.map(p => p[0])), patch.points[0][1] - 0.18, Math.min(...patch.points.map(p => p[2]))], max: [Math.max(...patch.points.map(p => p[0])), patch.points[0][1], Math.max(...patch.points.map(p => p[2]))], elementIds: [] });
+    }
+    const batchStarted = performance.now();
+    const batches = batchModelMeshes(scene, [ground], contactOcclusion(occluders));
+    canvas.dataset.batchMilliseconds = (performance.now() - batchStarted).toFixed(1);
+    framingMeshes = batches;
+    if (navigationMode === "orbit" && orbitPoseRef.current?.viewKey !== orbitViewKey) fitCamera();
     selectable.splice(0, selectable.length, ...batches);
     const selectionMaterial = new THREE.MeshBasicMaterial({ color: "#d78954", transparent: true, opacity: 0.16, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     const outlineMaterial = new THREE.LineBasicMaterial({ color: "#bf6335", transparent: true, opacity: 0.85 });
@@ -788,7 +909,9 @@ export default function ModelView({
       requestRender();
     };
     selectionRef.current = updateSelection;
-    controls.addEventListener("change", requestRender);
+    if (navigationMode === "orbit") controls.update();
+    const orbitChanged = () => { interacted(); };
+    controls.addEventListener("change", orbitChanged);
     canvas.dataset.sceneGeneration = String(Number(canvas.dataset.sceneGeneration ?? 0) + 1);
     renderedSceneKeyRef.current = sceneKey;
     canvas.dataset.projectId = project.id;
@@ -811,6 +934,11 @@ export default function ModelView({
     canvas.dataset.balconyCount = String(renderedBalconyCount);
     canvas.dataset.railingPieceCount = String(renderedRailingPieceCount);
     canvas.dataset.facadeFeaturePieceCount = String(renderedFacadeFeaturePieceCount);
+    canvas.dataset.cutawayFloorId = cutawayFloorId ?? "";
+    canvas.dataset.sitePlantCount = String(cutawayFloorId ? 0 : site.plants.length);
+    canvas.dataset.siteContext = String(siteContext);
+    canvas.dataset.siteApproachCount = String(site.approaches.length);
+    canvas.dataset.buildMilliseconds = (performance.now() - buildStarted).toFixed(1);
     // PMREM generation uses this renderer too; request the building's shadow only after it exists.
     renderer.shadowMap.needsUpdate = true;
 
@@ -818,11 +946,10 @@ export default function ModelView({
       const width = Math.max(1, host.clientWidth);
       const heightPx = Math.max(1, host.clientHeight);
       renderer.setSize(width, heightPx, false);
+      setResolution(resolutionMode);
       const nextAspect = width / heightPx;
-      const aspectChanged = Math.abs(camera.aspect - nextAspect) > 0.001;
       camera.aspect = nextAspect;
-      camera.updateProjectionMatrix();
-      if (navigationMode === "orbit" && aspectChanged) fitCamera();
+      updateProjection();
       requestRender();
     };
     resize();
@@ -837,7 +964,7 @@ export default function ModelView({
       yaw -= movementX * 0.0022;
       pitch = Math.max(-Math.PI * 0.46, Math.min(Math.PI * 0.46, pitch - movementY * 0.0022));
       camera.rotation.set(pitch, yaw, 0);
-      requestRender();
+      interacted();
     };
     const handleSelectionPointerDown = (event: PointerEvent) => {
       selectionPointerStart = event.button === 0 ? { x: event.clientX, y: event.clientY } : undefined;
@@ -885,7 +1012,8 @@ export default function ModelView({
       pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(pointer, camera);
-      const hit = raycaster.intersectObjects(selectable, false)[0];
+      const hit = raycaster.intersectObjects(selectable, false).find(intersection => intersection.point.y <= ceiling + 0.001
+        && !intersection.object.userData.triangleElementIds?.[intersection.faceIndex ?? -1]?.startsWith("context:"));
       const pickedId = hit?.object.userData.triangleElementIds?.[hit.faceIndex ?? -1] ?? hit?.object.userData.elementId;
       canvas.dataset.pickedElementId = pickedId ?? "";
       onSelect(pickedId);
@@ -1041,7 +1169,7 @@ export default function ModelView({
       event.preventDefault();
       pressed.add(event.code);
       if (direction && !event.repeat) moveWalkCamera(direction.x * 0.25, direction.z * 0.25);
-      requestRender();
+      interacted();
     };
     const handleKeyUp = (event: KeyboardEvent) => pressed.delete(event.code);
     const handleMouseMove = (event: MouseEvent) => {
@@ -1064,6 +1192,9 @@ export default function ModelView({
       canvas.dataset.triangles = String(renderer.info.render.triangles);
       canvas.dataset.textureCount = String(renderer.info.memory.textures);
       canvas.dataset.renderCount = String(++renderCount);
+      canvas.dataset.pixelRatio = renderer.getPixelRatio().toFixed(2);
+      canvas.dataset.resolutionMode = resolutionMode;
+      canvas.dataset.lensShift = lensShift.toFixed(3);
     };
     const animate = (time = performance.now()) => {
       frame = 0;
@@ -1087,7 +1218,7 @@ export default function ModelView({
           const fast = pressed.has("ShiftLeft") || pressed.has("ShiftRight");
           const speed = fast ? 8 : 5;
           moveWalkCamera((moveX / magnitude) * speed * delta, (moveZ / magnitude) * speed * delta);
-          requestRender();
+          interacted();
         }
         camera.rotation.set(pitch, yaw, 0);
         if (!transitionRequested) {
@@ -1104,8 +1235,8 @@ export default function ModelView({
       canvas.dataset.cameraX = camera.position.x.toFixed(2);
       canvas.dataset.cameraY = camera.position.y.toFixed(2);
       canvas.dataset.cameraZ = camera.position.z.toFixed(2);
-      canvas.dataset.cameraYaw = yaw.toFixed(3);
-      canvas.dataset.cameraPitch = pitch.toFixed(3);
+      canvas.dataset.cameraYaw = camera.rotation.y.toFixed(3);
+      canvas.dataset.cameraPitch = camera.rotation.x.toFixed(3);
       if (navigationMode === "walk") {
         const marker = minimapMarkerRef.current;
         if (marker) {
@@ -1135,15 +1266,25 @@ export default function ModelView({
     const reframe = (event: Event) => {
       if (navigationMode !== "orbit") return;
       const view = (event as CustomEvent<Project["view"]>).detail ?? project.view;
-      const fit = fitPerspectiveView(presentationBounds(project, view.focusElementId), view.cameraPreset, camera.aspect, camera.fov);
+      const fit = fitPerspectiveView(boundsFor(view.focusElementId), view.cameraPreset, camera.aspect, camera.fov, Boolean(cutawayFloorId));
       // Clear any remaining damping before assigning the requested architectural view.
       const damping = controls.enableDamping;
       controls.enableDamping = false;
       controls.reset();
       camera.position.fromArray(fit.position); controls.target.fromArray(fit.target);
+      camera.lookAt(controls.target);
+      lensShiftX = 0; lensShift = fit.lensShift; updateProjection(); composeFrame(view.focusElementId);
+      orbitViewKey = viewKeyFor(view); renderedViewKeyRef.current = orbitViewKey;
       camera.lookAt(controls.target); controls.update(); controls.enableDamping = damping; requestRender();
     };
-    canvas.addEventListener("archmorph:snapshot", renderScene);
+    const snapshotRender = () => {
+      setResolution("snapshot"); renderScene();
+      window.clearTimeout(settleTimer);
+      // The caller reads the PNG synchronously after the event; return to the interactive
+      // budget on the next task instead of keeping a large export buffer allocated.
+      settleTimer = window.setTimeout(() => { setResolution("settled"); requestRender(); }, 0);
+    };
+    canvas.addEventListener("archmorph:snapshot", snapshotRender);
     canvas.addEventListener("archmorph:frame-view", reframe);
     document.addEventListener("visibilitychange", visibilityChanged);
     window.addEventListener("blur", clearMovement);
@@ -1155,12 +1296,15 @@ export default function ModelView({
           viewKey: orbitViewKey,
           position: camera.position.toArray() as [number, number, number],
           target: controls.target.toArray() as [number, number, number],
+          lensShift,
+          lensShiftX,
         };
       }
       disposed = true;
       selectionRef.current = undefined;
       renderedSceneKeyRef.current = undefined;
       cancelAnimationFrame(frame);
+      window.clearTimeout(settleTimer);
       observer.disconnect();
       canvas.removeEventListener("pointerdown", handleSelectionPointerDown);
       canvas.removeEventListener("pointermove", handleSelectionPointerMove);
@@ -1171,7 +1315,7 @@ export default function ModelView({
       window.removeEventListener("keyup", handleKeyUp);
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("pointerlockchange", updatePointerState);
-      canvas.removeEventListener("archmorph:snapshot", renderScene);
+      canvas.removeEventListener("archmorph:snapshot", snapshotRender);
       canvas.removeEventListener("archmorph:frame-view", reframe);
       document.removeEventListener("visibilitychange", visibilityChanged);
       window.removeEventListener("blur", clearMovement);
@@ -1190,8 +1334,14 @@ export default function ModelView({
       palette.dispose();
       renderer.dispose();
     };
-  }, [canvasRef, navigationMode, sceneKey]);
+  }, [canvasRef, cutawayFloorId, navigationMode, sceneKey, siteContext]);
   useEffect(() => { selectionRef.current?.(selectedId); }, [selectedId, sceneKey]);
+  useEffect(() => {
+    const viewKey = `${project.view.cameraPreset}:${project.view.focusElementId ?? "project"}:${project.plot.width}x${project.plot.length}:${cutawayFloorId ?? "building"}`;
+    if (navigationMode === "orbit" && renderedViewKeyRef.current !== viewKey) {
+      canvasRef.current?.dispatchEvent(new CustomEvent("archmorph:frame-view", { detail: project.view }));
+    }
+  }, [canvasRef, cutawayFloorId, navigationMode, project.view, project.plot.width, project.plot.length, sceneKey]);
 
   const doors = project.openings.filter((item) => item.kind === "door").length;
   const windows = project.openings.filter((item) => item.kind === "window").length;
@@ -1342,7 +1492,7 @@ export default function ModelView({
       ) : (
         <div className="model-view__help" id="model-navigation-help">ORBIT · DRAG &nbsp;&nbsp; PAN · RIGHT DRAG OR SHIFT-DRAG &nbsp;&nbsp; ZOOM · SCROLL</div>
       )}
-      <div className="model-view__sync" id="model-sync-status" aria-label={`3D sync: ${doors} ${doors === 1 ? "door" : "doors"}, ${windows} ${windows === 1 ? "window" : "windows"}, and ${stairs} ${stairs === 1 ? "staircase" : "staircases"}`}>
+      <div className="visually-hidden" id="model-sync-status" aria-label={`3D sync: ${doors} ${doors === 1 ? "door" : "doors"}, ${windows} ${windows === 1 ? "window" : "windows"}, and ${stairs} ${stairs === 1 ? "staircase" : "staircases"}`}>
         <span /> 2D SYNCED&nbsp;&nbsp;·&nbsp;&nbsp;{doors} {doors === 1 ? "DOOR" : "DOORS"}&nbsp;&nbsp;·&nbsp;&nbsp;{windows} {windows === 1 ? "WINDOW" : "WINDOWS"}&nbsp;&nbsp;·&nbsp;&nbsp;{stairs} {stairs === 1 ? "STAIRCASE" : "STAIRCASES"}
       </div>
     </div>

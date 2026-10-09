@@ -1,4 +1,4 @@
-import { roomContainsPoint, roomVertices, stairConnection, stairPlanOutline, type CameraPreset, type ExteriorFinishId, type PlanPoint, type Project, type Room, type Wall } from "./architecture.ts";
+import { roomContainsPoint, roomVertices, stairConnection, stairLayout, stairPlanOutline, stairPlanPoint, type CameraPreset, type ExteriorFinishId, type PlanPoint, type Project, type Room, type Stair, type Wall } from "./architecture.ts";
 import { buildSpatialModel, type SpatialModel } from "./spatial3d.ts";
 
 export type Vec3 = [number, number, number];
@@ -58,14 +58,14 @@ function wallDistance(wall: Wall, point: Vec3, normal: Vec3) {
 }
 
 /** Recover ownership per surface, even when the spatial union spans several canonical walls. */
-export function buildWallSurfaces(project: Project, spatial: SpatialModel) {
+export function buildWallSurfaces(project: Project, spatial: SpatialModel, ceiling = Infinity) {
   const walls = new Map(project.walls.map(wall => [wall.id, wall]));
   const levels = new Map(project.floors.map(floor => [floor.id, floor.elevation]));
-  const volumes: PresentationVolume[] = spatial.wallVolumes.map(volume => ({
+  const volumes = spatial.wallVolumes.map((volume): PresentationVolume => ({
     min: [volume.x, (levels.get(volume.floorId) ?? 0) + volume.bottom, volume.z],
-    max: [volume.x + volume.width, (levels.get(volume.floorId) ?? 0) + volume.top, volume.z + volume.length],
+    max: [volume.x + volume.width, Math.min(ceiling, (levels.get(volume.floorId) ?? 0) + volume.top), volume.z + volume.length],
     elementIds: volume.wallIds,
-  }));
+  })).filter(volume => volume.max[1] > volume.min[1] + EPS);
   const candidates = (volume: PresentationVolume) => volume.elementIds.flatMap(id => walls.get(id) ? [walls.get(id)!] : []);
   return exposedVolumeSurfaces(volumes, (volume, point, normal) => {
     const wall = candidates(volume).sort((a, b) => wallDistance(a, point, normal) - wallDistance(b, point, normal))[0];
@@ -216,8 +216,9 @@ export function presentationBounds(project: Project, focusId?: string): Presenta
 }
 
 /** Fit all eight corners against both FOV axes; narrow viewports and tall buildings remain framed. */
-export function fitPerspectiveView(bounds: PresentationBounds, preset: CameraPreset, aspect: number, fov = 38) {
-  const directions: Record<CameraPreset, Vec3> = { front: [0, 0.12, -1], rear: [0, 0.12, 1], left: [-1, 0.12, 0], right: [1, 0.12, 0], top: [0, 1, 0.0001], "front-left": [-1, 0.65, -1], "front-right": [1, 0.65, -1] };
+export function fitPerspectiveView(bounds: PresentationBounds, preset: CameraPreset, aspect: number, fov = 38, cutaway = false) {
+  const directions: Record<CameraPreset, Vec3> = { front: [0, 0, -1], rear: [0, 0, 1], left: [-1, 0, 0], right: [1, 0, 0], top: [0, 1, 0.0001], "front-left": [-1, 0.48, -1], "front-right": [1, 0.48, -1] };
+  if (cutaway) { directions["front-left"] = [-1, 1.35, -1]; directions["front-right"] = [1, 1.35, -1]; }
   const normalize = (v: Vec3): Vec3 => { const length = Math.hypot(...v); return v.map(value => value / length) as Vec3; };
   const direction = normalize(directions[preset]);
   const right = normalize([direction[2], 0, -direction[0]]);
@@ -230,5 +231,55 @@ export function fitPerspectiveView(bounds: PresentationBounds, preset: CameraPre
     const corner: Vec3 = [x - target[0], y - target[1], z - target[2]];
     distance = Math.max(distance, Math.abs(dot(corner, right)) * 1.16 / tanH + dot(corner, direction), Math.abs(dot(corner, up)) * 1.16 / tanV + dot(corner, direction));
   }
-  return { target, position: target.map((value, axis) => value + direction[axis] * distance) as Vec3, distance };
+  // A shifted lens keeps elevation verticals parallel at a human eye height, while the
+  // original bounding-box centre remains centred in the photograph.
+  const street = ["front", "rear", "left", "right"].includes(preset);
+  if (street) {
+    const eyeOffset = target[1] - (bounds.min[1] + 5.4);
+    for (let pass = 0; pass < 8; pass++) {
+      let required = distance;
+      for (const y of [bounds.min[1], bounds.max[1]]) for (const x of [bounds.min[0], bounds.max[0]]) for (const z of [bounds.min[2], bounds.max[2]]) {
+        const depth = dot([x - target[0], y - target[1], z - target[2]], direction);
+        required = Math.max(required, Math.abs(y - target[1] + eyeOffset * depth / distance) * 1.16 / tanV + depth);
+      }
+      distance = required;
+    }
+  }
+  const lensShift = street ? (target[1] - (bounds.min[1] + 5.4)) / (distance * tanV) : 0;
+  if (street) target[1] = bounds.min[1] + 5.4;
+  return { target, position: target.map((value, axis) => value + direction[axis] * distance) as Vec3, distance, lensShift };
+}
+
+/** Closed wall caps are generated at the cut plane; the source design is never edited. */
+export function cutawayCeiling(project: Project, floorId?: string) {
+  const floor = project.floors.find(item => item.id === floorId);
+  return floor ? floor.elevation + Math.min(3.5, floor.height * 0.55) : Infinity;
+}
+
+/** Bound pixel work independently of monitor size and device pixel ratio. */
+export function presentationPixelRatio(width: number, height: number, deviceRatio: number, mode: "moving" | "settled" | "snapshot" = "settled") {
+  const budget = mode === "moving" ? 1_800_000 : mode === "snapshot" ? 6_000_000 : 3_500_000;
+  return Math.min(Math.max(1, deviceRatio), 2, Math.sqrt(budget / Math.max(1, width * height)));
+}
+
+/** Guard exposed landing edges while preserving the full width of adjoining flights. */
+export function landingGuardSegments(stair: Stair): Array<{ start: PlanPoint; end: PlanPoint }> {
+  const layout = stairLayout(stair);
+  if (!layout.landing) return [];
+  const vertices = layout.landing.vertices;
+  return vertices.flatMap((a, index) => {
+    const b = vertices[(index + 1) % vertices.length], du = b.u - a.u, dv = b.v - a.v, length = Math.hypot(du, dv);
+    if (!length) return [];
+    const openings = layout.flights.flatMap(flight => [flight.start, flight.end].flatMap(point => {
+      const t = ((point.u - a.u) * du + (point.v - a.v) * dv) / length ** 2;
+      if (t < -EPS || t > 1 + EPS || Math.hypot(point.u - a.u - t * du, point.v - a.v - t * dv) > EPS) return [];
+      return [{ low: Math.max(0, t - flight.width / (2 * length)), high: Math.min(1, t + flight.width / (2 * length)) }];
+    }));
+    const cuts = unique([0, 1, ...openings.flatMap(opening => [opening.low, opening.high])]);
+    return cuts.slice(0, -1).flatMap((low, i) => {
+      const high = cuts[i + 1], middle = (low + high) / 2;
+      if ((high - low) * length < 0.1 || openings.some(opening => middle > opening.low - EPS && middle < opening.high + EPS)) return [];
+      return [{ start: stairPlanPoint(stair, a.u + low * du, a.v + low * dv), end: stairPlanPoint(stair, a.u + high * du, a.v + high * dv) }];
+    });
+  });
 }

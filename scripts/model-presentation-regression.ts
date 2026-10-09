@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import * as THREE from "three";
-import { applyOperation, createInitialProject, migrateProject, type CameraPreset, type Project } from "../src/lib/architecture.ts";
+import { applyOperation, createInitialProject, migrateProject, roomContainsPoint, stairLayout, stairPlanPoint, type CameraPreset, type Project } from "../src/lib/architecture.ts";
 import { buildSpatialModel } from "../src/lib/spatial3d.ts";
-import { buildFloorSlab, buildParapetSurfaces, buildRoofDeck, buildWallSurfaces, exposedVolumeSurfaces, fitPerspectiveView, presentationBounds, type SurfacePatch } from "../src/lib/model-presentation.ts";
-import { batchModelMeshes, selectionGeometry, surfaceGeometry } from "../src/lib/model-materials.ts";
+import { buildFloorSlab, buildParapetSurfaces, buildRoofDeck, buildWallSurfaces, cutawayCeiling, exposedVolumeSurfaces, fitPerspectiveView, landingGuardSegments, presentationBounds, presentationPixelRatio, type SurfacePatch } from "../src/lib/model-presentation.ts";
+import { batchModelMeshes, contactOcclusion, selectionGeometry, surfaceGeometry } from "../src/lib/model-materials.ts";
+import { presentationSite } from "../src/lib/model-site.ts";
 
 const center = (patch: SurfacePatch) => patch.points.reduce((sum, point) => sum.add(new THREE.Vector3(...point)), new THREE.Vector3()).multiplyScalar(0.25);
 const area = (patch: SurfacePatch) => new THREE.Vector3(...patch.points[1]).sub(new THREE.Vector3(...patch.points[0])).length()
@@ -98,7 +99,13 @@ for (const name of ["recovered-modern-house", "aurora-house-30x95"]) {
   for (const aspect of [0.35, 0.65, 1, 1.8, 3]) for (const preset of ["front", "rear", "left", "right", "top", "front-left", "front-right"] as CameraPreset[]) {
     const fit = fitPerspectiveView(bounds, preset, aspect);
     const camera = new THREE.PerspectiveCamera(38, aspect, 0.08, 10000);
+    camera.rotation.order = "YXZ";
     camera.position.fromArray(fit.position); camera.lookAt(new THREE.Vector3(...fit.target)); camera.updateMatrixWorld(true);
+    camera.projectionMatrix.elements[9] += fit.lensShift;
+    if (["front", "rear", "left", "right"].includes(preset)) {
+      assert.ok(Math.abs(camera.rotation.x) < 0.0001, "street cameras keep verticals upright");
+      assert.equal(camera.position.y, bounds.min[1] + 5.4, "street views start at human eye height");
+    }
     for (const x of [bounds.min[0], bounds.max[0]]) for (const y of [bounds.min[1], bounds.max[1]]) for (const z of [bounds.min[2], bounds.max[2]]) {
       const ndc = new THREE.Vector3(x, y, z).project(camera);
       assert.ok(Math.abs(ndc.x) <= 0.87 && Math.abs(ndc.y) <= 0.87, `${name}: ${preset} fits both viewport axes at aspect ${aspect}`);
@@ -125,4 +132,54 @@ for (const [id, x] of [["left", -2], ["right", 2]] as const) {
 }
 assert.equal(batches[0].geometry.getAttribute("uv").count, batches[0].geometry.getAttribute("position").count);
 batches[0].geometry.dispose(); material.dispose();
-console.log("3D presentation regression checks passed: exposed surfaces, finishes, joined roofs/parapets, stair voids, camera fit, batching, and picking.");
+
+const beforeCutaway = JSON.stringify(project);
+const ceiling = cutawayCeiling(project, upperId);
+const cutWalls = buildWallSurfaces(project, multiFloorSpatial, ceiling);
+assertWinding(cutWalls);
+assert.ok(cutWalls.every(patch => patch.points.every(point => point[1] <= ceiling + 0.001)), "upper wall geometry ends at the cut plane");
+assert.ok(cutWalls.some(patch => patch.normal[1] === 1 && patch.points.every(point => Math.abs(point[1] - ceiling) < 0.001)), "cut walls have solid top caps");
+assert.equal(JSON.stringify(project), beforeCutaway, "cutaway does not change the design");
+
+// Guards stay on the landing perimeter and leave the entire flight mouths clear, even after rotation.
+const segmentDistance = (point: { x: number; y: number }, start: { x: number; y: number }, end: { x: number; y: number }) => {
+  const dx = end.x - start.x, dy = end.y - start.y;
+  const t = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / (dx * dx + dy * dy)));
+  return Math.hypot(point.x - start.x - t * dx, point.y - start.y - t * dy);
+};
+assert.deepEqual(landingGuardSegments(project.stairs[0]), [], "a straight flight has no intermediate landing guards");
+for (const stairType of ["l-shaped", "u-shaped"] as const) for (const turnSide of ["left", "right"] as const) for (const rotation of [0, 90, 180, 270] as const) {
+  const stair = { ...project.stairs[0], stairType, turnSide, rotation, landingDepth: 5, wellWidth: 1, upperFlightLength: 10 };
+  const guards = landingGuardSegments(stair), layout = stairLayout(stair);
+  assert.ok(guards.length, "exposed landing edges receive guards");
+  const perimeter = layout.landing!.vertices.map(p => stairPlanPoint(stair, p.u, p.v));
+  for (const guard of guards) for (const point of [guard.start, guard.end]) {
+    assert.ok(perimeter.some((a, i) => segmentDistance(point, a, perimeter[(i + 1) % perimeter.length]) < 0.001), "landing guards follow the actual landing outline");
+  }
+  for (const flight of layout.flights) {
+    const mouth = flight.id === "lower" ? flight.end : flight.start;
+    const du = (flight.end.u - flight.start.u) / flight.length, dv = (flight.end.v - flight.start.v) / flight.length;
+    for (const offset of [-0.49, 0, 0.49]) {
+      const point = stairPlanPoint(stair, mouth.u - dv * flight.width * offset, mouth.v + du * flight.width * offset);
+      assert.ok(guards.every(guard => segmentDistance(point, guard.start, guard.end) > 0.01), "landing guards leave full-width access to each flight");
+    }
+  }
+}
+
+const occlusion = contactOcclusion([{ min: [0, 0, 0], max: [8, 8, 0.5], elementIds: [] }, { min: [0, 0, 0], max: [0.5, 8, 8], elementIds: [] }]);
+assert.ok(occlusion([0.5, 4, 0.55], [1, 0, 0]) < occlusion([0.5, 4, 4], [1, 0, 0]), "contact shading is strongest near the adjoining wall");
+assert.equal(occlusion([20, 4, 20], [1, 0, 0]), 1, "isolated surfaces retain their brightness");
+
+for (const [width, height, ratio] of [[1526, 1621, 2], [3840, 2160, 3], [360, 640, 2]]) {
+  for (const mode of ["moving", "settled", "snapshot"] as const) {
+    const dpr = presentationPixelRatio(width, height, ratio, mode);
+    const limit = mode === "moving" ? 1_800_000 : mode === "settled" ? 3_500_000 : 6_000_000;
+    assert.ok(width * height * dpr ** 2 <= limit + 1, "large monitors obey the rendering pixel budget");
+  }
+  assert.ok(presentationPixelRatio(width, height, ratio, "moving") <= presentationPixelRatio(width, height, ratio), "movement does not allocate a larger buffer");
+}
+const site = presentationSite(project);
+assert.ok(site.plants.length <= 2, "site dressing has a bounded asset count");
+for (const plant of site.plants) assert.ok(!project.rooms.some(room => roomContainsPoint(room, { x: plant.x, y: plant.z })), "planting avoids rooms on every floor");
+assert.equal(JSON.stringify(project), beforeCutaway, "site suggestions do not change the design");
+console.log("3D presentation regression checks passed: surfaces, finishes, roofs, stair voids/guards, camera fit, batching/picking, cutaways, contact shading, pixel budgets, and site context.");
