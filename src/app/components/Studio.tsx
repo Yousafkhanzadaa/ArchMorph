@@ -103,6 +103,7 @@ import {
   importProjectDocument,
   listSavedProjects,
   loadLatestProject,
+  loadProjectHistory,
   loadSavedProject,
   saveProjectLocally,
   activateSavedProject,
@@ -120,6 +121,8 @@ import { createArchMorphTools } from "@/lib/webmcp-tools";
 import GroupedChecks, { IssueEvidence, issueContext, issueTitle } from "./StudioReview";
 import { LandSetupDialog, CheckpointPreview } from "./StudioDialogs";
 import FloorPlan, { type CanvasTool } from "./FloorPlan";
+import WallSpaceActions from "./WallSpaceActions";
+import { lowerFloorReference } from "@/lib/wall-planning";
 const ModelView = dynamic(() => import("./ModelView"), {
   ssr: false,
   loading: () => <div className="model-view" role="status" aria-live="polite"><div className="model-view__empty"><strong>Preparing 3D model…</strong></div></div>,
@@ -301,7 +304,7 @@ function downloadUrl(url: string, filename: string) {
 function downloadText(text: string, filename: string, mime: string) {
   const url = URL.createObjectURL(new Blob([text], { type: mime }));
   downloadUrl(url, filename);
-  window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  window.setTimeout(() => URL.revokeObjectURL(url), 120_000);
   return url;
 }
 
@@ -313,7 +316,7 @@ function serializedPlan(svg: SVGSVGElement, project: Project, frame: "drawing" |
   const ratio = frame === "viewport" ? svg.clientWidth / Math.max(1, svg.clientHeight) : (dimensions?.[2] ?? 40) / (dimensions?.[3] ?? 74);
   copy.setAttribute("width", "1200");
   copy.setAttribute("height", String(Math.round(1200 / Math.max(0.1, ratio))));
-  copy.querySelectorAll(".room-edit-handles, .selection-dimension, .selection-dimension-text, .selection-footer, .alignment-guides, .measurement, .preview-wall, .span-anchor, .connection-highlights").forEach(node => node.remove());
+  copy.querySelectorAll(".room-edit-handles, .wall-edit-handles, .wall-hit-target, .opening-hit-target, .lower-floor-underlay, .wall-length-preview, .selection-dimension, .selection-dimension-text, .selection-footer, .alignment-guides, .measurement, .preview-wall, .span-anchor, .connection-highlights").forEach(node => node.remove());
   copy.querySelectorAll("[filter]").forEach(node => node.removeAttribute("filter"));
   copy.querySelectorAll("[data-drawing-stroke]").forEach(node => { node.setAttribute("stroke", node.getAttribute("data-drawing-stroke")!); node.setAttribute("stroke-width", node.getAttribute("data-drawing-stroke-width")!); });
   copy.querySelectorAll(".room-group.is-selected polygon").forEach(node => { node.setAttribute("stroke", "#35423a"); node.setAttribute("stroke-width", "0.08"); });
@@ -325,7 +328,34 @@ function serializedPlan(svg: SVGSVGElement, project: Project, frame: "drawing" |
   style.textContent = `
     .room-area,.room-size{display:block}text{font-family:Arial,sans-serif;fill:#27332c}.room-name{font-size:1.05px;font-weight:700;letter-spacing:.03em}.room-area,.room-size{font-size:.7px}.plot-note,.setback-label{font-size:.65px;letter-spacing:.15em}.plot-dimensions,.selection-dimension{stroke:#5d665f;stroke-width:.08;fill:none}.plot-dimensions text,.selection-dimension-text,.measurement-text{font-size:.72px;fill:#4d5750;stroke:none}.empty-title{font-size:1.2px;font-weight:650}.empty-subtitle{font-size:.75px}.stair rect,.stair line{fill:none;stroke:#45534b;stroke-width:.08}.stair-label{font-size:.55px;font-weight:700}.selection-footer{font-size:.68px;letter-spacing:.12em}`;
   copy.insertBefore(style, copy.firstChild);
+  style.textContent += `.north-arrow text{font-size:.8px;font-weight:700}`;
   style.textContent += `.stair polygon,.stair rect,.stair line,.stair polyline{fill:#aeb5ae33;stroke:#45534b;stroke-width:.08}.stair .stair-access-zone{fill:#d37f5212;stroke:#b56d47;stroke-dasharray:.3 .22}.stair .stair-landing{fill:#45534b2e}.stair-flight.is-beyond-cut{opacity:.34;stroke-dasharray:.24 .18}.stair .stair-cut-line line{stroke:#29352e;stroke-width:.2}.stair-arrow{stroke-width:.14}.stair.is-upper-plan .stair-footprint{stroke-dasharray:.45 .3}`;
+  if (frame === "drawing" && dimensions?.length === 4) {
+    copy.querySelector("desc")?.remove();
+    copy.removeAttribute("tabindex"); copy.removeAttribute("aria-describedby");
+    const floor = project.floors.find(f => f.id === project.view.activeFloorId);
+    const rooms = project.rooms.filter(r => r.floorId === project.view.activeFloorId);
+    const [x,y,width,height] = dimensions;
+    const legendWidth = 30, legendHeight = 7 + rooms.length * 2.7;
+    copy.setAttribute("viewBox", `${x} ${y} ${width + legendWidth} ${Math.max(height, legendHeight)}`);
+    copy.setAttribute("height", String(Math.round(1200 * Math.max(height,legendHeight) / (width + legendWidth))));
+    const legend = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    const addText = (text: string, top: number, size = 0.9, bold = false) => { const node = document.createElementNS("http://www.w3.org/2000/svg", "text"); node.setAttribute("x", String(x+width+1)); node.setAttribute("y", String(y+top)); node.setAttribute("font-size", String(size)); if (bold) node.setAttribute("font-weight", "700"); node.textContent = text; legend.appendChild(node); };
+    addText(project.name,2,1.1,true); addText(`${floor?.name ?? "Floor"} · v${project.version}`,3.7,1,true); addText("Concept plan · feet · centreline room areas",5.2,0.7);
+    rooms.forEach((room,index) => {
+      copy.querySelector(`[data-room-id="${room.id}"] .room-name`)?.replaceChildren(document.createTextNode(String(index+1)));
+      addText(`${index+1}. ${room.name}`,7+index*2.7,0.9,true);
+      addText(`${room.type} · ${room.width} × ${room.length} ft · ${roomArea(room)} sq ft`,8.1+index*2.7,0.65);
+    });
+    copy.appendChild(legend);
+  }
+  const bounds = copy.getAttribute("viewBox")?.split(/\s+/).map(Number);
+  if (bounds?.length === 4) {
+    const background = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    ["x", "y", "width", "height"].forEach((key,index) => background.setAttribute(key,String(bounds[index])));
+    background.setAttribute("fill", "#f4f2ed");
+    copy.insertBefore(background,copy.firstChild);
+  }
   return new XMLSerializer().serializeToString(copy);
 }
 
@@ -473,10 +503,12 @@ function Section({ title, children, action, id, collapsible }: { title: string; 
   );
 }
 
+function exportSlug(value: string) { return value.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "archmorph"; }
+
 function compactJson(value: unknown) {
   try {
     const text = JSON.stringify(value, null, 2);
-    return text.length > 1600 ? `${text.slice(0, 1600)}\n…` : text;
+    return text;
   } catch {
     return String(value);
   }
@@ -488,6 +520,8 @@ export default function Studio() {
   const hydrated = useSyncExternalStore(subscribeHydration, getClientHydrationSnapshot, getServerHydrationSnapshot);
   const [selectedElementId, setSelectedId] = useState<string>();
   const [planTool, setTool] = useState<CanvasTool>("select");
+  const [showLowerFloor, setShowLowerFloor] = useState(true);
+  const [starterDismissed, setStarterDismissed] = useState(false);
   // The plan selects its active floor; orbit can select every visible storey of the building.
   const selectedId = selectedElementId && (project.view.mode === "3d" || elementIsOnFloor(project, selectedElementId, project.view.activeFloorId))
     ? selectedElementId
@@ -501,6 +535,10 @@ export default function Studio() {
   const [validation, setValidation] = useState<ValidationReport>(() => validateLayout(project));
   const [debugMode, setDebugMode] = useState(false);
   const [debugOpen, setDebugOpen] = useState(false);
+  const [projectLoaded, setProjectLoaded] = useState(false);
+  const [registrationEpoch, setRegistrationEpoch] = useState(0);
+  const [registrationError, setRegistrationError] = useState<string>();
+  const [toolSearch, setToolSearch] = useState("");
   const [toolStatus, setToolStatus] = useState<ToolStatus>("registering");
   const [toolCalls, setToolCalls] = useState<ToolCall[]>([]);
   const [debugToolName, setDebugToolName] = useState("inspect_project");
@@ -578,7 +616,7 @@ export default function Studio() {
     if (toastTimer.current) window.clearTimeout(toastTimer.current);
     // Embedded browsers may suppress synthetic downloads. Keep a direct, user-activated link visible
     // long enough to save the file; if `download` is ignored, the target opens as a usable preview.
-    toastTimer.current = window.setTimeout(() => setToast(undefined), 15_000);
+    toastTimer.current = window.setTimeout(() => setToast(undefined), 60_000);
   }, []);
 
   const replaceProject = useCallback((next: Project, message?: string) => {
@@ -586,11 +624,13 @@ export default function Studio() {
     setProject(next);
     setSelectedId(undefined);
     setTool("select");
+    setStarterDismissed(false);
     setValidation(validateLayout(next));
-    pastRef.current = [];
-    futureRef.current = [];
-    setPastCount(0);
-    setFutureCount(0);
+    const history = loadProjectHistory(next.id);
+    pastRef.current = history.past;
+    futureRef.current = history.future;
+    setPastCount(history.past.length);
+    setFutureCount(history.future.length);
     savedRevisionsRef.current.set(next.id, next.revisionId);
     setSaveState({ status: "saved" });
     setSavedProjects(listSavedProjects());
@@ -605,10 +645,11 @@ export default function Studio() {
 
   const persistDraft = useCallback((draft: Project) => {
     const snapshot = cloneProject(draft);
+    const history = { past: pastRef.current.map(cloneProject), future: futureRef.current.map(cloneProject) };
     setSaveState({ status: "saving" });
     const saving = saveQueueRef.current.catch(() => undefined).then(async () => {
       try {
-        const saved = await saveProjectLocally(snapshot, savedRevisionsRef.current.get(snapshot.id));
+        const saved = await saveProjectLocally(snapshot, savedRevisionsRef.current.get(snapshot.id), history);
         savedRevisionsRef.current.set(snapshot.id, saved.revisionId);
         const live = projectRef.current;
         if (live.id === saved.id) {
@@ -640,7 +681,7 @@ export default function Studio() {
         else { setSaveState({ status: "unsaved" }); setSiteSetupOpen(true); }
       } catch (error) {
         setSaveState({ status: "unsaved", message: error instanceof Error ? error.message : "Local saving is unavailable." });
-      }
+      } finally { setProjectLoaded(true); }
     }, 0);
     return () => window.clearTimeout(timer);
   }, [replaceProject]);
@@ -710,8 +751,12 @@ export default function Studio() {
         }
         setPastCount(pastRef.current.length);
         setFutureCount(0);
-        setValidation(validateLayout(outcome.project));
-        if (actor === "human") notify(outcome.description.replace(/^You /, ""));
+        const nextValidation = validateLayout(outcome.project);
+        setValidation(nextValidation);
+        if (actor === "human") {
+          const baseFinding = nextValidation.issues.find(issue => issue.code === "UPPER_FLOOR_BASE_UNVERIFIED" && issue.elementIds.includes(outcome.project.view.focusElementId ?? ""));
+          notify(baseFinding ? `${outcome.description.replace(/^You /, "")} · Review the missing geometry below in Checks` : outcome.description.replace(/^You /, ""));
+        }
         return outcome;
       } catch (error) {
         const message = error instanceof Error ? error.message : "The operation could not be completed.";
@@ -766,7 +811,7 @@ export default function Studio() {
     }
     options?.signal?.throwIfAborted();
     const viewLabel = current.view.mode === "2d" ? "2d" : `3d-${current.view.navigationMode ?? "orbit"}`;
-    const filename = `archmorph-${viewLabel}-v${current.version}.png`;
+    const filename = `${exportSlug(current.name)}-${exportSlug(current.floors.find(f => f.id === current.view.activeFloorId)?.name ?? "floor")}-${viewLabel}-v${current.version}.png`;
     if (options?.download) {
       downloadUrl(dataUrl, filename);
       offerDownload(dataUrl, filename);
@@ -790,12 +835,12 @@ export default function Studio() {
     if (format === "svg") {
       if (!svgRef.current) throw new Error("Switch to the 2D floor plan before exporting SVG.");
       const content = serializedPlan(svgRef.current, current);
-      const filename = `archmorph-plan-v${current.version}.svg`;
+      const filename = `${exportSlug(current.name)}-${exportSlug(current.floors.find(f => f.id === current.view.activeFloorId)?.name ?? "floor")}-v${current.version}.svg`;
       if (download) offerDownload(downloadText(content, filename, "image/svg+xml"), filename);
       return { format, filename, projectVersion: current.version, content };
     }
     const content = exportProjectDocument(current);
-    const filename = `archmorph-project-v${current.version}.json`;
+    const filename = `${exportSlug(current.name)}-project-v${current.version}.json`;
     if (download) offerDownload(downloadText(content, filename, "application/json"), filename);
     return { format, filename, projectVersion: current.version, content };
   }, [offerDownload]);
@@ -844,7 +889,7 @@ export default function Studio() {
     setToolCalls((calls) => [
       { id: callId, name, input, status: "running" as const, timestamp: new Date().toISOString(), modified: false },
       ...calls,
-    ].slice(0, 30));
+    ].slice(0, 500));
     try {
       const output = await definition.execute(input, options);
       const modified = projectRef.current !== before;
@@ -871,7 +916,10 @@ export default function Studio() {
     }
   }, [webTools]);
 
+  const toolBridgeRef = useRef({ webTools, invokeTool });
+  useEffect(() => { toolBridgeRef.current = { webTools, invokeTool }; }, [webTools, invokeTool]);
   useEffect(() => {
+    if (!projectLoaded) return;
     let disposed = false;
     const registration = new AbortController();
     const register = async () => {
@@ -881,30 +929,38 @@ export default function Studio() {
         return;
       }
       setToolStatus("registering");
-      for (const toolDefinition of webTools) {
+      setRegistrationError(undefined);
+      for (const toolDefinition of toolBridgeRef.current.webTools) {
         if (disposed) return;
         await modelContext.registerTool({
           name: toolDefinition.name,
           description: toolDefinition.description,
           inputSchema: toolDefinition.inputSchema,
           annotations: toolDefinition.annotations,
-          execute: (input, options) => invokeTool(toolDefinition.name, input, options),
+          execute: async (input, options) => {
+            const before = projectRef.current;
+            try { return await toolBridgeRef.current.invokeTool(toolDefinition.name, input, options); }
+            catch (error) {
+              if (options?.signal.aborted) throw error;
+              return { status: "error", error: error instanceof Error ? error.message : "Tool execution failed.", projectVersion: projectRef.current.version, modified: projectRef.current !== before };
+            }
+          },
         }, { signal: registration.signal });
       }
       if (!disposed) setToolStatus("native");
     };
     window.__archMorph = {
       getProject: () => cloneProject(projectRef.current),
-      listTools: () => webTools.map((item) => item.name),
-      invokeTool,
+      listTools: () => toolBridgeRef.current.webTools.map((item) => item.name),
+      invokeTool: (name, input) => toolBridgeRef.current.invokeTool(name, input),
     };
-    void register();
+    void register().catch(error => { if (!disposed) { setToolStatus("preview"); setRegistrationError(error instanceof Error ? error.message : "Browser registration failed."); } });
     return () => {
       disposed = true;
       registration.abort();
       delete window.__archMorph;
     };
-  }, [invokeTool, webTools]);
+  }, [projectLoaded, registrationEpoch]);
 
   const undo = useCallback(() => {
     const previous = pastRef.current.pop();
@@ -1004,6 +1060,13 @@ export default function Studio() {
             const y = Math.max(0, room.y + (key === "arrowdown" ? amount : key === "arrowup" ? -amount : 0));
             try { commit({ type: "move_room", roomId: room.id, x, y }); } catch { /* commit announces invalid geometry */ }
           }
+          return;
+        }
+        const independentWall = projectRef.current.walls.find(w => w.id === selectedId && !w.roomIds.length);
+        if (independentWall) {
+          event.preventDefault();
+          const amount = event.shiftKey ? 1 : 0.5;
+          try { commit({ type: "move_wall", wallId: independentWall.id, dx: key === "arrowright" ? amount : key === "arrowleft" ? -amount : 0, dy: key === "arrowdown" ? amount : key === "arrowup" ? -amount : 0 }); } catch { /* announced by commit */ }
           return;
         }
         const opening = projectRef.current.openings.find(item => item.id === selectedId);
@@ -1150,6 +1213,8 @@ export default function Studio() {
   const selectedOpeningWall = selectedOpening ? project.walls.find((item) => item.id === selectedOpening.wallId) : undefined;
   const selectedFacadeFacing = selectedOpeningWall ? wallCardinalFacing(project, selectedOpeningWall) : undefined;
   const activeFloor = project.floors.find((item) => item.id === project.view.activeFloorId)!;
+  const lowerFloor = lowerFloorReference(project, activeFloor.id);
+  const baseIssues = validation.issues.filter(issue => issue.code === "UPPER_FLOOR_BASE_UNVERIFIED" && issue.elementIds.some(id => elementIsOnFloor(project, id, activeFloor.id)));
   const metrics = projectMetrics(project);
   const nativeStatus = toolStatus === "native";
   const navigationMode = project.view.navigationMode ?? "orbit";
@@ -1183,6 +1248,11 @@ export default function Studio() {
     } catch (error) {
       return error instanceof Error ? error.message : "Could not apply the change.";
     }
+  };
+
+  const selectActiveFloor = (floorId: string) => {
+    safeCommit({ type: "set_active_floor", floorId });
+    if (project.view.mode === "3d" && navigationMode === "walk") canvasRef.current?.focus({ preventScroll: true });
   };
 
   const selectElement = (id: string) => {
@@ -1225,6 +1295,7 @@ export default function Studio() {
   };
 
   const openRoomLibrary = () => {
+    setStarterDismissed(true);
     setLibraryOpen(true);
     setLibraryTab("spaces");
     activatePlanTool("room");
@@ -1520,7 +1591,7 @@ export default function Studio() {
   };
 
   return (
-    <main className={`studio-shell ${libraryOpen ? "is-library-open" : ""} ${inspectorOpen ? "is-inspector-open" : ""} ${project.view.mode === "3d" && focusView ? "is-focus-view" : ""} ${project.view.mode === "3d" ? "is-model-mode" : ""} ${moreToolsOpen ? "has-more-tools" : ""}`}>
+    <main data-webmcp-status={toolStatus} data-project-loaded={projectLoaded} className={`studio-shell ${libraryOpen ? "is-library-open" : ""} ${inspectorOpen ? "is-inspector-open" : ""} ${project.view.mode === "3d" && focusView ? "is-focus-view" : ""} ${project.view.mode === "3d" ? "is-model-mode" : ""} ${moreToolsOpen ? "has-more-tools" : ""}`}>
       <div className="visually-hidden" aria-live="polite" aria-atomic="true">{selectedId ? `Selected ${elementLabel(project, selectedId)}${selectedRoom ? `. Position ${selectedRoom.x} by ${selectedRoom.y} feet. Size ${selectedRoom.width} by ${selectedRoom.length} feet.` : ""}` : `No element selected. ${validation.issueCount} layout ${validation.issueCount === 1 ? "issue" : "issues"}.`}</div>
       <header className="topbar">
         <Link className="brand" href="/" aria-label="ArchMorph home">
@@ -1582,11 +1653,11 @@ export default function Studio() {
             }}><History size={17} /></button>
             {historyOpen && (
               <div ref={historyMenuRef} id="project-history" className="history-popover" role="dialog" aria-labelledby="project-history-title">
-                <div className="history-popover-head"><div><h2 id="project-history-title">Project history</h2><p>Saved checkpoints and changes in this session.</p></div><button ref={historyCloseRef} type="button" className="icon-button" aria-label="Close history" onClick={() => { setHistoryOpen(false); historyButtonRef.current?.focus(); }}><X size={16} /></button></div>
+                <div className="history-popover-head"><div><h2 id="project-history-title">Project history</h2><p>Named checkpoints and recent changes saved on this device. Undo retains up to 30 states within a 500 KB budget.</p></div><button ref={historyCloseRef} type="button" className="icon-button" aria-label="Close history" onClick={() => { setHistoryOpen(false); historyButtonRef.current?.focus(); }}><X size={16} /></button></div>
                 <div className="history-popover-scroll">
                   <div className="checkpoint-manager"><h3>Named checkpoints <small>{checkpoints.length}/{MAX_CHECKPOINTS}</small></h3>
                     <form onSubmit={(event) => { event.preventDefault(); void saveCheckpoint(); }}><label className="visually-hidden" htmlFor="checkpoint-name">Checkpoint name</label><input id="checkpoint-name" value={checkpointName} maxLength={120} placeholder="e.g. Ground floor option A" onChange={(event) => setCheckpointName(event.target.value)} /><button type="submit" disabled={!checkpointName.trim() || checkpoints.length >= MAX_CHECKPOINTS || saveState.status === "conflict"}>Save</button></form>
-                    <p>Checkpoints survive reloads. Undo and the recent version list last for this session.</p>
+                    <p>Checkpoints and bounded Undo/Redo history survive reloads on this device. Save a named checkpoint to keep a milestone.</p>
                     {checkpoints.map((item) => <div className="checkpoint-row" key={item.id}><button type="button" onClick={() => { setCheckpointPreview(item); setHistoryOpen(false); }}><b>{item.name}</b><small>{formatActivityTime(item.createdAt)} · {item.project.rooms.length} rooms</small></button><button type="button" aria-label={`Remove checkpoint ${item.name}`} onClick={async () => { if (!window.confirm(`Remove checkpoint “${item.name}”? The current home is kept. This checkpoint cannot be recovered.`)) return; try { await deleteProjectCheckpoint(project.id, item.id); setCheckpoints(listProjectCheckpoints(project.id)); } catch (error) { notify(error instanceof Error ? error.message : "Could not remove checkpoint."); } }}><Trash2 size={13} /></button></div>)}
                   </div>
                   <details className="history-filters"><summary>Filter changes</summary>
@@ -1597,7 +1668,7 @@ export default function Studio() {
                       {(["all", "human", "agent"] as const).map((actor) => <button key={actor} type="button" aria-pressed={activityActor === actor} className={activityActor === actor ? "is-active" : ""} onClick={() => setActivityActor(actor)}>{actor[0].toUpperCase() + actor.slice(1)}</button>)}
                     </div>
                   </details>
-                  {pastCount > 0 && <details className="history-milestones"><summary>Recent versions · this session</summary><div>{pastRef.current.slice(-5).reverse().map((snapshot) => <button key={`${snapshot.version}:${snapshot.updatedAt}`} type="button" onClick={() => { restoreSnapshot(snapshot); setHistoryOpen(false); historyButtonRef.current?.focus(); }}><span><b>Version {snapshot.version}</b><small>{snapshot.activity[0]?.description.replace(/^You /, "") ?? "Saved design state"}</small></span><History size={14} /></button>)}</div></details>}
+                  {pastCount > 0 && <details className="history-milestones"><summary>Recent saved versions</summary><div>{pastRef.current.slice(-5).reverse().map((snapshot) => <button key={`${snapshot.version}:${snapshot.updatedAt}`} type="button" onClick={() => { restoreSnapshot(snapshot); setHistoryOpen(false); historyButtonRef.current?.focus(); }}><span><b>Version {snapshot.version}</b><small>{snapshot.activity[0]?.description.replace(/^You /, "") ?? "Saved design state"}</small></span><History size={14} /></button>)}</div></details>}
                   <div className="activity-list">
                     {filteredActivity.map((entry) => (
                       <div key={entry.id} className={`activity-item actor-${entry.actor}`}>
@@ -1734,7 +1805,7 @@ export default function Studio() {
                       type="button"
                       className={floor.id === project.view.activeFloorId ? "is-active" : ""}
                       aria-current={floor.id === project.view.activeFloorId ? "true" : undefined}
-                      onClick={() => safeCommit({ type: "set_active_floor", floorId: floor.id })}
+                      onClick={() => selectActiveFloor(floor.id)}
                     >
                       <Layers3 size={15} /><span><b>{floor.name}</b><small>{roomCount} {roomCount === 1 ? "room" : "rooms"} · {floor.height} ft{stairCount ? ` · ${stairCount} stair connection${stairCount === 1 ? "" : "s"}` : ""}</small></span>
                     </button>
@@ -1810,12 +1881,9 @@ export default function Studio() {
         <section className="canvas-stage">
           <div className={`canvas-toolbar ${project.view.mode === "3d" ? "is-model-toolbar" : ""}`}>
             <IconButton buttonRef={libraryButtonRef} label={libraryOpen ? "Close design library" : "Open design library"} onClick={() => { setFocusView(false); if (!libraryOpen && window.innerWidth <= 980) setInspectorOpen(false); setLibraryOpen(value => !value); }}><PanelLeftOpen size={17} /></IconButton>
-            <div className="floor-scope"><label className="visually-hidden" htmlFor="active-floor">Active floor</label><select id="active-floor" aria-label="Active floor" value={project.view.activeFloorId} onChange={(event) => safeCommit({ type: "set_active_floor", floorId: event.target.value })}>{[...project.floors].sort((a, b) => a.level - b.level).map((floor) => <option key={floor.id} value={floor.id}>{floor.name}</option>)}</select>{project.view.mode === "3d" && navigationMode === "orbit" && <button type="button" className="cutaway-control" aria-pressed={cutaway} title={cutaway ? "Restore the whole-house view" : `Reveal the interiors at ${activeFloor.name}`} onClick={() => {
+            <div className="floor-scope"><label className="visually-hidden" htmlFor="active-floor">Active floor</label><select id="active-floor" aria-label="Active floor" value={project.view.activeFloorId} onChange={(event) => selectActiveFloor(event.target.value)}>{[...project.floors].sort((a, b) => a.level - b.level).map((floor) => <option key={floor.id} value={floor.id}>{floor.name}</option>)}</select><small className="floor-elevation">{activeFloor.elevation === 0 ? "Ground level" : `+${activeFloor.elevation} ft`}</small>{project.view.mode === "3d" && navigationMode === "orbit" && <button type="button" className="cutaway-control" aria-pressed={cutaway} title={cutaway ? "Restore the whole-house view" : `Reveal the interiors at ${activeFloor.name}`} onClick={() => {
               setCutaway(value => !value);
-              if (!cutaway) {
-                safeCommit({ type: "set_camera", preset: "front-right" });
-                safeCommit({ type: "focus_element" });
-              }
+
             }}><Layers3 size={16} /><span>Floor cutaway</span></button>}</div>
             {!(project.view.mode === "3d" && navigationMode === "walk") && <button type="button" className="metric-strip" title="Open area definitions and full schedules" onClick={() => { setSelectedId(undefined); setInspectorTab("properties"); setInspectorOpen(true); setFocusView(false); setSiteDetailsOpen(false); }}>
               <span><small>{project.view.mode === "3d" && !cutaway ? "ALL FLOORS · ROOMS" : "THIS FLOOR · ROOMS"}</small><b>{(project.view.mode === "3d" && !cutaway ? metrics.totalNetBuildingArea : metrics.totalNetFloorArea).toLocaleString()} <i>sq ft</i></b></span>
@@ -1837,7 +1905,7 @@ export default function Studio() {
                   <option value="top">Top overview</option>
                 </select>
               )}
-              {project.view.mode === "3d" && <button type="button" className="labeled-control edit-plan-control" onClick={() => safeCommit({ type: "switch_view", mode: "2d" })}><Grid2X2 size={16} /><span>Edit in plan</span></button>}
+              {project.view.mode === "3d" && <button type="button" className="labeled-control edit-plan-control" aria-label="Edit in plan" title="Edit in plan" onClick={() => safeCommit({ type: "switch_view", mode: "2d" })}><Grid2X2 size={16} /><span>Edit in plan</span></button>}
               {project.view.mode === "2d" && <IconButton label={showPlanLabels ? "Hide room labels" : "Show room labels"} active={showPlanLabels} onClick={() => setShowPlanLabels((value) => !value)}><Eye size={16} /></IconButton>}
               <button type="button" className="labeled-control" aria-label="Focus whole project" onClick={() => safeCommit({ type: "focus_element" })}><Scan size={16} /><span>Fit</span></button>
               <button type="button" className="labeled-control" aria-label="Capture current view as PNG" onClick={() => void downloadSnapshot()}><Maximize2 size={16} /><span>Snapshot</span></button>
@@ -1854,6 +1922,8 @@ export default function Studio() {
                 tool={tool}
                 roomType={roomType}
                 showLabels={showPlanLabels}
+                showLowerFloor={showLowerFloor}
+                onToggleLowerFloor={() => setShowLowerFloor(value => !value)}
                 selectedId={selectedId}
                 connectionRoomIds={showConnections ? roomRoute?.nodePath : undefined}
                 connectionElementIds={showConnections ? roomRoute?.elementPath : undefined}
@@ -1864,7 +1934,8 @@ export default function Studio() {
                 onResizeRoom={(roomId, width, length, anchor) => safeCommit({ type: "resize_room", roomId, width, length, anchor })}
                 onMoveOpening={(openingId, offset) => safeCommit({ type: "update_opening", openingId, offset })}
                 onUpdateRoomVertices={(roomId, vertices) => safeCommit({ type: "update_room_vertices", roomId, vertices })}
-                onAddWall={(start, end) => safeCommit({ type: "add_wall", floorId: project.view.activeFloorId, x1: start.x, y1: start.y, x2: end.x, y2: end.y })}
+                onAddWall={(start, end) => safeCommit({ type: "add_wall", floorId: project.view.activeFloorId, x1: start.x, y1: start.y, x2: end.x, y2: end.y }) === undefined}
+                onUpdateWall={wall => safeCommit({ type: "update_wall", wallId: wall.id, x1: wall.x1, y1: wall.y1, x2: wall.x2, y2: wall.y2 })}
                 onMoveWall={(wallId, dx, dy) => safeCommit({ type: "move_wall", wallId, dx, dy })}
                 onAddOpening={addOpeningAt}
                 onAddStair={createStairAt}
@@ -1879,12 +1950,15 @@ export default function Studio() {
                 selectedId={selectedId}
                 canvasRef={canvasRef}
                 onSelect={(id) => { setSelectedId(id); if (id) { setInspectorTab("properties"); setInspectorOpen(true); setFocusView(false); } }}
+                onWalkDestination={id => safeCommit({ type: "set_navigation_mode", mode: "walk", roomId: id })}
+                onDoorToggle={id => { const opening = projectRef.current.openings.find(o => o.id === id); if (opening) safeCommit({ type: "update_opening", openingId: id, state: opening.state === "closed" ? "open" : "closed" }); }}
                 onWalkFloorChange={handleWalkFloorChange}
                 cutawayFloorId={cutaway && navigationMode === "orbit" ? project.view.activeFloorId : undefined}
                 siteContext={siteContext}
               />
             )}
-            {project.view.mode === "2d" && !project.rooms.length && !project.walls.length && !project.stairs.length && (
+            {lowerFloor && (project.view.mode === "2d" || navigationMode !== "walk") && <div className={`floor-context-banner ${baseIssues.length ? "has-warning" : ""}`} role="status"><span>{activeFloor.name} is +{activeFloor.elevation} ft above ground. {baseIssues.length ? `${baseIssues.length} element${baseIssues.length === 1 ? " extends" : "s extend"} beyond the modeled footprint below.` : "Use the floor below to align this level."}</span>{baseIssues.length > 0 && <button type="button" onClick={() => { setInspectorTab("checks"); setInspectorOpen(true); setFocusView(false); }}>Review below</button>}</div>}
+            {project.view.mode === "2d" && tool === "select" && !starterDismissed && !project.rooms.length && !project.walls.length && !project.stairs.length && (
               <div className="starter-card" role="region" aria-label="Getting started">
                 <span className="starter-kicker">START HERE</span>
                 <h2>Your land. Your layout.</h2>
@@ -1901,7 +1975,7 @@ export default function Studio() {
           <div className="statusbar">
             <span><span className="status-dot" /> {cutaway && project.view.mode === "3d" && navigationMode === "orbit" ? `${activeFloor.name} · cutaway` : activeFloor.name}</span>
             <span>{project.view.mode === "3d" ? navigationMode === "walk" ? "Walkthrough" : cutaway ? "Floor cutaway" : "Whole-house view" : tool === "balcony" ? `Place ${balconyKind}` : toolItems.find((item) => item.id === tool)?.label}</span>
-            <span className="status-message">{project.view.mode === "3d" && navigationMode === "walk" ? "WASD / arrows to move · Click to lock look or drag to look · Follow stairs to change levels" : tool === "room" ? `Click the plot to place a ${roomType.toLowerCase()}` : tool === "stair" ? `Click the plan to place a ${stairTypeLabel[stairType]} stair between adjacent floors` : tool === "door" || tool === "window" ? `Click any wall to add one ${tool}; placement exits after success` : tool === "balcony" ? `Click the plan to place a ${balconyKind} · drag it afterwards to reposition` : tool === "wall" ? "Drag to draw a wall, or click the start then the end · 45° snapping · Esc cancels" : tool === "measure" ? "Drag between two points, or click the start then the end · Esc cancels" : project.view.mode === "3d" ? "Drag to orbit · Right-drag or Shift-drag to pan · Scroll to zoom" : "Drag rooms or openings · Resize from a corner · Scroll to zoom · Shift-drag to pan"}</span>
+            <span className="status-message">{project.view.mode === "3d" && navigationMode === "walk" ? "WASD / arrows to move · Click to lock look or drag to look · E to open/close nearby doors · Follow stairs to change levels" : tool === "room" ? `Click the plot to place a ${roomType.toLowerCase()}` : tool === "stair" ? `Click the plan to place a ${stairTypeLabel[stairType]} stair between adjacent floors` : tool === "door" || tool === "window" ? `Click any wall to add one ${tool}; placement exits after success` : tool === "balcony" ? `Click the plan to place a ${balconyKind} · drag it afterwards to reposition` : tool === "wall" ? "Click connected corners or drag · Finish ends the chain · Esc returns to Select" : tool === "measure" ? "Drag between two points, or click the start then the end · Esc cancels" : project.view.mode === "3d" ? "Drag to orbit · Right-drag or Shift-drag to pan · Scroll to zoom" : "Drag rooms or openings · Resize from a corner · Scroll to zoom · Shift-drag to pan"}</span>
             {debugMode && <span>Project v{project.version}</span>}
           </div>
         </section>
@@ -1979,7 +2053,15 @@ export default function Studio() {
                   <>
                     {selectedWall.roomIds.length > 0 && <Section title="Room boundary"><p className="technical-note">This wall follows its rooms. Select an adjacent room to move or resize the boundary; openings and façade finishes remain editable.</p><div className="boundary-room-actions">{selectedWall.roomIds.map((id) => <button key={id} type="button" onClick={() => selectElement(id)}>{project.rooms.find((room) => room.id === id)?.name}</button>)}</div></Section>}
                     <Section title="Geometry"><div className="detail-list"><span>Length <b>{wallLength(selectedWall).toFixed(2)} ft</b></span><span>Thickness <b>{selectedWall.thickness} ft</b></span><span>Height <b>{selectedWall.height} ft</b></span><span>Topology <b>{selectedWall.exterior ? "Exterior" : selectedWall.roomIds.length > 1 ? "Shared interior" : "Independent"}</b></span><span>Adjacent spaces <b>{selectedWall.roomIds.map((roomId) => project.rooms.find((room) => room.id === roomId)?.name ?? roomId).join(" / ") || "None"}</b></span></div></Section>
-                    {selectedWall.exterior && <Section title="Façade finish"><label className="field field-full"><span>Wall material</span><select value={selectedWall.finish ?? ""} onChange={(event) => safeCommit({ type: "set_wall_finish", wallId: selectedWall.id, finish: (event.target.value || undefined) as ExteriorFinishId | undefined })}><option value="">Project default · {exteriorFinishPresets[project.exteriorFinish].label}</option>{Object.entries(exteriorFinishPresets).map(([id, finish]) => <option key={id} value={id}>{finish.label}</option>)}</select></label><p className="technical-note">A wall override stays attached to this canonical exterior wall; reset it to follow the project palette.</p></Section>}
+                    {!selectedWall.roomIds.length && <Section title="Edit independent wall"><div className="field-grid">
+                      <NumberField label="Start X" value={selectedWall.x1} min={0} max={project.plot.width} onCommit={x1 => safeCommit({ type: "update_wall", wallId: selectedWall.id, x1 })} />
+                      <NumberField label="Start Y" value={selectedWall.y1} min={0} max={project.plot.length} onCommit={y1 => safeCommit({ type: "update_wall", wallId: selectedWall.id, y1 })} />
+                      <NumberField label="End X" value={selectedWall.x2} min={0} max={project.plot.width} onCommit={x2 => safeCommit({ type: "update_wall", wallId: selectedWall.id, x2 })} />
+                      <NumberField label="End Y" value={selectedWall.y2} min={0} max={project.plot.length} onCommit={y2 => safeCommit({ type: "update_wall", wallId: selectedWall.id, y2 })} />
+                      <NumberField label="Wall length" value={round(wallLength(selectedWall), 2)} min={1} step={0.1} onCommit={length => safeCommit({ type: "update_wall", wallId: selectedWall.id, length })} />
+                      <NumberField label="Wall thickness" value={selectedWall.thickness} min={0.2} max={2} step={0.05} onCommit={thickness => safeCommit({ type: "update_wall", wallId: selectedWall.id, thickness })} />
+                    </div><p className="technical-note">Length keeps the start fixed. Drag either endpoint in Select, or use arrow keys to move the whole wall. Height follows the storey.</p><WallSpaceActions key={selectedWall.id} project={project} wallId={selectedWall.id} onCommit={safeCommit} /></Section>}
+                    {(selectedWall.exterior || !selectedWall.roomIds.length) && <Section title="Wall finish"><label className="field field-full"><span>Wall material</span><select value={selectedWall.finish ?? ""} onChange={(event) => safeCommit({ type: "set_wall_finish", wallId: selectedWall.id, finish: (event.target.value || undefined) as ExteriorFinishId | undefined })}><option value="">Project default · {exteriorFinishPresets[project.exteriorFinish].label}</option>{Object.entries(exteriorFinishPresets).map(([id, finish]) => <option key={id} value={id}>{finish.label}</option>)}</select></label><p className="technical-note">Independent-wall finishes apply to both sides. Reset an override to follow the project palette.</p></Section>}
                     <Section title="Openings"><div className="detail-list"><span>Doors <b>{project.openings.filter((item) => item.wallId === selectedWall.id && item.kind === "door").length}</b></span><span>Windows <b>{project.openings.filter((item) => item.wallId === selectedWall.id && item.kind === "window").length}</b></span></div></Section>
                   </>
                 ) : selectedOpening ? (
@@ -1987,8 +2069,8 @@ export default function Studio() {
                     <Section title="Opening geometry">
                       <div className="field-grid">
                         <NumberField label="Position along wall" value={selectedOpening.offset} min={0} onCommit={(offset) => safeCommit({ type: "update_opening", openingId: selectedOpening.id, offset })} />
-                        <NumberField label="Width" value={selectedOpening.width} min={0.5} onCommit={(width) => safeCommit({ type: "update_opening", openingId: selectedOpening.id, width })} />
-                        <NumberField label="Height" value={selectedOpening.height} min={0.5} onCommit={(height) => safeCommit({ type: "update_opening", openingId: selectedOpening.id, height })} />
+                        <NumberField label="Width" value={selectedOpening.width} min={selectedOpening.kind === "door" ? 2 : 1} max={selectedOpening.kind === "door" ? 8 : 16} onCommit={(width) => safeCommit({ type: "update_opening", openingId: selectedOpening.id, width })} />
+                        <NumberField label="Height" value={selectedOpening.height} min={selectedOpening.kind === "door" ? 6 : 1} max={selectedOpening.kind === "door" ? 9 : 8} onCommit={(height) => safeCommit({ type: "update_opening", openingId: selectedOpening.id, height })} />
                         {selectedOpening.kind === "window" && <NumberField label="Sill height" value={selectedOpening.sillHeight ?? 0} min={0} onCommit={(sillHeight) => safeCommit({ type: "update_opening", openingId: selectedOpening.id, sillHeight })} />}
                       </div>
                     </Section>
@@ -1997,11 +2079,12 @@ export default function Studio() {
                     </Section>
                     {selectedOpening.kind === "door" ? (
                       <Section title="Door configuration">
-                        <div className="opening-actions"><button type="button" onClick={() => safeCommit({ type: "update_opening", openingId: selectedOpening.id, hingeSide: selectedOpening.hingeSide === "end" ? "start" : "end", handing: selectedOpening.handing === "right" ? "left" : "right" })}><RotateCw size={14} /> Flip hinge</button><button type="button" onClick={() => safeCommit({ type: "update_opening", openingId: selectedOpening.id, swingDirection: selectedOpening.swingDirection === "outward" ? "inward" : "outward" })}><DoorOpen size={14} /> Swing {selectedOpening.swingDirection === "outward" ? "inward" : "outward"}</button></div>
+                        <div className="opening-actions"><button type="button" onClick={() => safeCommit({ type: "update_opening", openingId: selectedOpening.id, hingeSide: selectedOpening.hingeSide === "end" ? "start" : "end", handing: selectedOpening.handing === "right" ? "left" : "right" })}><RotateCw size={14} /> Flip hinge</button><button type="button" disabled={!!selectedOpening.opensIntoRoomId} title={selectedOpening.opensIntoRoomId ? "Swing follows the Opens into room. Choose Legacy direction to use this control." : undefined} onClick={() => safeCommit({ type: "update_opening", openingId: selectedOpening.id, swingDirection: selectedOpening.swingDirection === "outward" ? "inward" : "outward" })}><DoorOpen size={14} /> {selectedOpening.opensIntoRoomId ? "Swing follows room" : `Swing ${selectedOpening.swingDirection === "outward" ? "inward" : "outward"}`}</button></div>
                         <details className="architectural-details"><summary>Hinge, handing & state</summary><div className="field-grid">
+                          <label className="field"><span>Opens into</span><select value={selectedOpening.opensIntoRoomId ?? ""} onChange={event => safeCommit({ type: "update_opening", openingId: selectedOpening.id, opensIntoRoomId: event.target.value || null })}><option value="">Legacy direction</option>{project.rooms.filter(r => project.walls.find(w => w.id === selectedOpening.wallId)?.roomIds.includes(r.id)).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></label>
                           <label className="field"><span>Hinge side</span><select value={selectedOpening.hingeSide ?? "start"} onChange={(event) => safeCommit({ type: "update_opening", openingId: selectedOpening.id, hingeSide: event.target.value as "start" | "end" })}><option value="start">Start</option><option value="end">End</option></select></label>
                           <label className="field"><span>Handing</span><select value={selectedOpening.handing ?? "left"} onChange={(event) => safeCommit({ type: "update_opening", openingId: selectedOpening.id, handing: event.target.value as "left" | "right" })}><option value="left">Left</option><option value="right">Right</option></select></label>
-                          <label className="field"><span>Swing</span><select value={selectedOpening.swingDirection ?? "inward"} onChange={(event) => safeCommit({ type: "update_opening", openingId: selectedOpening.id, swingDirection: event.target.value as "inward" | "outward" })}><option value="inward">Inward</option><option value="outward">Outward</option></select></label>
+                          <label className="field"><span>Legacy swing</span><select disabled={!!selectedOpening.opensIntoRoomId} value={selectedOpening.swingDirection ?? "inward"} onChange={(event) => safeCommit({ type: "update_opening", openingId: selectedOpening.id, swingDirection: event.target.value as "inward" | "outward" })}><option value="inward">Inward</option><option value="outward">Outward</option></select></label>
                           <label className="field"><span>State</span><select value={selectedOpening.state ?? "open"} onChange={(event) => safeCommit({ type: "update_opening", openingId: selectedOpening.id, state: event.target.value as "open" | "closed" })}><option value="open">Open</option><option value="closed">Closed</option></select></label>
                         </div>
                         </details>
@@ -2166,8 +2249,8 @@ export default function Studio() {
           <section className="help-dialog" role="dialog" aria-modal="true" aria-labelledby="studio-help-title">
             <div className="modal-heading"><div><span><CircleHelp size={18} /></span><div><small>STUDIO GUIDE</small><h2 id="studio-help-title">Design with confidence</h2></div></div><button ref={helpCloseRef} type="button" onClick={() => setHelpOpen(false)} aria-label="Close help"><X size={18} /></button></div>
             <div className="help-grid">
-              <div><h3>Getting started</h3><ol><li>Set your land size, access orientation, and planning setbacks.</li><li>Place rooms from the Design library; room boundary walls appear automatically.</li><li>Add independent walls when needed. Draw walls and measurements by dragging, or by clicking the start point and then the end point.</li><li>Click once to place rooms, openings, stairs, balconies, and terraces.</li><li>Use Select to drag rooms, openings along their walls, stairs, balconies, terraces, and independent walls. Resize rooms from any corner.</li><li>Use Properties for precise dimensions, then run Checks and explore in 3D.</li></ol></div>
-              <div><h3>Keyboard shortcuts</h3><dl>{toolItems.map((item) => <div key={item.id}><dt><kbd>{item.key}</kbd></dt><dd>{item.label}</dd></div>)}<div><dt><kbd>Arrows</kbd></dt><dd>Move a selected room or opening by 6 in; hold Shift for 1 ft</dd></div><div><dt><kbd>⌥ + ↑</kbd></dt><dd>Resize a selected room; hold Shift for 1 ft</dd></div><div><dt><kbd>⌘Z</kbd></dt><dd>Undo design edit</dd></div><div><dt><kbd>?</kbd></dt><dd>Open this guide</dd></div><div><dt><kbd>Esc</kbd></dt><dd>Close or return to Select</dd></div></dl></div>
+              <div><h3>Getting started</h3><ol><li>Set your land size, access orientation, and planning setbacks.</li><li>Place rooms from the Design library; room boundary walls appear automatically.</li><li>Add independent walls when needed. Draw walls by clicking connected corners or dragging. Continuous walls is enabled by default; Finish ends the chain. Select an independent wall to edit its endpoints, length and thickness, create a room from an enclosure, or split a rectangular room. Measurements use a start and end.</li><li>Click once to place rooms, openings, stairs, balconies, and terraces.</li><li>Use Select to drag rooms, openings along their walls, stairs, balconies, terraces, and independent walls. Resize rooms from any corner.</li><li>Use Properties for precise dimensions, then run Checks and explore in 3D.</li></ol></div>
+              <div><h3>Keyboard shortcuts</h3><dl>{toolItems.map((item) => <div key={item.id}><dt><kbd>{item.key}</kbd></dt><dd>{item.label}</dd></div>)}<div><dt><kbd>Arrows</kbd></dt><dd>Move a selected room, independent wall or opening by 6 in; hold Shift for 1 ft</dd></div><div><dt><kbd>⌥ + ↑</kbd></dt><dd>Resize a selected room; hold Shift for 1 ft</dd></div><div><dt><kbd>⌘Z</kbd></dt><dd>Undo design edit</dd></div><div><dt><kbd>?</kbd></dt><dd>Open this guide</dd></div><div><dt><kbd>Esc</kbd></dt><dd>Close or return to Select</dd></div></dl></div>
             </div>
             <div className="agent-assistance-guide"><h3>Design with a browser agent</h3><p>{nativeStatus ? `${webTools.length} tools are available to a compatible browser agent on this page.` : "Agent assistance requires a browser agent with WebMCP support."} Open this studio page through that agent and ask it to inspect your current home before proposing changes.</p><blockquote>Explain the bedroom checks, then suggest a change that preserves the other rooms.</blockquote><p>Agent edits appear in the same plan and History. Save a named checkpoint before exploring an option, and use Undo to return. You choose the layout.</p></div>
             <p className="help-note"><b>Your work stays on this device.</b> ArchMorph autosaves locally. Export Project JSON for a portable backup. Layout Checks are geometric guidance, not building-code, structural, or permit approval.</p>
@@ -2179,7 +2262,7 @@ export default function Studio() {
         <div className="debug-drawer" role="dialog" aria-modal="true" aria-label="WebMCP developer console">
           <div className="debug-header">
             <div><span className="debug-icon"><Braces size={18} /></span><div><h2>WebMCP developer console</h2><p>Live tools operating the same project model as the editor</p></div></div>
-            <div className="debug-status"><span className={nativeStatus ? "is-live" : ""} />{nativeStatus ? "Registered in browser" : "Local tool harness"} · {webTools.length} tools</div>
+            <div className="debug-status"><button type="button" onClick={() => setRegistrationEpoch(value => value + 1)}>Reconnect tools</button><span className={nativeStatus ? "is-live" : ""} />{nativeStatus ? "Registered in browser" : "Local tool harness"} · {webTools.length} tools</div>
             <button ref={debugCloseRef} type="button" onClick={() => setDebugOpen(false)} aria-label="Close developer console"><X size={18} /></button>
           </div>
           <div className="debug-body">
@@ -2192,14 +2275,17 @@ export default function Studio() {
               </div>
             </section>
             <section className="debug-calls">
-              <div className="debug-section-title"><h3>Recent calls</h3><div><button type="button" onClick={() => void invokeTool("inspect_project", {})}><Eye size={13} /> Test inspect</button><button type="button" onClick={() => void invokeTool("validate_layout", {})}><Check size={13} /> Test validate</button></div></div>
+              {registrationError && <p role="alert">Browser tools: {registrationError}</p>}
+            <label className="field"><span>Search tool calls</span><input value={toolSearch} onChange={event => setToolSearch(event.target.value)} /></label>
+            <button type="button" onClick={() => { const filename = `${exportSlug(projectRef.current.name)}-tool-audit.json`; offerDownload(downloadText(JSON.stringify({ projectId: projectRef.current.id, exportedAt: new Date().toISOString(), retention: "Latest 500 calls in this session; outputs are complete", calls: toolCalls }, null, 2), filename, "application/json"), filename); }}>Download complete tool audit</button>
+            <div className="debug-section-title"><h3>Recent calls · latest 500</h3><div><button type="button" onClick={() => void invokeTool("inspect_project", {})}><Eye size={13} /> Test inspect</button><button type="button" onClick={() => void invokeTool("validate_layout", {})}><Check size={13} /> Test validate</button></div></div>
               <div className="debug-runner">
                 <label><span>Tool</span><select aria-label="WebMCP tool" value={debugToolName} onChange={(event) => { setDebugToolName(event.target.value); setDebugInput("{}"); }}>{webTools.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}</select></label>
                 <label><span>Input JSON</span><textarea aria-label="WebMCP input JSON" spellCheck={false} value={debugInput} onChange={(event) => setDebugInput(event.target.value)} /></label>
                 <button type="button" className="run-tool-button" onClick={() => void runDebugTool()}><Sparkles size={13} /> Execute tool</button>
               </div>
               {!webTools.find((item) => item.name === debugToolName)?.annotations?.readOnlyHint && <p className="debug-write-warning"><CircleAlert size={13} /> This tool can change the shared project or view. Design edits create an Undo step.</p>}
-              {toolCalls.length ? <div className="call-list">{toolCalls.map((call) => <details key={call.id}><summary><span className={`call-dot ${call.status}`} /><code>{call.name}</code><b>{call.status}</b>{call.modified && <em>shared state changed</em>}<small>{call.duration !== undefined ? `${call.duration} ms` : "running"}</small></summary><pre>{compactJson(call.error ? { input: call.input, error: call.error } : { input: call.input, output: call.output })}</pre></details>)}</div> : <div className="empty-calls"><Code2 size={24} /><p>No tool calls yet</p><span>Connect a compatible agent, or test an inspection above.</span></div>}
+              {toolCalls.length ? <div className="call-list">{toolCalls.filter(call => `${call.name} ${call.status}`.toLowerCase().includes(toolSearch.toLowerCase())).map((call) => <details key={call.id}><summary><span className={`call-dot ${call.status}`} /><code>{call.name}</code><b>{call.status}</b>{call.modified && <em>shared state changed</em>}<small>{call.duration !== undefined ? `${call.duration} ms` : "running"}</small></summary><pre>{compactJson(call.error ? { input: call.input, error: call.error } : { input: call.input, output: call.output })}</pre></details>)}</div> : <div className="empty-calls"><Code2 size={24} /><p>No tool calls yet</p><span>Connect a compatible agent, or test an inspection above.</span></div>}
             </section>
           </div>
           <div className="debug-foot"><span><span className="status-dot" />Shared model <code>{project.id}</code></span><span>Current version <b>{project.version}</b></span><span>Human and WebMCP design edits share Undo / Redo</span></div>

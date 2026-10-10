@@ -1,0 +1,438 @@
+{
+  "date": "2026-10-10",
+  "projectId": "project-e1983050",
+  "version": 157,
+  "toolCount": 61,
+  "exercised": 61,
+  "scope": "At least one invocation per tool, not exhaustive parameter/branch coverage. Native browser tools built the house. The developer console exercised the remaining copy tools after bridge staleness. Later native recovery and precise follow-up reproductions succeeded.",
+  "traceLimit": "Console retains 30 clipped calls; model activity retains 100 entries. This manifest is a session coverage record, not a complete historical transcript.",
+  "tools": [
+    {
+      "name": "add_balcony",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "add_door",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "add_facade_feature",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "add_stairs",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "add_wall",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "add_window",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "adjust_shared_boundary",
+      "exercised": true,
+      "initialContext": "audit copy / developer console",
+      "observation": "Pantry/Laundry shared edge moved x=14 to x=13.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "calculate_open_area",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "calculate_room_area",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "calculate_total_area",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "configure_plot",
+      "exercised": true,
+      "initialContext": "audit copy / developer console",
+      "observation": "Audit plot expanded to 70 x 100 ft.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "configure_site_boundary",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "create_floor",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "create_polygon_room",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "create_room",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "create_room_from_walls",
+      "exercised": true,
+      "initialContext": "audit copy / developer console",
+      "observation": "Four independent walls converted into Office, preserving IDs, openings, thickness and brick finish.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "delete_balcony",
+      "exercised": true,
+      "initialContext": "audit copy / developer console",
+      "observation": "Duplicate slab removed from copy.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "delete_facade_feature",
+      "exercised": true,
+      "initialContext": "audit copy / developer console",
+      "observation": "Entry canopy removed from copy.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "delete_opening",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "delete_room",
+      "exercised": true,
+      "initialContext": "audit copy / developer console",
+      "observation": "Temporary pavilion and reference probe removed.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "delete_stairs",
+      "exercised": true,
+      "initialContext": "audit copy / developer console",
+      "observation": "Copy stair removed; Undo/Redo/Undo restored it, later native inspection confirmed one stair.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "delete_wall",
+      "exercised": true,
+      "initialContext": "audit copy / developer console",
+      "observation": "Independent wall deleted; canonical room boundary deletion rejected.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "export_plan",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": true
+    },
+    {
+      "name": "focus_element",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": true
+    },
+    {
+      "name": "inspect_circulation",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": true
+    },
+    {
+      "name": "inspect_exterior",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "inspect_floor",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": true
+    },
+    {
+      "name": "inspect_opening",
+      "exercised": true,
+      "initialContext": "audit copy / developer console",
+      "observation": "Full door configuration and independent host inspected.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "inspect_plot",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "inspect_project",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": true
+    },
+    {
+      "name": "inspect_room",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "inspect_wall",
+      "exercised": true,
+      "initialContext": "audit copy / developer console",
+      "observation": "Independent wall and converted room wall inspected.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "measure_distance",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "move_room",
+      "exercised": true,
+      "initialContext": "audit copy / developer console",
+      "observation": "Pavilion moved from y=20 to y=34 with openings.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "move_wall",
+      "exercised": true,
+      "initialContext": "audit copy / developer console",
+      "observation": "Enclosure wall moved dy=1 and back.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "rehost_door",
+      "exercised": true,
+      "initialContext": "audit copy / developer console",
+      "observation": "Pavilion door moved to east wall.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "rehost_window",
+      "exercised": true,
+      "initialContext": "audit copy / developer console",
+      "observation": "Pavilion window moved to west wall.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "rename_project",
+      "exercised": true,
+      "initialContext": "audit copy / developer console",
+      "observation": "Copy named Sukoon House \u2014 Tool Audit Copy; filename mismatch observed.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "resize_room",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "set_active_floor",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": true
+    },
+    {
+      "name": "set_camera",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": true
+    },
+    {
+      "name": "set_door_properties",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "set_exact_dimension",
+      "exercised": true,
+      "initialContext": "audit copy / developer console",
+      "observation": "Temporary pavilion width changed 10 to 12 ft.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "set_exterior_finish",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "set_floor_height",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "set_navigation_mode",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": true
+    },
+    {
+      "name": "set_plot_orientation",
+      "exercised": true,
+      "initialContext": "audit copy / developer console",
+      "observation": "Copy front/access direction changed North to East.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "set_roof",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "set_wall_finish",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "set_window_properties",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "split_room_with_wall",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "switch_view",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": true
+    },
+    {
+      "name": "take_snapshot",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": true
+    },
+    {
+      "name": "update_balcony",
+      "exercised": true,
+      "initialContext": "audit copy / developer console",
+      "observation": "Copy terrace finish and railing style changed.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "update_facade_feature",
+      "exercised": true,
+      "initialContext": "audit copy / developer console",
+      "observation": "Copy canopy projection and finish changed.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "update_opening",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "update_room",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "update_room_vertices",
+      "exercised": true,
+      "initialContext": "audit copy / developer console",
+      "observation": "Stranded window rejected; polygon edit succeeded after removing window.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "update_stairs",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "update_wall",
+      "exercised": true,
+      "initialContext": "audit copy / developer console",
+      "observation": "Enclosure wall thickness changed to 0.55 ft.",
+      "retainedFinalNativeCall": false
+    },
+    {
+      "name": "validate_layout",
+      "exercised": true,
+      "initialContext": "main house / native WebMCP",
+      "observation": "Exercised during the live house build, inspection, refinement, walkthrough, or export.",
+      "retainedFinalNativeCall": true
+    }
+  ]
+}

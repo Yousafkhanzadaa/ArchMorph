@@ -72,7 +72,7 @@ export function buildWallSurfaces(project: Project, spatial: SpatialModel, ceili
     const side = wall?.roomSides[0]?.side;
     const outward: Vec3 = side === "north" ? [0, 0, -1] : side === "south" ? [0, 0, 1] : side === "east" ? [1, 0, 0] : [-1, 0, 0];
     const exteriorFace = wall?.exterior && normal[0] * outward[0] + normal[2] * outward[2] >= -0.1;
-    return { elementId: wall?.id, finish: exteriorFace ? wall.finish ?? project.exteriorFinish : "interior" };
+    return { elementId: wall?.id, finish: wall && !wall.roomIds.length && wall.finish ? wall.finish : exteriorFace ? wall.finish ?? project.exteriorFinish : "interior" };
   }, (volume, axis) => axis === 1 ? [] : candidates(volume).flatMap(wall => axis === 0 ? [wall.x1, wall.x2] : [wall.y1, wall.y2]));
 }
 
@@ -177,6 +177,9 @@ export function buildParapetSurfaces(project: Project, coping = false) {
 }
 
 export function presentationBounds(project: Project, focusId?: string): PresentationBounds {
+  if (focusId && project.floors.some(f => f.id === focusId)) {
+    return presentationBounds({ ...project, siteBoundary: { ...project.siteBoundary, enabled: false }, roof: { ...project.roof, parapetEnabled: project.roof.parapetEnabled && project.floors.find(f => f.id === focusId)?.elevation === Math.max(...project.floors.map(f => f.elevation)) }, rooms: project.rooms.filter(r => r.floorId === focusId), walls: project.walls.filter(w => w.floorId === focusId), balconies: project.balconies.filter(b => b.floorId === focusId), stairs: project.stairs.filter(s => s.floorId === focusId), facadeFeatures: project.facadeFeatures.filter(f => project.walls.find(w => w.id === f.wallId)?.floorId === focusId) });
+  }
   const min: Vec3 = [Infinity, Infinity, Infinity], max: Vec3 = [-Infinity, -Infinity, -Infinity];
   const include = (x: number, y: number, z: number) => { [x, y, z].forEach((value, axis) => { min[axis] = Math.min(min[axis], value); max[axis] = Math.max(max[axis], value); }); };
   const level = (floorId: string) => project.floors.find(floor => floor.id === floorId);

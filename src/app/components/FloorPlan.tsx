@@ -1,5 +1,6 @@
 "use client";
 
+import { doorArcSweepFlag, doorSwingSign } from "@/lib/door-geometry";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import {
   type Balcony,
@@ -23,6 +24,7 @@ import {
   stairPlanPoint,
   wallLength,
 } from "@/lib/architecture";
+import { lowerFloorReference, samePoint, snapWallPoint } from "@/lib/wall-planning";
 
 export type CanvasTool = "select" | "room" | "wall" | "door" | "window" | "stair" | "measure" | "balcony";
 
@@ -41,6 +43,7 @@ type DragState =
   | { kind: "pan"; start: Point; origin: Point }
   | { kind: "edit-room-vertex"; id: string; vertexIndex: number; room: Room }
   | { kind: "move-wall"; id: string; start: Point; origin: Wall; wall: Wall }
+  | { kind: "edit-wall-end"; id: string; end: "start" | "end"; wall: Wall }
   | { kind: "move-stair"; id: string; start: Point; origin: Stair; stair: Stair }
   | { kind: "move-balcony"; id: string; start: Point; origin: Point; balcony: Balcony }
   | SpanDragState;
@@ -53,6 +56,8 @@ type FloorPlanProps = {
   tool: CanvasTool;
   roomType: RoomType;
   showLabels?: boolean;
+  showLowerFloor?: boolean;
+  onToggleLowerFloor?: () => void;
   selectedId?: string;
   connectionRoomIds?: string[];
   connectionElementIds?: string[];
@@ -63,7 +68,8 @@ type FloorPlanProps = {
   onResizeRoom: (id: string, width: number, length: number, anchor?: "north-west" | "north-east" | "south-west" | "south-east") => void;
   onMoveOpening: (id: string, offset: number) => void;
   onUpdateRoomVertices: (id: string, vertices: Point[]) => void;
-  onAddWall: (start: Point, end: Point) => void;
+  onAddWall: (start: Point, end: Point) => boolean;
+  onUpdateWall: (wall: Wall) => void;
   onMoveWall: (id: string, dx: number, dy: number) => void;
   onAddOpening: (kind: "door" | "window", wallId: string, offset: number) => void;
   onAddStair: (point: Point) => void;
@@ -96,6 +102,8 @@ export default function FloorPlan({
   tool,
   roomType,
   showLabels = true,
+  showLowerFloor = true,
+  onToggleLowerFloor,
   selectedId,
   connectionRoomIds,
   connectionElementIds,
@@ -107,6 +115,7 @@ export default function FloorPlan({
   onMoveOpening,
   onUpdateRoomVertices,
   onAddWall,
+  onUpdateWall,
   onMoveWall,
   onAddOpening,
   onAddStair,
@@ -121,17 +130,23 @@ export default function FloorPlan({
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const [panMode, setPanMode] = useState(false);
   const [measurement, setMeasurement] = useState<{ start: Point; end: Point }>();
+  const [continuousWalls, setContinuousWalls] = useState(true);
+  const [chainOrigin, setChainOrigin] = useState<Point>();
   const gestureContext = `${floorId}:${tool}:${project.id}`;
   const [activeGestureContext, setActiveGestureContext] = useState(gestureContext);
   // Switching tools, changing floors, or pressing Escape abandons a span waiting for its second click.
   if (activeGestureContext !== gestureContext) {
     setActiveGestureContext(gestureContext);
     setDrag(undefined);
+    setChainOrigin(undefined);
     setAlignmentGuides({});
   }
   const localSvgRef = useRef<SVGSVGElement | null>(null);
   const rooms = project.rooms.filter((room) => room.floorId === floorId);
   const walls = project.walls.filter((wall) => wall.floorId === floorId);
+  const lowerFloor = lowerFloorReference(project, floorId);
+  const lowerWalls = showLowerFloor ? project.walls.filter(wall => wall.floorId === lowerFloor?.id) : [];
+  const lowerRooms = showLowerFloor ? project.rooms.filter(room => room.floorId === lowerFloor?.id) : [];
   const openings = project.openings.filter((opening) => opening.floorId === floorId);
   const stairs = project.stairs.filter((stair) => stair.floorId === floorId);
   const balconies = project.balconies.filter((balcony) => balcony.floorId === floorId);
@@ -165,7 +180,7 @@ export default function FloorPlan({
     if (svgRef && "current" in svgRef) svgRef.current = node;
   };
 
-  const toPoint = (event: ReactPointerEvent<SVGElement>): Point => {
+  const toPoint = (event: ReactPointerEvent<SVGElement>, grid = true): Point => {
     const svg = localSvgRef.current;
     if (!svg) return { x: 0, y: 0 };
     const point = svg.createSVGPoint();
@@ -173,7 +188,7 @@ export default function FloorPlan({
     point.y = event.clientY;
     const matrix = svg.getScreenCTM()?.inverse();
     const transformed = matrix ? point.matrixTransform(matrix) : point;
-    return { x: snap(transformed.x), y: snap(transformed.y) };
+    return grid ? { x: snap(transformed.x), y: snap(transformed.y) } : { x: transformed.x, y: transformed.y };
   };
 
   const roomForRender = (room: Room) => {
@@ -226,40 +241,25 @@ export default function FloorPlan({
     return { ...room, x, y, vertices: room.vertices?.map((point) => ({ x: round(point.x + dx), y: round(point.y + dy) })) };
   };
 
-  const alignWallPoint = (point: Point, start: Point) => {
-    const endpoints = walls.flatMap((wall) => [{ x: wall.x1, y: wall.y1 }, { x: wall.x2, y: wall.y2 }]);
-    const nearest = endpoints
-      .map((endpoint) => ({ endpoint, distance: Math.hypot(endpoint.x - point.x, endpoint.y - point.y) }))
-      .filter((item) => item.distance <= 0.55)
-      .sort((a, b) => a.distance - b.distance)[0];
-    const wallGuides = guidesExcluding();
-    const guidedX = nearestGuide(point.x, wallGuides.vertical);
-    const guidedY = nearestGuide(point.y, wallGuides.horizontal);
-    let current = nearest?.endpoint ?? { x: guidedX ? guidedX.edge : point.x, y: guidedY ? guidedY.edge : point.y };
-    const dx = current.x - start.x;
-    const dy = current.y - start.y;
-    if (Math.abs(dx) > Math.abs(dy) * 2.5) current = { x: current.x, y: start.y };
-    else if (Math.abs(dy) > Math.abs(dx) * 2.5) current = { x: start.x, y: current.y };
-    else if (!nearest) {
-      const length = Math.hypot(dx, dy);
-      const angle = Math.atan2(dy, dx);
-      const snappedAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
-      const angleDelta = Math.abs(Math.atan2(Math.sin(angle - snappedAngle), Math.cos(angle - snappedAngle)));
-      if (length > 0 && angleDelta <= Math.PI / 18) {
-        current = { x: start.x + Math.cos(snappedAngle) * length, y: start.y + Math.sin(snappedAngle) * length };
-      }
-    }
-    setAlignmentGuides({ vertical: current.x === start.x ? start.x : undefined, horizontal: current.y === start.y ? start.y : undefined });
-    return { x: snap(current.x), y: snap(current.y) };
+  const alignWallPoint = (point: Point, start?: Point, ignoreWallId?: string) => {
+    const current = snapWallPoint(point, [...walls.filter(w => w.id !== ignoreWallId), ...lowerWalls], start);
+    setAlignmentGuides({ vertical: start && current.x === start.x ? start.x : undefined, horizontal: start && current.y === start.y ? start.y : undefined });
+    return current;
   };
 
   const completeSpan = (span: SpanDragState) => {
     const length = Math.hypot(span.current.x - span.start.x, span.current.y - span.start.y);
-    if (length >= MINIMUM_SPAN[span.kind]) {
-      if (span.kind === "draw-wall") onAddWall(span.start, span.current);
-      else setMeasurement({ start: span.start, end: span.current });
-    }
+    if (length < MINIMUM_SPAN[span.kind]) return;
+    if (span.kind === "draw-wall") {
+      if (!onAddWall(span.start, span.current)) return;
+      if (continuousWalls && !(chainOrigin && samePoint(chainOrigin, span.current))) {
+        setDrag({ kind: "draw-wall", start: span.current, current: span.current, armed: true });
+        setAlignmentGuides({});
+        return;
+      }
+    } else setMeasurement({ start: span.start, end: span.current });
     setDrag(undefined);
+    setChainOrigin(undefined);
     setAlignmentGuides({});
   };
 
@@ -269,7 +269,8 @@ export default function FloorPlan({
    * Select, a wall under Door — stop propagation; everything else falls through to here.
    */
   const handlePlanPointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
-    const point = toPoint(event);
+    if (event.button !== 0 && event.button !== 1) return;
+    const point = toPoint(event, tool !== "wall");
     if (panMode || event.shiftKey || event.button === 1) { event.currentTarget.setPointerCapture(event.pointerId); setDrag({ kind: "pan", start: point, origin: pan }); return; }
     onSelect(undefined);
     if (tool === "room") { onCreateRoom(point, roomType); return; }
@@ -284,7 +285,9 @@ export default function FloorPlan({
     }
     event.currentTarget.setPointerCapture(event.pointerId);
     if (tool === "measure") setMeasurement(undefined);
-    setDrag({ kind: tool === "wall" ? "draw-wall" : "measure", start: point, current: point });
+    const start = tool === "wall" ? alignWallPoint(point) : point;
+    if (tool === "wall") setChainOrigin(start);
+    setDrag({ kind: tool === "wall" ? "draw-wall" : "measure", start, current: start });
   };
 
   const handleStairPointerDown = (event: ReactPointerEvent<SVGGElement>, stair: Stair, linked: boolean) => {
@@ -348,7 +351,7 @@ export default function FloorPlan({
 
   const handlePointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (!drag) return;
-    const point = toPoint(event);
+    const point = toPoint(event, drag.kind !== "draw-wall" && drag.kind !== "edit-wall-end");
     if (drag.kind === "move-room") {
       const dx = point.x - drag.start.x;
       const dy = point.y - drag.start.y;
@@ -404,13 +407,17 @@ export default function FloorPlan({
       setDrag({ ...drag, room: { ...drag.room, ...bounds, shape: "custom", vertices } });
     } else if (drag.kind === "draw-wall" || drag.kind === "measure") {
       setDrag({ ...drag, current: drag.kind === "draw-wall" ? alignWallPoint(point, drag.start) : point });
+    } else if (drag.kind === "edit-wall-end") {
+      const fixedEnd = drag.end === "start" ? { x: drag.wall.x2, y: drag.wall.y2 } : { x: drag.wall.x1, y: drag.wall.y1 };
+      const pointToApply = alignWallPoint(point, fixedEnd, drag.id);
+      setDrag({ ...drag, wall: { ...drag.wall, ...(drag.end === "start" ? { x1: pointToApply.x, y1: pointToApply.y } : { x2: pointToApply.x, y2: pointToApply.y }) } });
     } else if (drag.kind === "move-wall") {
       const dx = point.x - drag.start.x;
       const dy = point.y - drag.start.y;
       setDrag({ ...drag, wall: {
         ...drag.origin,
-        x1: snap(drag.origin.x1 + dx), y1: snap(drag.origin.y1 + dy),
-        x2: snap(drag.origin.x2 + dx), y2: snap(drag.origin.y2 + dy),
+        x1: round(drag.origin.x1 + dx), y1: round(drag.origin.y1 + dy),
+        x2: round(drag.origin.x2 + dx), y2: round(drag.origin.y2 + dy),
       } });
     } else if (drag.kind === "move-stair") {
       const dx = point.x - drag.start.x;
@@ -450,6 +457,7 @@ export default function FloorPlan({
     }
     if (drag.kind === "move-opening" && drag.opening.offset !== drag.origin.offset) onMoveOpening(drag.id, drag.opening.offset);
     if (drag.kind === "edit-room-vertex") onUpdateRoomVertices(drag.id, roomVertices(drag.room));
+    if (drag.kind === "edit-wall-end") onUpdateWall(drag.wall);
     if (drag.kind === "move-wall" && (drag.wall.x1 !== drag.origin.x1 || drag.wall.y1 !== drag.origin.y1 || drag.wall.x2 !== drag.origin.x2 || drag.wall.y2 !== drag.origin.y2)) {
       onMoveWall(drag.id, drag.wall.x1 - drag.origin.x1, drag.wall.y1 - drag.origin.y1);
     }
@@ -480,7 +488,7 @@ export default function FloorPlan({
       onPointerDown={handlePlanPointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={finishPointerAction}
-      onPointerCancel={() => { setDrag(undefined); setAlignmentGuides({}); }}
+      onPointerCancel={() => { setDrag(undefined); setChainOrigin(undefined); setAlignmentGuides({}); }}
     >
       <desc id="floor-plan-description">Interactive drawing canvas. Use the keyboard-accessible Elements list in the Design library to select rooms, openings, and stairs without a pointer.</desc>
       <defs>
@@ -494,7 +502,7 @@ export default function FloorPlan({
         <filter id="room-shadow" x="-20%" y="-20%" width="140%" height="140%">
           <feDropShadow dx="0" dy="0.3" stdDeviation="0.35" floodColor="#1e2722" floodOpacity="0.16" />
         </filter>
-        <filter id="focus-glow" x="-30%" y="-30%" width="160%" height="160%">
+        <filter id="focus-glow" filterUnits="userSpaceOnUse" x={-8} y={-8} width={project.plot.width + 16} height={project.plot.length + 16}>
           <feDropShadow dx="0" dy="0" stdDeviation="0.55" floodColor="#d35f35" floodOpacity="0.9" />
         </filter>
       </defs>
@@ -555,6 +563,11 @@ export default function FloorPlan({
         <path d="M0,-1.5 L-0.75,1.5 L0,0.95 L0.75,1.5 Z" fill="#25322b" />
       </g>
 
+      {lowerFloor && showLowerFloor && <g className="lower-floor-underlay" pointerEvents="none" aria-hidden="true">
+        {lowerRooms.map(room => <polygon key={room.id} points={roomVertices(room).map(p => `${p.x},${p.y}`).join(" ")} fill="#577989" fillOpacity="0.08" stroke="#577989" strokeWidth="0.12" strokeDasharray="0.5 0.35" />)}
+        {lowerWalls.map(wall => <line key={wall.id} x1={wall.x1} y1={wall.y1} x2={wall.x2} y2={wall.y2} stroke="#577989" strokeOpacity="0.45" strokeWidth={wall.thickness} strokeDasharray="0.5 0.35" />)}
+      </g>}
+
       {rooms.map((rawRoom) => {
         const room = roomForRender(rawRoom);
         const selected = room.id === selectedId;
@@ -568,7 +581,7 @@ export default function FloorPlan({
         const maximumCharacters = selected ? 18 : Math.min(18, labelCapacity);
         const visibleName = roomLabel(room).length > maximumCharacters ? `${roomLabel(room).slice(0, Math.max(4, maximumCharacters - 1))}…` : roomLabel(room);
         return (
-          <g key={room.id} className={`room-group ${selected ? "is-selected" : ""}`}>
+          <g key={room.id} data-room-id={room.id} className={`room-group ${selected ? "is-selected" : ""}`}>
             <title>{room.name} · {area} sq ft · {room.width} × {room.length} ft</title>
             <polygon
               points={vertices.map((point) => `${point.x},${point.y}`).join(" ")}
@@ -596,7 +609,7 @@ export default function FloorPlan({
 
       <g className="walls">
         {walls.map((rawWall) => {
-          const wall = drag?.kind === "move-wall" && drag.id === rawWall.id ? drag.wall : rawWall;
+          const wall = (drag?.kind === "move-wall" || drag?.kind === "edit-wall-end") && drag.id === rawWall.id ? drag.wall : rawWall;
           const selected = wall.id === selectedId;
           const focused = wall.id === project.view.focusElementId;
           return (
@@ -706,12 +719,12 @@ export default function FloorPlan({
                 (() => {
                   const hingeX = opening.hingeSide === "end" ? opening.width / 2 : -opening.width / 2;
                   const closedEndX = -hingeX;
-                  const swingSign = (opening.swingDirection === "outward" ? 1 : -1) * (opening.handing === "right" ? -1 : 1);
+                  const swingSign = doorSwingSign(project, opening);
                   const openEndY = swingSign * opening.width;
                   const isClosed = opening.state === "closed";
                   return <>
                     <line x1={hingeX} y1="0" x2={isClosed ? closedEndX : hingeX} y2={isClosed ? 0 : openEndY} stroke="#6d5549" strokeWidth="0.12" />
-                    {!isClosed && <path d={`M ${closedEndX} 0 A ${opening.width} ${opening.width} 0 0 ${swingSign > 0 ? 1 : 0} ${hingeX} ${openEndY}`} fill="none" stroke="#9b7a68" strokeWidth="0.08" strokeDasharray="0.28 0.18" />}
+                    {!isClosed && <path d={`M ${closedEndX} 0 A ${opening.width} ${opening.width} 0 0 ${doorArcSweepFlag(project, opening)} ${hingeX} ${openEndY}`} fill="none" stroke="#9b7a68" strokeWidth="0.08" strokeDasharray="0.28 0.18" />}
                   </>;
                 })()
               )}
@@ -787,7 +800,7 @@ export default function FloorPlan({
         <g pointerEvents="none">
           <line x1={previewWall.start.x} y1={previewWall.start.y} x2={previewWall.current.x} y2={previewWall.current.y} className="preview-wall" />
           {previewWall.armed && <circle cx={previewWall.start.x} cy={previewWall.start.y} r="0.3" className="span-anchor" />}
-          <text x={(previewWall.start.x + previewWall.current.x) / 2} y={(previewWall.start.y + previewWall.current.y) / 2 - 0.8} textAnchor="middle" className="measurement-text">
+          <text x={(previewWall.start.x + previewWall.current.x) / 2} y={(previewWall.start.y + previewWall.current.y) / 2 - 0.8} textAnchor="middle" className="measurement-text wall-length-preview">
             {round(Math.hypot(previewWall.current.x - previewWall.start.x, previewWall.current.y - previewWall.start.y), 1)}&apos;
           </text>
         </g>
@@ -814,6 +827,10 @@ export default function FloorPlan({
       )}
 
       {connectionRoomIds && <g className="connection-highlights" pointerEvents="none">{rooms.filter(room => connectionRoomIds.includes(room.id)).map(room => <polygon key={room.id} points={roomVertices(room).map(point => `${point.x},${point.y}`).join(" ")} fill="none" stroke="#2d805b" strokeWidth="0.3" strokeDasharray="0.5 0.25" />)}{openings.filter(opening => connectionElementIds?.includes(opening.id)).map(opening => { const center = openingGeometry(opening, walls); return center ? <circle key={opening.id} cx={center.x} cy={center.y} r={1.2} fill="none" stroke="#2d805b" strokeWidth="0.2" /> : null; })}<text x="0" y={project.plot.length + 5} className="measurement-text">Entrance connections · schematic</text></g>}
+      {tool === "select" && walls.filter(w => w.id === selectedId && !w.roomIds.length).map(original => {
+        const wall = drag?.kind === "edit-wall-end" && drag.id === original.id ? drag.wall : original;
+        return <g key={wall.id} className="wall-edit-handles">{(["start", "end"] as const).map(end => <circle key={end} cx={end === "start" ? wall.x1 : wall.x2} cy={end === "start" ? wall.y1 : wall.y2} r="0.5" className="resize-handle" onPointerDown={event => { event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId); setDrag({ kind: "edit-wall-end", id: wall.id, end, wall }); }}><title>Edit wall {end} endpoint</title></circle>)}</g>;
+      })}
       {selectedRoom && tool === "select" && (() => {
         const room = roomForRender(selectedRoom);
         const vertices = roomVertices(room);
@@ -836,6 +853,10 @@ export default function FloorPlan({
         </text>
       )}
     </svg>
+    {(tool === "wall" || lowerFloor) && <div className="plan-context-controls">
+      {tool === "wall" && <div className="wall-drawing-controls"><label><input type="checkbox" checked={continuousWalls} onChange={event => { setContinuousWalls(event.target.checked); setDrag(undefined); setChainOrigin(undefined); }} />Continuous walls</label><button type="button" disabled={drag?.kind !== "draw-wall"} onClick={() => { setDrag(undefined); setChainOrigin(undefined); setAlignmentGuides({}); }}>Finish</button></div>}
+      {lowerFloor && <button type="button" className="lower-floor-toggle" aria-pressed={showLowerFloor} onClick={onToggleLowerFloor}>{showLowerFloor ? "Hide" : "Show"} {lowerFloor.name} below</button>}
+    </div>}
     <div className="plan-zoom-controls" role="group" aria-label="Plan navigation"><button type="button" aria-label="Zoom out plan" disabled={zoom <= 1} onClick={() => setZoom(value => Math.max(1, value / 1.25))}>−</button><button type="button" aria-label="Reset plan zoom" onClick={resetViewport}>{Math.round(zoom * 100)}%</button><button type="button" aria-label="Zoom in plan" disabled={zoom >= 6} onClick={() => setZoom(value => Math.min(6, value * 1.25))}>+</button><button type="button" aria-pressed={panMode} onClick={() => setPanMode(value => !value)}>Pan</button></div>
     </>
   );

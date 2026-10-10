@@ -10,7 +10,11 @@
     "test:architecture": "node --experimental-strip-types scripts/architecture-regression.ts",
     "test:webmcp": "node --experimental-strip-types scripts/webmcp-regression.ts",
     "test:model": "node --experimental-strip-types scripts/model-presentation-regression.ts",
-    "test:studio": "node --experimental-strip-types scripts/studio-priority-regression.ts"
+    "test:studio": "node --experimental-strip-types scripts/studio-priority-regression.ts",
+    "test:audit": "node --experimental-strip-types scripts/audit-fixes-regression.ts",
+    "test:pointer": "node --experimental-strip-types scripts/pointer-drag-regression.ts",
+    "test:walk": "node --experimental-strip-types scripts/walk-session-regression.ts",
+    "test:walls": "node --experimental-strip-types scripts/walls-regression.ts"
   },
   "dependencies": {
     "@types/three": "^0.185.4",

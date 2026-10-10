@@ -1,0 +1,51 @@
+{
+  "verifiedAt": "2026-10-10T19:50:48.964Z",
+  "projectId": "project-f366f503",
+  "beforeDoor": {
+    "pitch": "0.022",
+    "x": "25.00",
+    "yaw": "3.043",
+    "z": "15.23"
+  },
+  "closedDoor": {
+    "focused": true,
+    "pitch": "0.022",
+    "x": "25.00",
+    "yaw": "3.043",
+    "z": "15.23"
+  },
+  "openedDoor": {
+    "focused": true,
+    "pitch": "0.022",
+    "x": "25.00",
+    "yaw": "3.043",
+    "z": "15.23"
+  },
+  "upperFloorBeforeMovement": {
+    "focused": true,
+    "navigationMode": "walk",
+    "view": "{\"mode\":\"3d\",\"navigationMode\":\"walk\",\"activeFloorId\":\"floor-e0df61af\",\"cameraPreset\":\"front-right\",\"walkStartRoomId\":\"room-13e2bc6b\"}",
+    "x": "13.00",
+    "z": "21.00"
+  },
+  "upperFloorAfterMovement": {
+    "focused": true,
+    "x": "13.00",
+    "z": "23.00"
+  },
+  "lockResult": {
+    "pointerLockUnavailable": "true",
+    "pointerLocked": "false"
+  },
+  "final": {
+    "focused": true,
+    "pitch": "0.000",
+    "projectId": "project-f366f503",
+    "version": "9",
+    "x": "25.00",
+    "yaw": "-0.000",
+    "z": "15.45"
+  },
+  "errors": [],
+  "limitation": "Embedded browser refuses pointer lock. Active lock retention, stair-arrival pose, held keys, Escape/lock loss, Walk exit, project switching and unmount are covered by test:walk using production effect/cleanup/handlers with browser doubles."
+}

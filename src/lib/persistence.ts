@@ -10,6 +10,18 @@ export const PROJECT_SCHEMA_VERSION = 7;
 export const PROJECT_STORAGE_KEY = "archmorph.project-library.v1";
 const LIBRARY_SCHEMA_VERSION = 2;
 export const MAX_CHECKPOINTS = 8;
+export type ProjectHistory = { past: Project[]; future: Project[] };
+const ACTIVE_TAB_KEY = "archmorph.active-project";
+const HISTORY_BYTES = 500_000;
+function tabProjectId(id?: string) {
+  try { if (id) window.sessionStorage?.setItem(ACTIVE_TAB_KEY, id); return window.sessionStorage?.getItem(ACTIVE_TAB_KEY); } catch { return undefined; }
+}
+function boundedHistory(history: ProjectHistory): ProjectHistory {
+  const result = { past: history.past.slice(-30).map(architecturalProjectSnapshot), future: history.future.slice(-30).map(architecturalProjectSnapshot) };
+  [...result.past, ...result.future].forEach(p => { p.activity = p.activity.slice(0, 1); });
+  while (new TextEncoder().encode(JSON.stringify(result)).byteLength > HISTORY_BYTES && (result.past.length || result.future.length)) { if (result.past.length >= result.future.length) result.past.shift(); else result.future.shift(); }
+  return result;
+}
 
 export type SavedProjectSummary = {
   id: string;
@@ -20,7 +32,7 @@ export type SavedProjectSummary = {
   floorCount: number;
 };
 export type ProjectCheckpoint = { id: string; name: string; createdAt: string; project: Project };
-type ProjectRecord = { project: Project; savedAt: string; checkpoints: ProjectCheckpoint[] };
+type ProjectRecord = { project: Project; savedAt: string; checkpoints: ProjectCheckpoint[]; history?: ProjectHistory };
 type ProjectLibrary = { schemaVersion: number; activeProjectId?: string; projects: ProjectRecord[] };
 export type ArchMorphProjectDocument = {
   format: "archmorph-project";
@@ -66,6 +78,7 @@ function readLibrary(): ProjectLibrary {
         return {
           project,
           savedAt: record.savedAt ?? project.updatedAt,
+          history: record.history ? { past: record.history.past.map(migrateProject), future: record.history.future.map(migrateProject) } : undefined,
           checkpoints: (record.checkpoints ?? []).map((checkpoint) => ({ ...checkpoint, project: migrateProject(checkpoint.project) })),
         };
       }),
@@ -96,7 +109,7 @@ export function architecturalProjectSnapshot(project: Project): Project {
   return copy;
 }
 
-export async function saveProjectLocally(project: Project, expectedRevision = project.revisionId) {
+export async function saveProjectLocally(project: Project, expectedRevision = project.revisionId, history?: ProjectHistory) {
   const snapshot = architecturalProjectSnapshot(project);
   return withLibraryLock(() => {
     const library = readLibrary();
@@ -106,18 +119,21 @@ export async function saveProjectLocally(project: Project, expectedRevision = pr
       throw new LocalSaveError("conflict", "This home was changed or deleted in another tab. Your draft is kept here. Save it as a copy or load the latest saved home.");
     }
     snapshot.revisionId = createId("revision");
-    const record = { project: snapshot, savedAt: new Date().toISOString(), checkpoints: existing?.checkpoints ?? [] };
+    const record = { project: snapshot, savedAt: new Date().toISOString(), checkpoints: existing?.checkpoints ?? [], history: history ? boundedHistory(history) : existing?.history };
     if (index >= 0) library.projects[index] = record;
     else library.projects.push(record);
-    library.activeProjectId = snapshot.id;
+    library.activeProjectId ??= snapshot.id;
+    if (!existing) { library.activeProjectId = snapshot.id; tabProjectId(snapshot.id); }
     writeLibrary(library);
     return snapshot;
   });
 }
 export function loadLatestProject() {
   const library = readLibrary();
-  const record = library.projects.find((item) => item.project.id === library.activeProjectId)
+  const record = library.projects.find((item) => item.project.id === tabProjectId())
+    ?? library.projects.find((item) => item.project.id === library.activeProjectId)
     ?? [...library.projects].sort((a, b) => b.savedAt.localeCompare(a.savedAt))[0];
+  if (record) tabProjectId(record.project.id);
   return record ? cloneProject(record.project) : undefined;
 }
 export function loadSavedProject(projectId: string) {
@@ -131,9 +147,14 @@ export async function activateSavedProject(projectId: string) {
     const record = library.projects.find((item) => item.project.id === projectId);
     if (!record) throw new Error("Saved project not found on this device.");
     library.activeProjectId = projectId;
+    tabProjectId(projectId);
     writeLibrary(library);
     return cloneProject(record.project);
   });
+}
+export function loadProjectHistory(projectId: string): ProjectHistory {
+  const history = readLibrary().projects.find(item => item.project.id === projectId)?.history;
+  return history ? { past: history.past.map(cloneProject), future: history.future.map(cloneProject) } : { past: [], future: [] };
 }
 export function listSavedProjects(): SavedProjectSummary[] {
   return readLibrary().projects.map(({ project }) => ({

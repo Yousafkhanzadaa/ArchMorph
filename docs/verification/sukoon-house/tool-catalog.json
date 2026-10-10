@@ -1,0 +1,2408 @@
+[
+  {
+    "name": "add_balcony",
+    "title": "",
+    "description": "Add a rectangular balcony or terrace slab with a bounded lightweight railing system on a floor.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "finish": {
+          "enum": [
+            "stucco",
+            "brick",
+            "concrete",
+            "timber",
+            "metal"
+          ],
+          "type": "string"
+        },
+        "floorId": {
+          "description": "Stable floor identifier returned by inspect_project.",
+          "type": "string"
+        },
+        "kind": {
+          "default": "balcony",
+          "enum": [
+            "balcony",
+            "terrace"
+          ],
+          "type": "string"
+        },
+        "length": {
+          "minimum": 3,
+          "type": "number"
+        },
+        "name": {
+          "type": "string"
+        },
+        "railingEnabled": {
+          "type": "boolean"
+        },
+        "railingHeight": {
+          "maximum": 6,
+          "minimum": 2,
+          "type": "number"
+        },
+        "railingSides": {
+          "items": {
+            "enum": [
+              "north",
+              "east",
+              "south",
+              "west"
+            ],
+            "type": "string"
+          },
+          "maxItems": 4,
+          "minItems": 1,
+          "type": "array"
+        },
+        "railingStyle": {
+          "enum": [
+            "horizontal",
+            "vertical",
+            "solid"
+          ],
+          "type": "string"
+        },
+        "slabThickness": {
+          "maximum": 2,
+          "minimum": 0.25,
+          "type": "number"
+        },
+        "width": {
+          "minimum": 3,
+          "type": "number"
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "floorId",
+        "x",
+        "y",
+        "width",
+        "length"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "add_door",
+    "title": "",
+    "description": "Place a configured door on a canonical wall. Offset is the door center's distance in feet from the wall start point; the same handing, swing, and state drive 2D and 3D.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "handing": {
+          "default": "left",
+          "enum": [
+            "left",
+            "right"
+          ],
+          "type": "string"
+        },
+        "height": {
+          "default": 7,
+          "maximum": 9,
+          "minimum": 6,
+          "type": "number"
+        },
+        "hingeSide": {
+          "default": "start",
+          "enum": [
+            "start",
+            "end"
+          ],
+          "type": "string"
+        },
+        "offset": {
+          "type": "number"
+        },
+        "state": {
+          "default": "open",
+          "enum": [
+            "open",
+            "closed"
+          ],
+          "type": "string"
+        },
+        "swingDirection": {
+          "default": "inward",
+          "enum": [
+            "inward",
+            "outward"
+          ],
+          "type": "string"
+        },
+        "wallId": {
+          "description": "Stable wall identifier returned by inspect_floor, inspect_room, or add_wall.",
+          "type": "string"
+        },
+        "width": {
+          "default": 3,
+          "maximum": 8,
+          "minimum": 2,
+          "type": "number"
+        }
+      },
+      "required": [
+        "wallId",
+        "offset"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "add_facade_feature",
+    "title": "",
+    "description": "Add a frame, canopy, or sunshade hosted by an exterior wall with exact lightweight geometry.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "elevation": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "finish": {
+          "enum": [
+            "stucco",
+            "brick",
+            "concrete",
+            "timber",
+            "metal"
+          ],
+          "type": "string"
+        },
+        "height": {
+          "minimum": 0.1,
+          "type": "number"
+        },
+        "kind": {
+          "enum": [
+            "frame",
+            "canopy",
+            "sunshade"
+          ],
+          "type": "string"
+        },
+        "offset": {
+          "type": "number"
+        },
+        "projection": {
+          "maximum": 8,
+          "minimum": 0.1,
+          "type": "number"
+        },
+        "thickness": {
+          "maximum": 2,
+          "minimum": 0.1,
+          "type": "number"
+        },
+        "wallId": {
+          "description": "Stable wall identifier returned by inspect_floor, inspect_room, or add_wall.",
+          "type": "string"
+        },
+        "width": {
+          "minimum": 1,
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "wallId",
+        "offset",
+        "width"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "add_stairs",
+    "title": "",
+    "description": "Add one straight, quarter-turn L-shaped, or half-turn U-shaped stair between adjacent floors. One semantic stair drives plan, 3D, validation, stairwell opening, circulation, and Walk Mode.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "direction": {
+          "default": "up",
+          "enum": [
+            "up",
+            "down"
+          ],
+          "type": "string"
+        },
+        "floorId": {
+          "description": "Stable floor identifier returned by inspect_project.",
+          "type": "string"
+        },
+        "landingDepth": {
+          "description": "Clear quarter- or half-landing depth in feet; it must be at least the clear flight width.",
+          "minimum": 3,
+          "type": "number"
+        },
+        "length": {
+          "description": "Horizontal run of one flight in feet. Straight stairs require at least 6 ft.",
+          "minimum": 3,
+          "type": "number"
+        },
+        "rotation": {
+          "default": 0,
+          "description": "Quarter-turn plan rotation in degrees.",
+          "enum": [
+            0,
+            90,
+            180,
+            270
+          ],
+          "type": "number"
+        },
+        "stairType": {
+          "default": "straight",
+          "description": "Straight uses one flight; l-shaped uses perpendicular flights and a quarter landing; u-shaped uses parallel return flights and a half landing.",
+          "enum": [
+            "straight",
+            "l-shaped",
+            "u-shaped"
+          ],
+          "type": "string"
+        },
+        "turnSide": {
+          "default": "left",
+          "description": "Direction of the 90- or 180-degree turn while ascending the lower flight.",
+          "enum": [
+            "left",
+            "right"
+          ],
+          "type": "string"
+        },
+        "upperFlightLength": {
+          "description": "Upper-flight run for an L-shaped stair. Omit to match the lower flight.",
+          "minimum": 3,
+          "type": "number"
+        },
+        "wellWidth": {
+          "default": 0.5,
+          "description": "Clear gap between parallel U-shaped flights. Use 0 for a compact dog-leg stair.",
+          "maximum": 8,
+          "minimum": 0,
+          "type": "number"
+        },
+        "width": {
+          "description": "Clear width of one stair flight in feet.",
+          "minimum": 3,
+          "type": "number"
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "floorId",
+        "x",
+        "y",
+        "width",
+        "length"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "add_wall",
+    "title": "",
+    "description": "Add one straight independent wall segment using start and end coordinates in feet.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "floorId": {
+          "description": "Stable floor identifier returned by inspect_project.",
+          "type": "string"
+        },
+        "thickness": {
+          "default": 0.5,
+          "maximum": 2,
+          "minimum": 0.2,
+          "type": "number"
+        },
+        "x1": {
+          "type": "number"
+        },
+        "x2": {
+          "type": "number"
+        },
+        "y1": {
+          "type": "number"
+        },
+        "y2": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "floorId",
+        "x1",
+        "y1",
+        "x2",
+        "y2"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "add_window",
+    "title": "",
+    "description": "Place a configured window on a canonical wall. Width, height, sill, type, operation, and glazing are shared by the 2D and 3D representations.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "clearHeight": {
+          "description": "Known unobstructed opening height when fully open, in feet. Omit if unknown; null clears an existing value.",
+          "exclusiveMinimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "clearWidth": {
+          "description": "Known unobstructed opening width when fully open, in feet. Omit if unknown; null clears an existing value.",
+          "exclusiveMinimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "glazing": {
+          "default": "clear",
+          "enum": [
+            "clear",
+            "low-e",
+            "privacy"
+          ],
+          "type": "string"
+        },
+        "height": {
+          "default": 4,
+          "maximum": 8,
+          "minimum": 1,
+          "type": "number"
+        },
+        "offset": {
+          "type": "number"
+        },
+        "operable": {
+          "description": "Derived from type; a fixed window cannot be operable.",
+          "type": "boolean"
+        },
+        "sillHeight": {
+          "default": 3,
+          "maximum": 8,
+          "minimum": 0,
+          "type": "number"
+        },
+        "solarHeatGainCoefficient": {
+          "description": "Concept SHGC input; verify against a rated product.",
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "uFactor": {
+          "description": "Concept U-factor in Btu/(h·ft²·°F); verify against a rated product.",
+          "maximum": 2,
+          "minimum": 0.1,
+          "type": "number"
+        },
+        "visibleTransmittance": {
+          "description": "Concept visible-transmittance input; verify against a rated product.",
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "wallId": {
+          "description": "Stable wall identifier returned by inspect_floor, inspect_room, or add_wall.",
+          "type": "string"
+        },
+        "width": {
+          "default": 4,
+          "maximum": 12,
+          "minimum": 2,
+          "type": "number"
+        },
+        "windowType": {
+          "default": "fixed",
+          "enum": [
+            "fixed",
+            "casement",
+            "sliding",
+            "awning"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "wallId",
+        "offset"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "adjust_shared_boundary",
+    "title": "",
+    "description": "Adjust the complete shared edge of two aligned rectangular rooms atomically. Both rooms retain at least 3 ft; opening hosts, exterior features, and wall finishes are preserved or the entire edit is rejected.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "neighborRoomId": {
+          "type": "string"
+        },
+        "position": {
+          "description": "New shared edge x or y position in feet, inferred from adjacency.",
+          "type": "number"
+        },
+        "roomId": {
+          "description": "Stable room identifier returned by inspect_floor or create_room.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "roomId",
+        "neighborRoomId",
+        "position"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "calculate_open_area",
+    "title": "",
+    "description": "Calculate open site area outside the gross ground-floor building footprint and the gross site coverage percentage.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "untrustedContentHint": false,
+      "consequentialHint": false
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "calculate_room_area",
+    "title": "",
+    "description": "Calculate the exact polygon area and bounding dimensions of one room from the live project model.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "roomId": {
+          "description": "Stable room identifier returned by inspect_floor or create_room.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "roomId"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "untrustedContentHint": false,
+      "consequentialHint": false
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "calculate_total_area",
+    "title": "",
+    "description": "Return explicitly named net and gross architectural areas for the active floor and whole building, with definitions that avoid ambiguous coverage values.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "untrustedContentHint": false,
+      "consequentialHint": false
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "configure_plot",
+    "title": "",
+    "description": "Configure this project's editable land width, length, setbacks, and front-edge orientation in one canonical transaction. Omitted fields remain unchanged.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "frontSetback": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "leftSetback": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "length": {
+          "minimum": 15,
+          "type": "number"
+        },
+        "orientation": {
+          "enum": [
+            "North",
+            "East",
+            "South",
+            "West"
+          ],
+          "type": "string"
+        },
+        "rearSetback": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "rightSetback": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "width": {
+          "minimum": 15,
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "configure_site_boundary",
+    "title": "",
+    "description": "Configure the plot boundary wall and adjustable front gate, including height, size, position, style, and lightweight finish.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "finish": {
+          "enum": [
+            "stucco",
+            "brick",
+            "concrete",
+            "timber",
+            "metal"
+          ],
+          "type": "string"
+        },
+        "gateEnabled": {
+          "type": "boolean"
+        },
+        "gateHeight": {
+          "maximum": 10,
+          "minimum": 3,
+          "type": "number"
+        },
+        "gateOffset": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "gateStyle": {
+          "enum": [
+            "slatted",
+            "solid"
+          ],
+          "type": "string"
+        },
+        "gateWidth": {
+          "minimum": 3,
+          "type": "number"
+        },
+        "height": {
+          "maximum": 10,
+          "minimum": 2,
+          "type": "number"
+        },
+        "thickness": {
+          "maximum": 2,
+          "minimum": 0.2,
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "create_floor",
+    "title": "",
+    "description": "Create the next building storey and make it active. Use only after the ground-floor layout is established.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "default": 9,
+          "maximum": 16,
+          "minimum": 7,
+          "type": "number"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "create_polygon_room",
+    "title": "",
+    "description": "Create a custom orthogonal room from 4–12 ordered plan vertices. Edges must be horizontal or vertical and cannot cross.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "floorId": {
+          "description": "Stable floor identifier returned by inspect_project.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "roomType": {
+          "enum": [
+            "Living Room",
+            "Kitchen",
+            "Bedroom",
+            "Bathroom",
+            "Garage",
+            "Office",
+            "Dining Room",
+            "Storage",
+            "Courtyard",
+            "Custom"
+          ],
+          "type": "string"
+        },
+        "vertices": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "type": "object"
+          },
+          "maxItems": 12,
+          "minItems": 4,
+          "type": "array"
+        }
+      },
+      "required": [
+        "floorId",
+        "name",
+        "roomType",
+        "vertices"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "create_room",
+    "title": "",
+    "description": "Create one rectangular, L-, T-, or U-shaped residential room on a floor using real dimensions in feet. Its canonical boundary walls appear immediately in the shared editor.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "floorId": {
+          "description": "Stable floor identifier returned by inspect_project.",
+          "type": "string"
+        },
+        "length": {
+          "description": "Room length in feet.",
+          "minimum": 3,
+          "type": "number"
+        },
+        "name": {
+          "description": "Visible room name, such as Bedroom 2.",
+          "type": "string"
+        },
+        "roomType": {
+          "enum": [
+            "Living Room",
+            "Kitchen",
+            "Bedroom",
+            "Bathroom",
+            "Garage",
+            "Office",
+            "Dining Room",
+            "Storage",
+            "Courtyard",
+            "Custom"
+          ],
+          "type": "string"
+        },
+        "shape": {
+          "default": "rectangle",
+          "description": "Lightweight orthogonal footprint preset.",
+          "enum": [
+            "rectangle",
+            "l-shape",
+            "t-shape",
+            "u-shape"
+          ],
+          "type": "string"
+        },
+        "width": {
+          "description": "Room width in feet.",
+          "minimum": 3,
+          "type": "number"
+        },
+        "x": {
+          "description": "Horizontal position in feet from the plot's left edge.",
+          "type": "number"
+        },
+        "y": {
+          "description": "Position in feet from the front plot boundary.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "floorId",
+        "name",
+        "roomType",
+        "x",
+        "y",
+        "width",
+        "length"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "create_room_from_walls",
+    "title": "",
+    "description": "Convert a simple closed orthogonal enclosure of 4–12 independent walls into a room and slab, preserving wall IDs, thickness, finishes, and valid openings atomically. Branched networks and overlaps are rejected.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "roomType": {
+          "enum": [
+            "Living Room",
+            "Kitchen",
+            "Bedroom",
+            "Bathroom",
+            "Garage",
+            "Office",
+            "Dining Room",
+            "Storage",
+            "Courtyard",
+            "Custom"
+          ],
+          "type": "string"
+        },
+        "wallId": {
+          "description": "Stable wall identifier returned by inspect_floor, inspect_room, or add_wall.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "wallId",
+        "name",
+        "roomType"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "delete_balcony",
+    "title": "",
+    "description": "Delete one balcony or terrace and its derived slab and railing representations.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "balconyId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "balconyId"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "delete_facade_feature",
+    "title": "",
+    "description": "Delete one hosted façade frame, canopy, or sunshade from the shared model.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "featureId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "featureId"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "delete_opening",
+    "title": "",
+    "description": "Delete a door or window from the shared plan. Its 2D symbol, real 3D wall cutout, frame or panel, and navigable opening update together.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "openingId": {
+          "description": "Stable door or window identifier returned by inspect_floor.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "openingId"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "delete_room",
+    "title": "",
+    "description": "Delete one room and its derived boundary walls and openings. The transaction is recorded and can be undone in the editor.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "roomId": {
+          "description": "Stable room identifier returned by inspect_floor or create_room.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "roomId"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "delete_stairs",
+    "title": "",
+    "description": "Delete a staircase. Its plan symbol, 3D flights, stairwell void, circulation edge, and Walk Mode route are removed together.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "stairId": {
+          "description": "Stable stair identifier returned by inspect_floor or add_stairs.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stairId"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "delete_wall",
+    "title": "",
+    "description": "Delete an independent wall and any openings it hosts. Canonical room-boundary walls cannot be deleted directly; change the room instead.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "wallId": {
+          "description": "Stable wall identifier returned by inspect_floor, inspect_room, or add_wall.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "wallId"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "export_plan",
+    "title": "",
+    "description": "Export the current shared design as structured ArchMorph JSON or a clean SVG floor plan. The export identifies the exact project version.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "download": {
+          "default": false,
+          "type": "boolean"
+        },
+        "format": {
+          "default": "json",
+          "enum": [
+            "json",
+            "svg"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "focus_element",
+    "title": "",
+    "description": "Visibly focus the current 2D or 3D view on a room, wall, door, window, or stair by stable ID. Omit the ID to fit the whole project.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "elementId": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "inspect_circulation",
+    "title": "",
+    "description": "Inspect the traversable room graph, main entrance, room-to-room door edges, stair edges, unreachable rooms, and invalid circulation elements.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "untrustedContentHint": false,
+      "consequentialHint": false
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "inspect_exterior",
+    "title": "",
+    "description": "Inspect the flat roof, parapet, site boundary, gate, balconies, terraces, façade features, and per-wall material overrides in the live project.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "untrustedContentHint": false,
+      "consequentialHint": false
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "inspect_floor",
+    "title": "",
+    "description": "Inspect the rooms, walls, doors, windows, stairs, areas, and findings on one floor. Returns a compact summary by default; ask for full detail only when you need wall connectivity or stair layout geometry.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": "summary",
+          "description": "summary keeps every stable ID and dimension; full adds derived geometry.",
+          "enum": [
+            "summary",
+            "full"
+          ],
+          "type": "string"
+        },
+        "floorId": {
+          "description": "Stable floor identifier returned by inspect_project.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "floorId"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "untrustedContentHint": false,
+      "consequentialHint": false
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "inspect_opening",
+    "title": "",
+    "description": "Inspect one door or window together with its full architectural configuration and canonical host wall.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "openingId": {
+          "description": "Stable door or window identifier returned by inspect_floor.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "openingId"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "untrustedContentHint": false,
+      "consequentialHint": false
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "inspect_plot",
+    "title": "",
+    "description": "Inspect the live plot dimensions, setbacks, buildable envelope, available area, orientation, and current ground-floor coverage.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "untrustedContentHint": false,
+      "consequentialHint": false
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "inspect_project",
+    "title": "",
+    "description": "Inspect the complete live ArchMorph project: plot, floors, element counts, current metrics, view state, and validation summary. Call this before planning edits.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "untrustedContentHint": false,
+      "consequentialHint": false
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "inspect_room",
+    "title": "",
+    "description": "Inspect one room's exact geometry, area, perimeter, boundary walls, openings, and directly adjacent rooms.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "roomId": {
+          "description": "Stable room identifier returned by inspect_floor or create_room.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "roomId"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "untrustedContentHint": false,
+      "consequentialHint": false
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "inspect_wall",
+    "title": "",
+    "description": "Inspect one canonical physical wall, its endpoints, length, exterior/interior status, adjacent rooms, connected wall segments, and hosted openings.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "wallId": {
+          "description": "Stable wall identifier returned by inspect_floor, inspect_room, or add_wall.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "wallId"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "untrustedContentHint": false,
+      "consequentialHint": false
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "measure_distance",
+    "title": "",
+    "description": "Measure exact straight, horizontal, and vertical distances between two coordinates or element centers/endpoints.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "additionalProperties": false,
+          "description": "Either {x,y} or {elementId, anchor}. All coordinates are feet.",
+          "properties": {
+            "anchor": {
+              "enum": [
+                "center",
+                "start",
+                "end"
+              ],
+              "type": "string"
+            },
+            "elementId": {
+              "type": "string"
+            },
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "to": {
+          "additionalProperties": false,
+          "description": "Either {x,y} or {elementId, anchor}. All coordinates are feet.",
+          "properties": {
+            "anchor": {
+              "enum": [
+                "center",
+                "start",
+                "end"
+              ],
+              "type": "string"
+            },
+            "elementId": {
+              "type": "string"
+            },
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "untrustedContentHint": false,
+      "consequentialHint": false
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "move_room",
+    "title": "",
+    "description": "Move one existing room to an exact x/y position in feet. Its walls, openings, metrics, 2D plan, and 3D model update from the same transaction.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "roomId": {
+          "description": "Stable room identifier returned by inspect_floor or create_room.",
+          "type": "string"
+        },
+        "x": {
+          "description": "New left-edge position in feet.",
+          "type": "number"
+        },
+        "y": {
+          "description": "New front-edge position in feet.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "roomId",
+        "x",
+        "y"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "move_wall",
+    "title": "",
+    "description": "Move an independent wall by a horizontal and vertical delta in feet. Room-controlled walls must be changed by moving or resizing their room.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "dx": {
+          "default": 0,
+          "type": "number"
+        },
+        "dy": {
+          "default": 0,
+          "type": "number"
+        },
+        "wallId": {
+          "description": "Stable wall identifier returned by inspect_floor, inspect_room, or add_wall.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "wallId",
+        "dx",
+        "dy"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "rehost_door",
+    "title": "",
+    "description": "Move an existing door onto another compatible canonical wall at an exact center offset.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "offset": {
+          "type": "number"
+        },
+        "openingId": {
+          "description": "Stable door or window identifier returned by inspect_floor.",
+          "type": "string"
+        },
+        "wallId": {
+          "description": "Stable wall identifier returned by inspect_floor, inspect_room, or add_wall.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "openingId",
+        "wallId",
+        "offset"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "rehost_window",
+    "title": "",
+    "description": "Move an existing window onto another compatible canonical wall at an exact center offset.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "offset": {
+          "type": "number"
+        },
+        "openingId": {
+          "description": "Stable door or window identifier returned by inspect_floor.",
+          "type": "string"
+        },
+        "wallId": {
+          "description": "Stable wall identifier returned by inspect_floor, inspect_room, or add_wall.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "openingId",
+        "wallId",
+        "offset"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "rename_project",
+    "title": "",
+    "description": "Rename the live project. The new name appears in the product header and in every subsequent export filename.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Visible project name.",
+          "maxLength": 120,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "resize_room",
+    "title": "",
+    "description": "Resize a room to exact dimensions in feet. Optional anchor holds that corner fixed; defaults to north-west.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "anchor": {
+          "enum": [
+            "north-west",
+            "north-east",
+            "south-west",
+            "south-east"
+          ],
+          "type": "string"
+        },
+        "length": {
+          "minimum": 3,
+          "type": "number"
+        },
+        "roomId": {
+          "description": "Stable room identifier returned by inspect_floor or create_room.",
+          "type": "string"
+        },
+        "width": {
+          "minimum": 3,
+          "type": "number"
+        }
+      },
+      "required": [
+        "roomId",
+        "width",
+        "length"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "set_active_floor",
+    "title": "",
+    "description": "Make one storey the active floor. The plan, inspector, 3D level presentation, and Walk Mode all follow it, so call this before inspecting or editing another floor visually.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "floorId": {
+          "description": "Stable floor identifier returned by inspect_project.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "floorId"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "set_camera",
+    "title": "",
+    "description": "Switch to 3D and visibly move the camera to a standard architectural view.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "preset": {
+          "enum": [
+            "front",
+            "rear",
+            "left",
+            "right",
+            "top",
+            "front-left",
+            "front-right"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "preset"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "set_door_properties",
+    "title": "",
+    "description": "Set architectural door width, height, hinge, handing, swing direction, and open/closed state without creating a separate rendering model.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "handing": {
+          "enum": [
+            "left",
+            "right"
+          ],
+          "type": "string"
+        },
+        "height": {
+          "maximum": 9,
+          "minimum": 6,
+          "type": "number"
+        },
+        "hingeSide": {
+          "enum": [
+            "start",
+            "end"
+          ],
+          "type": "string"
+        },
+        "openingId": {
+          "description": "Stable door or window identifier returned by inspect_floor.",
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "open",
+            "closed"
+          ],
+          "type": "string"
+        },
+        "swingDirection": {
+          "enum": [
+            "inward",
+            "outward"
+          ],
+          "type": "string"
+        },
+        "width": {
+          "maximum": 8,
+          "minimum": 2,
+          "type": "number"
+        }
+      },
+      "required": [
+        "openingId"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "set_exact_dimension",
+    "title": "",
+    "description": "Set one exact dimension or position on a room, opening, or the plot. The change uses the same operation pipeline as manual inspector input.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "elementId": {
+          "description": "Room/opening ID, or the literal 'plot'.",
+          "type": "string"
+        },
+        "property": {
+          "enum": [
+            "width",
+            "length",
+            "x",
+            "y",
+            "offset",
+            "height",
+            "sillHeight"
+          ],
+          "type": "string"
+        },
+        "value": {
+          "description": "Exact value in feet.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "elementId",
+        "property",
+        "value"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "set_exterior_finish",
+    "title": "",
+    "description": "Set one lightweight, project-wide exterior facade finish. This changes 3D exterior wall appearance without adding heavy assembly simulation.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "finish": {
+          "enum": [
+            "stucco",
+            "brick",
+            "concrete",
+            "timber",
+            "metal"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "finish"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "set_floor_height",
+    "title": "",
+    "description": "Change one storey's floor-to-floor height. Every storey above is re-levelled and each connected stair's rise, riser count, and tread depth are recomputed from the new elevations.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "floorId": {
+          "description": "Stable floor identifier returned by inspect_project.",
+          "type": "string"
+        },
+        "height": {
+          "description": "Floor-to-floor height in feet.",
+          "maximum": 16,
+          "minimum": 7,
+          "type": "number"
+        }
+      },
+      "required": [
+        "floorId",
+        "height"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "set_navigation_mode",
+    "title": "",
+    "description": "Switch the live 3D canvas between exterior orbit controls and first-person walkthrough controls. Optionally enter a specific room by stable ID.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "orbit",
+            "walk"
+          ],
+          "type": "string"
+        },
+        "roomId": {
+          "description": "Optional room to start inside when entering walk mode.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "set_plot_orientation",
+    "title": "",
+    "description": "Set the cardinal direction faced by the plot's front/access edge. The site plan and north arrow update immediately without changing plot dimensions or setbacks.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "orientation": {
+          "description": "Cardinal direction faced by the front/access edge of the plot.",
+          "enum": [
+            "North",
+            "East",
+            "South",
+            "West"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "orientation"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "set_roof",
+    "title": "",
+    "description": "Configure the lightweight flat roof parapet and its visual finish. Omitted values remain unchanged.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "finish": {
+          "enum": [
+            "stucco",
+            "brick",
+            "concrete",
+            "timber",
+            "metal"
+          ],
+          "type": "string"
+        },
+        "parapetEnabled": {
+          "type": "boolean"
+        },
+        "parapetHeight": {
+          "maximum": 6,
+          "minimum": 0.5,
+          "type": "number"
+        },
+        "parapetThickness": {
+          "maximum": 2,
+          "minimum": 0.2,
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "set_wall_finish",
+    "title": "",
+    "description": "Set or reset an exterior or independent wall finish. Independent-wall overrides apply to both sides; omit finish to inherit the project palette.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "finish": {
+          "enum": [
+            "stucco",
+            "brick",
+            "concrete",
+            "timber",
+            "metal"
+          ],
+          "type": "string"
+        },
+        "wallId": {
+          "description": "Stable wall identifier returned by inspect_floor, inspect_room, or add_wall.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "wallId"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "set_window_properties",
+    "title": "",
+    "description": "Set window size, sill height, type, operability, and concept-stage NFRC-style glazing inputs in the shared architectural model.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "clearHeight": {
+          "description": "Known unobstructed opening height when fully open, in feet. Omit if unknown; null clears an existing value.",
+          "exclusiveMinimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "clearWidth": {
+          "description": "Known unobstructed opening width when fully open, in feet. Omit if unknown; null clears an existing value.",
+          "exclusiveMinimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "glazing": {
+          "enum": [
+            "clear",
+            "low-e",
+            "privacy"
+          ],
+          "type": "string"
+        },
+        "height": {
+          "maximum": 8,
+          "minimum": 1,
+          "type": "number"
+        },
+        "openingId": {
+          "description": "Stable door or window identifier returned by inspect_floor.",
+          "type": "string"
+        },
+        "operable": {
+          "description": "Setting true alone changes a fixed window to casement; false sets type to fixed.",
+          "type": "boolean"
+        },
+        "sillHeight": {
+          "maximum": 8,
+          "minimum": 0,
+          "type": "number"
+        },
+        "solarHeatGainCoefficient": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "uFactor": {
+          "maximum": 2,
+          "minimum": 0.1,
+          "type": "number"
+        },
+        "visibleTransmittance": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "width": {
+          "maximum": 16,
+          "minimum": 1,
+          "type": "number"
+        },
+        "windowType": {
+          "enum": [
+            "fixed",
+            "casement",
+            "sliding",
+            "awning"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "openingId"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "split_room_with_wall",
+    "title": "",
+    "description": "Explicitly split a rectangular room using a full-span horizontal or vertical independent partition. Creates two spaces and one shared wall while retaining valid openings and finishes; both sides need at least 3 ft.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "roomId": {
+          "description": "Stable room identifier returned by inspect_floor or create_room.",
+          "type": "string"
+        },
+        "wallId": {
+          "description": "Stable wall identifier returned by inspect_floor, inspect_room, or add_wall.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "wallId",
+        "roomId"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "switch_view",
+    "title": "",
+    "description": "Visibly switch the shared ArchMorph canvas between 2D floor-plan and 3D building modes.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "2d",
+            "3d"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "take_snapshot",
+    "title": "",
+    "description": "Capture the current live 2D plan or 3D canvas after any requested view and camera changes. Returns image metadata and a PNG data URL.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "download": {
+          "default": false,
+          "description": "Also download the PNG in the human's browser.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "update_balcony",
+    "title": "",
+    "description": "Update balcony or terrace geometry, type, finish, and railing without replacing its stable project identity.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "balconyId": {
+          "type": "string"
+        },
+        "finish": {
+          "enum": [
+            "stucco",
+            "brick",
+            "concrete",
+            "timber",
+            "metal"
+          ],
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "balcony",
+            "terrace"
+          ],
+          "type": "string"
+        },
+        "length": {
+          "minimum": 3,
+          "type": "number"
+        },
+        "name": {
+          "type": "string"
+        },
+        "railingEnabled": {
+          "type": "boolean"
+        },
+        "railingHeight": {
+          "maximum": 6,
+          "minimum": 2,
+          "type": "number"
+        },
+        "railingSides": {
+          "items": {
+            "enum": [
+              "north",
+              "east",
+              "south",
+              "west"
+            ],
+            "type": "string"
+          },
+          "maxItems": 4,
+          "minItems": 1,
+          "type": "array"
+        },
+        "railingStyle": {
+          "enum": [
+            "horizontal",
+            "vertical",
+            "solid"
+          ],
+          "type": "string"
+        },
+        "slabThickness": {
+          "maximum": 2,
+          "minimum": 0.25,
+          "type": "number"
+        },
+        "width": {
+          "minimum": 3,
+          "type": "number"
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "balconyId"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "update_facade_feature",
+    "title": "",
+    "description": "Update or rehost a frame, canopy, or sunshade while retaining its stable project identity.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "elevation": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "featureId": {
+          "type": "string"
+        },
+        "finish": {
+          "enum": [
+            "stucco",
+            "brick",
+            "concrete",
+            "timber",
+            "metal"
+          ],
+          "type": "string"
+        },
+        "height": {
+          "minimum": 0.1,
+          "type": "number"
+        },
+        "kind": {
+          "enum": [
+            "frame",
+            "canopy",
+            "sunshade"
+          ],
+          "type": "string"
+        },
+        "offset": {
+          "type": "number"
+        },
+        "projection": {
+          "maximum": 8,
+          "minimum": 0.1,
+          "type": "number"
+        },
+        "thickness": {
+          "maximum": 2,
+          "minimum": 0.1,
+          "type": "number"
+        },
+        "wallId": {
+          "description": "Stable wall identifier returned by inspect_floor, inspect_room, or add_wall.",
+          "type": "string"
+        },
+        "width": {
+          "minimum": 1,
+          "type": "number"
+        }
+      },
+      "required": [
+        "featureId"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "update_opening",
+    "title": "",
+    "description": "Move or resize a door or window using the same opening state consumed by both the 2D plan and exact 3D wall geometry. Omitted properties remain unchanged.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "clearHeight": {
+          "description": "Known unobstructed opening height when fully open, in feet. Omit if unknown; null clears an existing value.",
+          "exclusiveMinimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "clearWidth": {
+          "description": "Known unobstructed opening width when fully open, in feet. Omit if unknown; null clears an existing value.",
+          "exclusiveMinimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "glazing": {
+          "enum": [
+            "clear",
+            "low-e",
+            "privacy"
+          ],
+          "type": "string"
+        },
+        "handing": {
+          "enum": [
+            "left",
+            "right"
+          ],
+          "type": "string"
+        },
+        "height": {
+          "maximum": 12,
+          "minimum": 0.5,
+          "type": "number"
+        },
+        "hingeSide": {
+          "enum": [
+            "start",
+            "end"
+          ],
+          "type": "string"
+        },
+        "offset": {
+          "description": "Opening center distance from the wall start, in feet.",
+          "type": "number"
+        },
+        "openingId": {
+          "description": "Stable door or window identifier returned by inspect_floor.",
+          "type": "string"
+        },
+        "operable": {
+          "description": "Setting true alone changes a fixed window to casement; false sets type to fixed.",
+          "type": "boolean"
+        },
+        "sillHeight": {
+          "maximum": 10,
+          "minimum": 0,
+          "type": "number"
+        },
+        "solarHeatGainCoefficient": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "state": {
+          "enum": [
+            "open",
+            "closed"
+          ],
+          "type": "string"
+        },
+        "swingDirection": {
+          "enum": [
+            "inward",
+            "outward"
+          ],
+          "type": "string"
+        },
+        "uFactor": {
+          "maximum": 2,
+          "minimum": 0.1,
+          "type": "number"
+        },
+        "visibleTransmittance": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "width": {
+          "maximum": 16,
+          "minimum": 0.5,
+          "type": "number"
+        },
+        "windowType": {
+          "enum": [
+            "fixed",
+            "casement",
+            "sliding",
+            "awning"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "openingId"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "update_room",
+    "title": "",
+    "description": "Rename a room or change its programmatic type. Room type drives plan colour and the habitability checks, so keep it accurate.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "New visible room name.",
+          "type": "string"
+        },
+        "roomId": {
+          "description": "Stable room identifier returned by inspect_floor or create_room.",
+          "type": "string"
+        },
+        "roomType": {
+          "enum": [
+            "Living Room",
+            "Kitchen",
+            "Bedroom",
+            "Bathroom",
+            "Garage",
+            "Office",
+            "Dining Room",
+            "Storage",
+            "Courtyard",
+            "Custom"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "roomId"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "update_room_vertices",
+    "title": "",
+    "description": "Replace a room boundary with 4–12 ordered orthogonal vertices. Use this for precise irregular-plan edits; invalid or crossing boundaries are rejected atomically.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "roomId": {
+          "description": "Stable room identifier returned by inspect_floor or create_room.",
+          "type": "string"
+        },
+        "vertices": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "type": "object"
+          },
+          "maxItems": 12,
+          "minItems": 4,
+          "type": "array"
+        }
+      },
+      "required": [
+        "roomId",
+        "vertices"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "update_stairs",
+    "title": "",
+    "description": "Move, resize, rotate, reverse, or convert a stair between straight, quarter-turn L-shaped, and half-turn U-shaped configurations while retaining its stable identity.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "direction": {
+          "enum": [
+            "up",
+            "down"
+          ],
+          "type": "string"
+        },
+        "landingDepth": {
+          "minimum": 3,
+          "type": "number"
+        },
+        "length": {
+          "description": "Horizontal run of one flight; straight stairs require at least 6 ft.",
+          "minimum": 3,
+          "type": "number"
+        },
+        "rotation": {
+          "description": "Plan rotation in 90-degree increments.",
+          "enum": [
+            0,
+            90,
+            180,
+            270
+          ],
+          "type": "number"
+        },
+        "stairId": {
+          "description": "Stable staircase ID.",
+          "type": "string"
+        },
+        "stairType": {
+          "enum": [
+            "straight",
+            "l-shaped",
+            "u-shaped"
+          ],
+          "type": "string"
+        },
+        "turnSide": {
+          "enum": [
+            "left",
+            "right"
+          ],
+          "type": "string"
+        },
+        "upperFlightLength": {
+          "description": "Upper-flight run for an L-shaped stair.",
+          "minimum": 3,
+          "type": "number"
+        },
+        "wellWidth": {
+          "maximum": 8,
+          "minimum": 0,
+          "type": "number"
+        },
+        "width": {
+          "description": "Clear width of one flight.",
+          "minimum": 3,
+          "type": "number"
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "stairId"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "update_wall",
+    "title": "",
+    "description": "Edit independent-wall endpoints, length from the start, or thickness. Rejects invalid geometry and retains hosted openings atomically. Room-boundary geometry belongs to its rooms.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "length": {
+          "minimum": 1,
+          "type": "number"
+        },
+        "thickness": {
+          "maximum": 2,
+          "minimum": 0.2,
+          "type": "number"
+        },
+        "wallId": {
+          "description": "Stable wall identifier returned by inspect_floor, inspect_room, or add_wall.",
+          "type": "string"
+        },
+        "x1": {
+          "type": "number"
+        },
+        "x2": {
+          "type": "number"
+        },
+        "y1": {
+          "type": "number"
+        },
+        "y2": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "wallId"
+      ],
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  },
+  {
+    "name": "validate_layout",
+    "title": "",
+    "description": "Analyze geometry, canonical openings, exterior access, main-entrance reachability, disconnected room groups, and stair connections. Returns structured, correctable findings—not final code certification.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "floorId": {
+          "description": "Optional floor to validate; omit to validate the entire project.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "origin": "http://localhost:3000",
+    "pageUrl": "http://localhost:3000/studio?debug=1"
+  }
+]

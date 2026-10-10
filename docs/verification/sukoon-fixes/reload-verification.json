@@ -1,0 +1,270 @@
+{
+  "toolCount": 63,
+  "inspection": {
+    "project": {
+      "id": "project-e1983050",
+      "name": "Sukoon House — Family Retreat",
+      "schemaVersion": 7,
+      "version": 157,
+      "unit": "ft",
+      "updatedAt": "2026-10-10T07:41:33.665Z"
+    },
+    "plot": {
+      "width": 50,
+      "length": 80,
+      "orientation": "North",
+      "setbacks": {
+        "front": 12,
+        "rear": 8,
+        "left": 5,
+        "right": 5
+      }
+    },
+    "exteriorFinish": {
+      "id": "stucco",
+      "label": "Mineral stucco",
+      "description": "Light, matte rendered exterior finish.",
+      "color": "#ddd5c7",
+      "roughness": 0.92,
+      "metalness": 0
+    },
+    "roof": {
+      "type": "flat",
+      "parapetEnabled": true,
+      "parapetHeight": 2.5,
+      "parapetThickness": 0.4,
+      "finish": "stucco"
+    },
+    "siteBoundary": {
+      "enabled": true,
+      "height": 4.5,
+      "thickness": 0.4,
+      "finish": "concrete",
+      "gate": {
+        "enabled": true,
+        "offset": 25,
+        "width": 12,
+        "height": 4.5,
+        "style": "slatted"
+      }
+    },
+    "balconies": [
+      {
+        "id": "balcony-3d430709",
+        "floorId": "floor-e0df61af",
+        "name": "Garden Roof Terrace",
+        "kind": "terrace",
+        "x": 6,
+        "y": 50,
+        "width": 14,
+        "length": 20
+      },
+      {
+        "id": "balcony-5675bea8",
+        "floorId": "floor-e0df61af",
+        "name": "Recessed Arrival Balcony",
+        "kind": "balcony",
+        "x": 20,
+        "y": 14,
+        "width": 10,
+        "length": 4
+      }
+    ],
+    "facadeFeatures": [
+      {
+        "id": "facade-c3c19a68",
+        "kind": "canopy",
+        "wallId": "wall-floor-ground-h-1400-2000-3000",
+        "offset": 5,
+        "width": 9
+      },
+      {
+        "id": "facade-f4a578ce",
+        "kind": "frame",
+        "wallId": "wall-floor-e0df61af-h-1800-2000-3000",
+        "offset": 5,
+        "width": 8
+      },
+      {
+        "id": "facade-d739c4b7",
+        "kind": "sunshade",
+        "wallId": "wall-floor-ground-v-600-1400-3000",
+        "offset": 8,
+        "width": 8
+      },
+      {
+        "id": "facade-bcbff6a2",
+        "kind": "sunshade",
+        "wallId": "wall-floor-ground-v-600-3000-4600",
+        "offset": 8,
+        "width": 8
+      },
+      {
+        "id": "facade-80053eda",
+        "kind": "sunshade",
+        "wallId": "wall-floor-ground-v-600-4600-6200",
+        "offset": 8,
+        "width": 10
+      },
+      {
+        "id": "facade-534283ae",
+        "kind": "sunshade",
+        "wallId": "wall-floor-ground-v-4400-4600-6200",
+        "offset": 4,
+        "width": 7
+      },
+      {
+        "id": "facade-a5de16f2",
+        "kind": "sunshade",
+        "wallId": "wall-floor-ground-v-4400-4600-6200",
+        "offset": 12,
+        "width": 7
+      },
+      {
+        "id": "facade-96251b96",
+        "kind": "sunshade",
+        "wallId": "wall-floor-e0df61af-v-600-3400-5000",
+        "offset": 8,
+        "width": 8
+      },
+      {
+        "id": "facade-9825ddd8",
+        "kind": "sunshade",
+        "wallId": "wall-floor-e0df61af-v-4400-1400-3000",
+        "offset": 8,
+        "width": 7
+      }
+    ],
+    "floors": [
+      {
+        "id": "floor-ground",
+        "name": "Ground Floor",
+        "level": 0,
+        "elevation": 0,
+        "height": 10
+      },
+      {
+        "id": "floor-e0df61af",
+        "name": "First Floor",
+        "level": 1,
+        "elevation": 10,
+        "height": 9.5
+      }
+    ],
+    "counts": {
+      "floors": 2,
+      "rooms": 27,
+      "walls": 84,
+      "doors": 34,
+      "windows": 39,
+      "stairs": 1,
+      "balconies": 1,
+      "terraces": 1,
+      "facadeFeatures": 9
+    },
+    "metrics": {
+      "unit": "sq ft",
+      "plotArea": 4000,
+      "netRoomAreaTotal": 2008,
+      "totalNetFloorArea": 2008,
+      "totalNetBuildingArea": 3696,
+      "grossCoveredArea": 2066,
+      "carpetArea": 1850.5,
+      "totalCarpetArea": 3398.5,
+      "balconyArea": 0,
+      "terraceArea": 0,
+      "projectBalconyArea": 40,
+      "projectTerraceArea": 280,
+      "totalGrossCoveredArea": 3814,
+      "openSiteArea": 1934,
+      "groundCoveragePercent": 51.7,
+      "floorAreaRatio": 0.954,
+      "measurementDefinitions": {
+        "netRoomArea": "Room-polygon area measured to wall centrelines. This is not finished carpet area — see carpetArea.",
+        "carpetArea": "Estimated usable area on the selected floor using average boundary-wall thickness. Excludes courtyards; does not deduct finishes, stair voids, or independent partitions.",
+        "totalNetFloorArea": "Sum of centreline room areas on the selected floor, excluding courtyards.",
+        "grossCoveredArea": "Built-up area on the selected floor, measured to the outer face of the external walls.",
+        "openSiteArea": "Plot area remaining outside the gross ground-floor building footprint.",
+        "groundCoveragePercent": "Gross ground-floor footprint as a percentage of plot area. Always a ground-floor ratio.",
+        "floorAreaRatio": "Total gross covered area of all floors divided by plot area (FAR / FSI).",
+        "balconyArea": "Balcony slabs on the selected floor only; projectBalconyArea covers every floor."
+      },
+      "floorCoveredArea": 2008,
+      "totalConstructedArea": 3696,
+      "roomAreaSum": 2008,
+      "openArea": 1934,
+      "coveragePercent": 51.7,
+      "buildableEnvelope": {
+        "x": 5,
+        "y": 12,
+        "width": 40,
+        "length": 60,
+        "area": 2400
+      }
+    },
+    "currentView": {
+      "mode": "2d",
+      "navigationMode": "orbit",
+      "activeFloorId": "floor-ground",
+      "cameraPreset": "front-right"
+    },
+    "circulation": {
+      "mainEntranceOpeningId": "door-f8925b6f",
+      "primaryEntryRoomId": "room-13e2bc6b",
+      "hasExteriorAccess": true,
+      "reachableRoomCount": 27,
+      "disconnectedRoomIds": [],
+      "invalidDoorIds": [],
+      "invalidStairIds": []
+    },
+    "validationSummary": {
+      "status": "pass",
+      "issues": 0,
+      "errors": 0,
+      "warnings": 0,
+      "codes": []
+    },
+    "floorsDetail": [
+      {
+        "id": "floor-ground",
+        "name": "Ground Floor",
+        "roomIds": [
+          "room-927a4c38",
+          "room-13e2bc6b",
+          "room-f6c50415",
+          "room-0c167008",
+          "room-9630dc15",
+          "room-5bb8b5f8",
+          "room-dc79954b",
+          "room-e62b39ee",
+          "room-65196103",
+          "room-1fe79cec",
+          "room-5789856b",
+          "room-8fdb0ebf",
+          "room-d9b2ed29",
+          "room-44879995",
+          "room-134bf784"
+        ]
+      },
+      {
+        "id": "floor-e0df61af",
+        "name": "First Floor",
+        "roomIds": [
+          "room-d38bb258",
+          "room-57e6ef1d",
+          "room-ee749b8b",
+          "room-e2372e44",
+          "room-feebe14b",
+          "room-9c7447f4",
+          "room-ac15ed5d",
+          "room-7d3ce65d",
+          "room-e0f0e18b",
+          "room-034beda5",
+          "room-3894f38e",
+          "room-41de4ae5"
+        ]
+      }
+    ]
+  },
+  "downloadCapture": "Timed out in embedded browser; native export content and visible direct save/preview links succeeded."
+}

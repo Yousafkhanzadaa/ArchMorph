@@ -1,0 +1,157 @@
+{
+  "closedPose": {
+    "x": "25.00",
+    "y": "5.40",
+    "z": "14.63"
+  },
+  "openedPose": {
+    "x": "25.00",
+    "y": "5.40",
+    "z": "14.63"
+  },
+  "exitedPose": {
+    "x": "25.00",
+    "y": "5.40",
+    "z": "8.11"
+  },
+  "door": {
+    "opening": {
+      "id": "door-f8925b6f",
+      "floorId": "floor-ground",
+      "kind": "door",
+      "wallId": "wall-floor-ground-h-1400-2000-3000",
+      "offset": 5,
+      "width": 4,
+      "height": 8,
+      "sillHeight": 0,
+      "hingeSide": "end",
+      "handing": "right",
+      "swingDirection": "inward",
+      "state": "open"
+    },
+    "hostWall": {
+      "wall": {
+        "id": "wall-floor-ground-h-1400-2000-3000",
+        "floorId": "floor-ground",
+        "x1": 20,
+        "y1": 14,
+        "x2": 30,
+        "y2": 14,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-13e2bc6b"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-13e2bc6b",
+            "side": "north"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-ground-h-1400-600-2000",
+          "wall-floor-ground-h-1400-3000-4400",
+          "wall-floor-ground-v-2000-1400-3000",
+          "wall-floor-ground-v-3000-1400-2500"
+        ],
+        "roomId": "room-13e2bc6b",
+        "side": "north"
+      },
+      "length": 10,
+      "orientation": "horizontal",
+      "adjacentRooms": [
+        {
+          "id": "room-13e2bc6b",
+          "name": "Verified Entry Foyer",
+          "side": "north"
+        }
+      ],
+      "openings": [
+        {
+          "id": "door-f8925b6f",
+          "floorId": "floor-ground",
+          "kind": "door",
+          "wallId": "wall-floor-ground-h-1400-2000-3000",
+          "offset": 5,
+          "width": 4,
+          "height": 8,
+          "sillHeight": 0,
+          "hingeSide": "end",
+          "handing": "right",
+          "swingDirection": "inward",
+          "state": "open"
+        },
+        {
+          "id": "window-32fe5bbc",
+          "floorId": "floor-ground",
+          "kind": "window",
+          "wallId": "wall-floor-ground-h-1400-2000-3000",
+          "offset": 1.5,
+          "width": 2,
+          "height": 6,
+          "sillHeight": 1.5,
+          "windowType": "fixed",
+          "operable": false,
+          "glazing": "low-e",
+          "solarHeatGainCoefficient": 0.35,
+          "visibleTransmittance": 0.62,
+          "uFactor": 0.3
+        },
+        {
+          "id": "window-6fdc05b3",
+          "floorId": "floor-ground",
+          "kind": "window",
+          "wallId": "wall-floor-ground-h-1400-2000-3000",
+          "offset": 8.5,
+          "width": 2,
+          "height": 6,
+          "sillHeight": 1.5,
+          "windowType": "fixed",
+          "operable": false,
+          "glazing": "low-e",
+          "solarHeatGainCoefficient": 0.35,
+          "visibleTransmittance": 0.62,
+          "uFactor": 0.3
+        }
+      ],
+      "connectedWallIds": [
+        "wall-floor-ground-h-1400-600-2000",
+        "wall-floor-ground-h-1400-3000-4400",
+        "wall-floor-ground-v-2000-1400-3000",
+        "wall-floor-ground-v-3000-1400-2500"
+      ],
+      "exteriorFinish": {
+        "id": "stucco",
+        "source": "project-default",
+        "label": "Mineral stucco",
+        "description": "Light, matte rendered exterior finish.",
+        "color": "#ddd5c7",
+        "roughness": 0.92,
+        "metalness": 0
+      },
+      "independentFinish": null,
+      "facadeFeatures": [
+        {
+          "id": "facade-c3c19a68",
+          "kind": "canopy",
+          "wallId": "wall-floor-ground-h-1400-2000-3000",
+          "offset": 5,
+          "width": 9,
+          "elevation": 8.6,
+          "height": 0.3,
+          "projection": 4,
+          "thickness": 0.25,
+          "finish": "timber"
+        }
+      ]
+    },
+    "facadeFacing": "North"
+  },
+  "history": {
+    "batchVersion": 2,
+    "undoVersion": 3,
+    "reloadRedoAvailable": true,
+    "redoVersion": 4
+  }
+}

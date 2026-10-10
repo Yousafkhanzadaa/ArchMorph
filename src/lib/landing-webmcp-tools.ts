@@ -8,7 +8,7 @@
  */
 
 /** The studio's tool surface. The WebMCP regression suite pins this to `createArchMorphTools().length`. */
-export const STUDIO_TOOL_COUNT = 58;
+export const STUDIO_TOOL_COUNT = 63;
 
 export const LANDING_LAYER_KEYS = ["plan", "structure", "envelope", "dimensions"] as const;
 export const LANDING_MODEL_VIEWS = ["complete", "section"] as const;

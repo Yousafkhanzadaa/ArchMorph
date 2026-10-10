@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, type RefObject } from "react";
+import { doorArcSweepFlag, doorSwingSign } from "@/lib/door-geometry";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
@@ -26,6 +27,9 @@ import { buildSpatialModel, openingFrameFor, orientedSlopeFrame, resolveWalkPosi
 import { buildFloorSlab, buildParapetSurfaces, buildRoofDeck, buildWallSurfaces, cutawayCeiling, fitPerspectiveView, landingGuardSegments, presentationBounds, presentationPixelRatio, type PresentationBounds, type PresentationVolume, type SurfacePatch } from "@/lib/model-presentation";
 import { batchModelMeshes, contactOcclusion, createModelPalette, selectionGeometry, surfaceGeometry } from "@/lib/model-materials";
 import { presentationSite } from "@/lib/model-site";
+import { capturePointerSafely, createPointerDrag } from "@/lib/pointer-drag";
+
+import { walkCollisionSegments, walkSurfaceContains } from "@/lib/walk-navigation";
 
 type ModelViewProps = {
   project: Project;
@@ -34,6 +38,8 @@ type ModelViewProps = {
   canvasRef: RefObject<HTMLCanvasElement | null>;
   onSelect: (id?: string) => void;
   onWalkFloorChange: (floorId: string) => void;
+  onDoorToggle: (openingId: string) => void;
+  onWalkDestination: (id: string) => void;
   cutawayFloorId?: string;
   siteContext?: boolean;
 };
@@ -123,11 +129,14 @@ export default function ModelView({
   canvasRef,
   onSelect,
   onWalkFloorChange,
+  onDoorToggle,
+  onWalkDestination,
   cutawayFloorId,
   siteContext = true,
 }: ModelViewProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const walkPoseRef = useRef<WalkPose | undefined>(undefined);
+  const pressedKeysRef = useRef(new Set<string>());
   const orbitPoseRef = useRef<OrbitPose | undefined>(undefined);
   const minimapMarkerRef = useRef<SVGGElement | null>(null);
   const minimapRoomLabelRef = useRef<HTMLSpanElement | null>(null);
@@ -141,6 +150,21 @@ export default function ModelView({
     project.openings, project.stairs, project.balconies, project.facadeFeatures, project.roof,
     project.siteBoundary, project.exteriorFinish, navigationMode,
     navigationMode === "walk" ? project.view : undefined, cutawayFloorId, siteContext]);
+  const doorToggleRef = useRef(onDoorToggle);
+  const nearestDoorRef = useRef<string | undefined>(undefined);
+  const [nearbyDoor, setNearbyDoor] = useState<string>();
+  useEffect(() => { doorToggleRef.current = onDoorToggle; }, [onDoorToggle]);
+  // Mouse lock and held keys belong to the Walk session, not a scene generation.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const pressed = pressedKeysRef.current;
+    pressed.clear();
+    if (navigationMode !== "walk" || !canvas) return;
+    return () => {
+      pressed.clear();
+      if (canvas.ownerDocument.pointerLockElement === canvas) canvas.ownerDocument.exitPointerLock();
+    };
+  }, [canvasRef, navigationMode, project.id]);
   useEffect(() => {
     liveRef.current = { project, selectedId, onSelect, onWalkFloorChange };
     const canvas = canvasRef.current;
@@ -158,7 +182,7 @@ export default function ModelView({
     if (!host || !canvas) return;
     const buildStarted = performance.now();
 
-    const spatial = buildSpatialModel(project, { doorMode: navigationMode === "walk" ? "all-open" : "model" });
+    const spatial = buildSpatialModel(project);
     const floorById = new Map(project.floors.map((floor) => [floor.id, floor]));
     const stairConnections = project.stairs.flatMap((stair) => {
       const connection = stairConnection(project, stair);
@@ -267,7 +291,7 @@ export default function ModelView({
       camera.lookAt(controls.target);
       lensShiftX = 0; lensShift = fit.lensShift; updateProjection(); composeFrame(view.focusElementId);
     };
-    const viewKeyFor = (view: Project["view"]) => `${view.cameraPreset}:${view.focusElementId ?? "project"}:${project.plot.width}x${project.plot.length}:${cutawayFloorId ?? "building"}`;
+    const viewKeyFor = (view: Project["view"]) => `${view.cameraPreset}:${view.focusElementId ?? "project"}:${project.plot.width}x${project.plot.length}`;
     let orbitViewKey = viewKeyFor(project.view);
     renderedViewKeyRef.current = orbitViewKey;
 
@@ -283,12 +307,13 @@ export default function ModelView({
       }
     } else {
       const floor = project.floors.find((item) => item.id === project.view.activeFloorId) ?? project.floors[0];
-      const startRoom = project.rooms.find((room) => room.id === project.view.walkStartRoomId && room.floorId === floor?.id)
+      const startOutdoor = project.balconies.find(b => b.id === project.view.walkStartRoomId && b.floorId === floor?.id);
+      const startRoom = startOutdoor ? undefined : project.rooms.find((room) => room.id === project.view.walkStartRoomId && room.floorId === floor?.id)
         ?? project.rooms.find((room) => room.id === project.view.focusElementId && room.floorId === floor?.id)
         ?? project.rooms.find((room) => room.floorId === floor?.id);
       const poseKey = `${floor?.id ?? "floor"}:${project.view.walkStartRoomId ?? startRoom?.id ?? "site"}`;
       const storedPose = walkPoseRef.current?.key === poseKey ? walkPoseRef.current : undefined;
-      const startCenter = startRoom ? roomInteriorPoint(startRoom) : undefined;
+      const startCenter = startOutdoor ? { x: startOutdoor.x + startOutdoor.width/2, y: startOutdoor.y + startOutdoor.length/2 } : startRoom ? roomInteriorPoint(startRoom) : undefined;
       const roomCenter = {
         x: startCenter?.x ?? project.plot.width / 2,
         z: startCenter?.y ?? project.plot.length / 2,
@@ -422,7 +447,7 @@ export default function ModelView({
       scene.add(mesh);
     };
     const wallFinish = (wallIds: string[]) => {
-      const wall = wallIds.map((id) => project.walls.find((item) => item.id === id)).find((item) => item?.exterior);
+      const wall = wallIds.map((id) => project.walls.find((item) => item.id === id)).find((item) => item?.exterior || (item && !item.roomIds.length && item.finish));
       return wall?.finish ?? project.exteriorFinish;
     };
 
@@ -447,7 +472,7 @@ export default function ModelView({
       const length = Math.hypot(solid.x2 - solid.x1, solid.z2 - solid.z1);
       if (!floor || !length || floor.elevation + solid.bottom >= ceiling) continue;
       const top = Math.min(solid.top, ceiling - floor.elevation);
-      const exterior = solid.wallIds.some((wallId) => project.walls.find((wall) => wall.id === wallId)?.exterior);
+      const exterior = solid.wallIds.some((wallId) => { const wall = project.walls.find(w => w.id === wallId); return wall?.exterior || (wall && !wall.roomIds.length && wall.finish); });
       const mesh = meshBox(
         [length, top - solid.bottom, solid.thickness],
         [(solid.x1 + solid.x2) / 2, floor.elevation + (solid.bottom + top) / 2, (solid.z1 + solid.z2) / 2],
@@ -647,8 +672,8 @@ export default function ModelView({
         const hingeDirection = opening.hingeSide === "end" ? 1 : -1;
         const hingeX = frame.x + frame.dirX * hingeDirection * opening.width / 2;
         const hingeZ = frame.z + frame.dirZ * hingeDirection * opening.width / 2;
-        const swingSign = (opening.swingDirection === "outward" ? 1 : -1) * (opening.handing === "right" ? -1 : 1);
-        const isClosed = navigationMode !== "walk" && opening.state === "closed";
+        const swingSign = doorSwingSign(project, opening);
+        const isClosed = opening.state === "closed";
         const panel = meshBox(
           [Math.max(0.2, opening.width - 0.12), Math.max(0.2, opening.height - 0.12), 0.12],
           isClosed
@@ -959,32 +984,28 @@ export default function ModelView({
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
     let selectionPointerStart: { x: number; y: number } | undefined;
-    let dragLook: { pointerId: number; x: number; y: number } | undefined;
     const updateLook = (movementX: number, movementY: number) => {
       yaw -= movementX * 0.0022;
       pitch = Math.max(-Math.PI * 0.46, Math.min(Math.PI * 0.46, pitch - movementY * 0.0022));
       camera.rotation.set(pitch, yaw, 0);
       interacted();
     };
+    host.dataset.dragLooking = "false";
+    const dragLook = createPointerDrag(canvas, updateLook, (active) => {
+      host.dataset.dragLooking = String(active);
+    });
     const handleSelectionPointerDown = (event: PointerEvent) => {
       selectionPointerStart = event.button === 0 ? { x: event.clientX, y: event.clientY } : undefined;
       if (navigationMode === "walk" && event.button === 0) {
         canvas.focus();
-        dragLook = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
-        canvas.setPointerCapture(event.pointerId);
-        host.dataset.dragLooking = "true";
+        dragLook.start(event);
       }
     };
     const handleSelectionPointerMove = (event: PointerEvent) => {
-      if (navigationMode !== "walk" || document.pointerLockElement === canvas || dragLook?.pointerId !== event.pointerId) return;
-      updateLook(event.clientX - dragLook.x, event.clientY - dragLook.y);
-      dragLook = { ...dragLook, x: event.clientX, y: event.clientY };
+      if (navigationMode === "walk") dragLook.move(event);
     };
     const finishDragLook = (event: PointerEvent) => {
-      if (dragLook?.pointerId !== event.pointerId) return;
-      if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
-      dragLook = undefined;
-      host.dataset.dragLooking = "false";
+      dragLook.finish(event);
     };
     const handleClick = (event: MouseEvent) => {
       if (navigationMode === "walk") {
@@ -993,7 +1014,7 @@ export default function ModelView({
           ? Math.hypot(event.clientX - selectionPointerStart.x, event.clientY - selectionPointerStart.y)
           : 0;
         selectionPointerStart = undefined;
-        if (pointerTravel <= 4) {
+        if (pointerTravel <= 4 && document.pointerLockElement !== canvas) {
           const markPointerLockUnavailable = () => { host.dataset.pointerLockUnavailable = "true"; };
           try {
             Promise.resolve(canvas.requestPointerLock()).catch(markPointerLockUnavailable);
@@ -1019,9 +1040,10 @@ export default function ModelView({
       onSelect(pickedId);
     };
     canvas.addEventListener("pointerdown", handleSelectionPointerDown);
-    canvas.addEventListener("pointermove", handleSelectionPointerMove);
-    canvas.addEventListener("pointerup", finishDragLook);
-    canvas.addEventListener("pointercancel", finishDragLook);
+    window.addEventListener("pointermove", handleSelectionPointerMove);
+    window.addEventListener("pointerup", finishDragLook);
+    window.addEventListener("pointercancel", finishDragLook);
+    canvas.addEventListener("lostpointercapture", finishDragLook);
     canvas.addEventListener("click", handleClick);
 
     const activeFloor = project.floors.find((floor) => floor.id === project.view.activeFloorId) ?? project.floors[0];
@@ -1030,8 +1052,8 @@ export default function ModelView({
     );
     // A stair no longer erases every wall crossing its bounding box. Valid stair halls remain
     // navigable; walls that cut through a flight or landing stay real obstructions and validate as clashes.
-    const activeCollisions = spatial.collisionSegments.filter((segment) => segment.floorId === project.view.activeFloorId);
-    const pressed = new Set<string>();
+    const activeCollisions = walkCollisionSegments(project, project.view.activeFloorId, spatial.collisionSegments);
+    const pressed = pressedKeysRef.current;
     let yaw = camera.rotation.y;
     let pitch = camera.rotation.x;
     let transitionRequested = false;
@@ -1071,6 +1093,7 @@ export default function ModelView({
         z = Math.max(WALK_RADIUS, Math.min(project.plot.length - WALK_RADIUS, resolved.z));
         const previousStair = stairAt(previousX, previousZ);
         const nextStair = stairAt(x, z);
+        if (!nextStair && !walkSurfaceContains(project, project.view.activeFloorId, { x, y: z })) continue;
         const activeFloorEye = (activeFloor?.elevation ?? 0) + WALK_EYE_HEIGHT;
 
         if (activeStairId) {
@@ -1082,6 +1105,7 @@ export default function ModelView({
             const leaving = finished ? stairProgress(finished, previousX, previousZ) : undefined;
             if (leaving === undefined || (leaving > STAIR_ARRIVAL_PROGRESS && leaving < 1 - STAIR_ARRIVAL_PROGRESS)) continue;
             const arrivalFloor = leaving >= 1 - STAIR_ARRIVAL_PROGRESS ? finished!.upperFloor : finished!.lowerFloor;
+            if (!walkSurfaceContains(project, arrivalFloor.id, { x, y: z })) continue;
             activeStairId = undefined;
             camera.position.x = x;
             camera.position.z = z;
@@ -1164,8 +1188,10 @@ export default function ModelView({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (navigationMode !== "walk") return;
+      if (event.code === "Escape") { pressed.clear(); return; }
       const target = event.target as HTMLElement | null;
       if (event.defaultPrevented || target?.closest("[role='dialog'], input, textarea, select, [contenteditable='true']")) return;
+      if (event.code === "KeyE" && nearestDoorRef.current && !event.repeat) { event.preventDefault(); doorToggleRef.current(nearestDoorRef.current); return; }
       const direction = directionForKey(event.code);
       if (!direction && event.code !== "ShiftLeft" && event.code !== "ShiftRight") return;
       event.preventDefault();
@@ -1185,8 +1211,14 @@ export default function ModelView({
       if (navigationMode !== "walk" || document.pointerLockElement !== canvas) return;
       updateLook(event.movementX, event.movementY);
     };
+    let wasPointerLocked = document.pointerLockElement === canvas;
+    host.dataset.pointerLocked = String(wasPointerLocked);
     const updatePointerState = () => {
-      host.dataset.pointerLocked = String(document.pointerLockElement === canvas);
+      dragLook.cancel();
+      const locked = document.pointerLockElement === canvas;
+      if (wasPointerLocked && !locked) pressed.clear();
+      wasPointerLocked = locked;
+      host.dataset.pointerLocked = String(locked);
     };
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
@@ -1254,12 +1286,14 @@ export default function ModelView({
             `translate(${camera.position.x} ${camera.position.z}) rotate(${THREE.MathUtils.radToDeg(-yaw)})`,
           );
         }
-        const currentRoom = project.rooms.find((room) =>
+        const closestDoor = spatial.openingFrames.filter(f => f.opening.kind === "door" && f.opening.floorId === project.view.activeFloorId && Math.hypot(f.x - camera.position.x, f.z - camera.position.z) <= 4).sort((a,b) => Math.hypot(a.x-camera.position.x,a.z-camera.position.z) - Math.hypot(b.x-camera.position.x,b.z-camera.position.z))[0]?.opening.id;
+      if (closestDoor !== nearestDoorRef.current) { nearestDoorRef.current = closestDoor; setNearbyDoor(closestDoor); }
+      const currentRoom = project.rooms.find((room) =>
           room.floorId === project.view.activeFloorId
           && roomContainsPoint(room, { x: camera.position.x, y: camera.position.z }),
         );
         const roomLabel = minimapRoomLabelRef.current;
-        const nextLabel = currentRoom?.name ?? "Outside rooms";
+        const nextLabel = currentRoom?.name ?? project.balconies.find(b => b.floorId === project.view.activeFloorId && camera.position.x >= b.x && camera.position.x <= b.x+b.width && camera.position.z >= b.y && camera.position.z <= b.y+b.length)?.name ?? "Outside rooms";
         if (roomLabel && roomLabel.textContent !== nextLabel) roomLabel.textContent = nextLabel;
         minimapRoomRefs.current.forEach((element, roomId) => {
           element.classList.toggle("is-current", roomId === currentRoom?.id);
@@ -1267,7 +1301,7 @@ export default function ModelView({
       }
       renderScene();
     };
-    const clearMovement = () => pressed.clear();
+    const clearMovement = () => { pressed.clear(); dragLook.cancel(); };
     const visibilityChanged = () => {
       if (document.hidden) { cancelAnimationFrame(frame); frame = 0; clearMovement(); }
       else { previousTime = performance.now(); requestRender(); }
@@ -1309,6 +1343,12 @@ export default function ModelView({
           lensShift,
           lensShiftX,
         };
+      } else if (!transitionRequested) {
+        // Save the latest mouse look even if an edit arrives before the next frame.
+        walkPoseRef.current = {
+          key: poseKeyForFloor(project.view.activeFloorId),
+          x: camera.position.x, y: camera.position.y, z: camera.position.z, yaw, pitch,
+        };
       }
       disposed = true;
       selectionRef.current = undefined;
@@ -1316,10 +1356,12 @@ export default function ModelView({
       cancelAnimationFrame(frame);
       window.clearTimeout(settleTimer);
       observer.disconnect();
+      dragLook.cancel();
       canvas.removeEventListener("pointerdown", handleSelectionPointerDown);
-      canvas.removeEventListener("pointermove", handleSelectionPointerMove);
-      canvas.removeEventListener("pointerup", finishDragLook);
-      canvas.removeEventListener("pointercancel", finishDragLook);
+      window.removeEventListener("pointermove", handleSelectionPointerMove);
+      window.removeEventListener("pointerup", finishDragLook);
+      window.removeEventListener("pointercancel", finishDragLook);
+      canvas.removeEventListener("lostpointercapture", finishDragLook);
       canvas.removeEventListener("click", handleClick);
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
@@ -1330,7 +1372,6 @@ export default function ModelView({
       canvas.removeEventListener("archmorph:frame-view", reframe);
       document.removeEventListener("visibilitychange", visibilityChanged);
       window.removeEventListener("blur", clearMovement);
-      if (document.pointerLockElement === canvas) document.exitPointerLock();
       controls.dispose();
       selectionMaterial.dispose(); outlineMaterial.dispose();
       scene.traverse((object) => {
@@ -1348,7 +1389,7 @@ export default function ModelView({
   }, [canvasRef, cutawayFloorId, navigationMode, sceneKey, siteContext]);
   useEffect(() => { selectionRef.current?.(selectedId); }, [selectedId, sceneKey]);
   useEffect(() => {
-    const viewKey = `${project.view.cameraPreset}:${project.view.focusElementId ?? "project"}:${project.plot.width}x${project.plot.length}:${cutawayFloorId ?? "building"}`;
+    const viewKey = `${project.view.cameraPreset}:${project.view.focusElementId ?? "project"}:${project.plot.width}x${project.plot.length}`;
     if (navigationMode === "orbit" && renderedViewKeyRef.current !== viewKey) {
       canvasRef.current?.dispatchEvent(new CustomEvent("archmorph:frame-view", { detail: project.view }));
     }
@@ -1399,11 +1440,13 @@ export default function ModelView({
       )}
       {navigationMode === "walk" ? (
         <>
+          {nearbyDoor && <button type="button" className="walk-door-action" onClick={() => { canvasRef.current?.focus({ preventScroll: true }); doorToggleRef.current(nearbyDoor); }}>{project.openings.find(o => o.id === nearbyDoor)?.state === "closed" ? "Open door" : "Close door"} · E</button>}
           <aside className="walk-minimap" aria-label={`Current position on ${activeFloor?.name ?? "active floor"}`}>
             <div className="walk-minimap__heading">
               <b>{activeFloor?.name ?? "Active floor"} · {Math.max(1, activeFloorIndex + 1)} of {project.floors.length}</b>
               <span ref={minimapRoomLabelRef}>{minimapRooms[0]?.name ?? "Outside rooms"}</span>
             </div>
+            <label className="walk-destination"><span className="visually-hidden">Walk destination</span><select aria-label="Walk destination" value={[...minimapRooms,...project.balconies.filter(b => b.floorId === activeFloor?.id)].some(item => item.id === project.view.walkStartRoomId) ? project.view.walkStartRoomId : ""} onChange={event => { if (event.target.value) onWalkDestination(event.target.value); }}><option value="">Choose a destination</option>{[...minimapRooms,...project.balconies.filter(b => b.floorId === activeFloor?.id)].map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
             <svg
               viewBox={`0 0 ${project.plot.width} ${project.plot.length}`}
               role="img"
@@ -1435,6 +1478,7 @@ export default function ModelView({
                 </mask>
               </defs>
               <rect className="walk-minimap__plot" x="0" y="0" width={project.plot.width} height={project.plot.length} />
+              {project.balconies.filter(b => b.floorId === activeFloor?.id).map(b => <g key={b.id}><rect x={b.x} y={b.y} width={b.width} height={b.length} fill="#d4dec9" stroke="#637756" strokeWidth="0.15" /><text x={b.x+b.width/2} y={b.y+b.length/2} textAnchor="middle" fontSize="1">{b.name}</text></g>)}
               {minimapRooms.map((room) => (
                 <polygon
                   key={room.id}
@@ -1473,12 +1517,12 @@ export default function ModelView({
                 }
                 const hingeX = opening.hingeSide === "end" ? opening.width / 2 : -opening.width / 2;
                 const closedEndX = -hingeX;
-                const swingSign = (opening.swingDirection === "outward" ? 1 : -1) * (opening.handing === "right" ? -1 : 1);
+                const swingSign = doorSwingSign(project, opening);
                 const openEndY = swingSign * opening.width;
                 return (
                   <g key={opening.id} className="walk-minimap__opening walk-minimap__door" transform={`translate(${frame.x} ${frame.z}) rotate(${angle})`}>
-                    <line className="walk-minimap__door-leaf" x1={hingeX} y1="0" x2={hingeX} y2={openEndY} />
-                    <path d={`M ${closedEndX} 0 A ${opening.width} ${opening.width} 0 0 ${swingSign > 0 ? 1 : 0} ${hingeX} ${openEndY}`} />
+                    <line className="walk-minimap__door-leaf" x1={hingeX} y1="0" x2={opening.state === "closed" ? closedEndX : hingeX} y2={opening.state === "closed" ? 0 : openEndY} />
+                    <path d={`M ${closedEndX} 0 A ${opening.width} ${opening.width} 0 0 ${doorArcSweepFlag(project, opening)} ${hingeX} ${openEndY}`} />
                   </g>
                 );
               })}
@@ -1498,7 +1542,7 @@ export default function ModelView({
             </svg>
           </aside>
           <div className="walk-controls" role="group" aria-label="Walk movement controls">
-            {[{ code: "KeyW", label: "Move forward", glyph: "↑" }, { code: "KeyA", label: "Move left", glyph: "←" }, { code: "KeyS", label: "Move backward", glyph: "↓" }, { code: "KeyD", label: "Move right", glyph: "→" }].map(({ code, label, glyph }) => <button key={code} type="button" aria-label={label} onPointerDown={(event) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); walkInput(code, true); }} onPointerUp={() => walkInput(code, false)} onPointerCancel={() => walkInput(code, false)} onLostPointerCapture={() => walkInput(code, false)} onBlur={() => walkInput(code, false)} onKeyDown={(event) => { if (event.key === " " || event.key === "Enter") { event.preventDefault(); walkInput(code, true); } }} onKeyUp={() => walkInput(code, false)}>{glyph}</button>)}
+            {[{ code: "KeyW", label: "Move forward", glyph: "↑" }, { code: "KeyA", label: "Move left", glyph: "←" }, { code: "KeyS", label: "Move backward", glyph: "↓" }, { code: "KeyD", label: "Move right", glyph: "→" }].map(({ code, label, glyph }) => <button key={code} type="button" aria-label={label} onPointerDown={(event) => { event.preventDefault(); capturePointerSafely(event.currentTarget, event.pointerId); walkInput(code, true); }} onPointerUp={() => walkInput(code, false)} onPointerCancel={() => walkInput(code, false)} onLostPointerCapture={() => walkInput(code, false)} onPointerLeave={() => walkInput(code, false)} onBlur={() => walkInput(code, false)} onKeyDown={(event) => { if (event.key === " " || event.key === "Enter") { event.preventDefault(); walkInput(code, true); } }} onKeyUp={() => walkInput(code, false)}>{glyph}</button>)}
             <small>Hold to move · drag the view to look</small>
           </div>
           <div className="model-view__walk-help" id="model-navigation-help">

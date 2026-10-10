@@ -4,6 +4,8 @@
 
 **Research snapshot:** August 27, 2026
 
+**Product framing updated:** October 10, 2026, from the [founder's inspiration](INSPIRATION.md)
+
 **Product scope:** Architectural design only; not interior decoration
 
 **Competition:** [The WebMCP Challenge](https://webmcp.devpost.com/)
@@ -14,7 +16,7 @@ Time-sensitive facts—especially WebMCP browser support and Devpost dates—mus
 
 ## 1. Executive summary
 
-ArchMorph is a browser-based architectural concept-design environment where a person and an AI agent work on the same live building model. A person can draw and inspect a design visually; an agent can inspect, edit, measure, validate, navigate, and present that same design through WebMCP tools. Both paths use the same project state and operation pipeline.
+ArchMorph helps people explore a future family home visually before taking the concept to a professional architect. It is a browser-based architectural concept-design environment where a person and an AI agent work on the same live building model. A person can arrange rooms, inspect the exterior, and walk through the design; an agent can inspect, edit, measure, validate, navigate, and present that same design through WebMCP tools. Both paths use the same project state and operation pipeline.
 
 The product is deliberately architecture-first. It should help users reason about plots, levels, rooms, walls, openings, circulation, stairs, measurements, building form, envelope performance, and environmental response. It should not become a furniture arranger, decoration catalog, or cinematic 3D toy.
 
@@ -33,7 +35,9 @@ The current product contains a meaningful architectural domain model, 2D and 3D 
 
 ### 2.1 Purpose
 
-ArchMorph exists to make early architectural design understandable and directly manipulable by both people and AI agents. It targets the concept and schematic-design stage, where users need rapid spatial exploration but still benefit from explicit dimensions, topology, circulation, and defensible environmental inputs.
+ArchMorph began with the founder's effort to design a family home using paper and Figma, and the difficulty of understanding how a flat plan would feel as a building. The [inspiration and product direction](INSPIRATION.md) preserve that account and the intended homeowner journey.
+
+ArchMorph exists to make early home design understandable and directly manipulable by people, including those without architectural training, working with AI agents. It targets the concept and schematic-design stage, where users need rapid spatial exploration and understandable dimensions, room relationships, circulation, site constraints, and clearly stated architectural assumptions. The default experience should help a person imagine, test, revise, and communicate a home concept.
 
 The product should help answer questions such as:
 
@@ -47,11 +51,15 @@ The product should help answer questions such as:
 
 ### 2.2 Intended users
 
-- Architects and architectural designers during early studies.
+The primary users are people exploring their future homes, including homeowners and families without architectural training. They need to understand room relationships, movement, dimensions, site constraints, and the experience of the building before discussing the design with an architect.
+
+Additional users include:
+
+- Architects and architectural designers collaborating with clients during early studies.
 - Architecture students learning spatial planning and circulation.
-- Clients participating in a guided concept-design conversation.
 - Developers or planners exploring preliminary feasibility.
-- AI agents assisting a human inside a live, visible design session.
+
+AI agents assist these people inside the same live, visible design session.
 
 ArchMorph is not presently a replacement for BIM authoring, construction documentation, structural engineering, code review, energy certification, or professional architectural services.
 

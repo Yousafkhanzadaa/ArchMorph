@@ -1,0 +1,376 @@
+{
+  "checks": "passed",
+  "projectId": "project-e1983050",
+  "version": 157,
+  "validation": {
+    "status": "issues-found",
+    "checkedAt": "2026-10-10T08:00:56.814Z",
+    "projectVersion": 157,
+    "issueCount": 1,
+    "errors": 0,
+    "warnings": 1,
+    "issues": [
+      {
+        "id": "issue-abe71844",
+        "code": "UPPER_FLOOR_BASE_UNVERIFIED",
+        "severity": "warning",
+        "message": "Upper Stair Hall at 10 ft has 86.25 sq ft beyond the modeled footprint below.",
+        "elementIds": [
+          "room-9c7447f4"
+        ],
+        "evidence": {
+          "lowerFloor": "Ground Floor",
+          "elevation": 10,
+          "uncoveredArea": 86.25,
+          "coveragePercent": 61.5
+        },
+        "suggestion": "Show the floor below and align the geometry, or develop the intended overhang/support design. Footprint overlap does not verify structural support."
+      }
+    ]
+  },
+  "circulation": {
+    "roomsReached": 27,
+    "disconnectedRoomIds": [],
+    "invalidDoorIds": [],
+    "invalidStairIds": []
+  },
+  "metrics": {
+    "unit": "sq ft",
+    "plotArea": 4000,
+    "netRoomAreaTotal": 2008,
+    "totalNetFloorArea": 2008,
+    "totalNetBuildingArea": 3696,
+    "grossCoveredArea": 2066,
+    "carpetArea": 1850.5,
+    "totalCarpetArea": 3398.5,
+    "balconyArea": 0,
+    "terraceArea": 0,
+    "projectBalconyArea": 40,
+    "projectTerraceArea": 280,
+    "totalGrossCoveredArea": 3814,
+    "openSiteArea": 1934,
+    "groundCoveragePercent": 51.7,
+    "floorAreaRatio": 0.954,
+    "measurementDefinitions": {
+      "netRoomArea": "Room-polygon area measured to wall centrelines. This is not finished carpet area — see carpetArea.",
+      "carpetArea": "Estimated usable area on the selected floor using average boundary-wall thickness. Excludes courtyards; does not deduct finishes, stair voids, or independent partitions.",
+      "totalNetFloorArea": "Sum of centreline room areas on the selected floor, excluding courtyards.",
+      "grossCoveredArea": "Built-up area on the selected floor, measured to the outer face of the external walls.",
+      "openSiteArea": "Plot area remaining outside the gross ground-floor building footprint.",
+      "groundCoveragePercent": "Gross ground-floor footprint as a percentage of plot area. Always a ground-floor ratio.",
+      "floorAreaRatio": "Total gross covered area of all floors divided by plot area (FAR / FSI).",
+      "balconyArea": "Balcony slabs on the selected floor only; projectBalconyArea covers every floor."
+    },
+    "floorCoveredArea": 2008,
+    "totalConstructedArea": 3696,
+    "roomAreaSum": 2008,
+    "openArea": 1934,
+    "coveragePercent": 51.7,
+    "buildableEnvelope": {
+      "x": 5,
+      "y": 12,
+      "width": 40,
+      "length": 60,
+      "area": 2400
+    }
+  },
+  "roomSchedule": [
+    {
+      "floor": "Ground Floor",
+      "id": "room-927a4c38",
+      "name": "Guest Lounge",
+      "type": "Living Room",
+      "x": 6,
+      "y": 14,
+      "width": 14,
+      "length": 16,
+      "area": 224
+    },
+    {
+      "floor": "Ground Floor",
+      "id": "room-13e2bc6b",
+      "name": "Entrance Hall",
+      "type": "Custom",
+      "x": 20,
+      "y": 14,
+      "width": 10,
+      "length": 16,
+      "area": 160
+    },
+    {
+      "floor": "Ground Floor",
+      "id": "room-f6c50415",
+      "name": "Courtyard Gallery",
+      "type": "Custom",
+      "x": 20,
+      "y": 30,
+      "width": 10,
+      "length": 4,
+      "area": 40
+    },
+    {
+      "floor": "Ground Floor",
+      "id": "room-0c167008",
+      "name": "Family Dining",
+      "type": "Dining Room",
+      "x": 6,
+      "y": 30,
+      "width": 14,
+      "length": 16,
+      "area": 224
+    },
+    {
+      "floor": "Ground Floor",
+      "id": "room-9630dc15",
+      "name": "Stair Hall",
+      "type": "Custom",
+      "x": 30,
+      "y": 30,
+      "width": 14,
+      "length": 16,
+      "area": 224
+    },
+    {
+      "floor": "Ground Floor",
+      "id": "room-5bb8b5f8",
+      "name": "Open Sky Courtyard",
+      "type": "Courtyard",
+      "x": 20,
+      "y": 34,
+      "width": 10,
+      "length": 12,
+      "area": 120
+    },
+    {
+      "floor": "Ground Floor",
+      "id": "room-dc79954b",
+      "name": "Family Kitchen",
+      "type": "Kitchen",
+      "x": 6,
+      "y": 46,
+      "width": 14,
+      "length": 16,
+      "area": 224
+    },
+    {
+      "floor": "Ground Floor",
+      "id": "room-e62b39ee",
+      "name": "Family Living",
+      "type": "Living Room",
+      "x": 20,
+      "y": 46,
+      "width": 24,
+      "length": 16,
+      "area": 384
+    },
+    {
+      "floor": "Ground Floor",
+      "id": "room-65196103",
+      "name": "Rear Hall",
+      "type": "Custom",
+      "x": 20,
+      "y": 62,
+      "width": 4,
+      "length": 8,
+      "area": 32
+    },
+    {
+      "floor": "Ground Floor",
+      "id": "room-1fe79cec",
+      "name": "Guest Bathroom",
+      "type": "Bathroom",
+      "x": 24,
+      "y": 62,
+      "width": 6,
+      "length": 8,
+      "area": 48
+    },
+    {
+      "floor": "Ground Floor",
+      "id": "room-5789856b",
+      "name": "Garden Study",
+      "type": "Office",
+      "x": 30,
+      "y": 62,
+      "width": 14,
+      "length": 8,
+      "area": 112
+    },
+    {
+      "floor": "Ground Floor",
+      "id": "room-8fdb0ebf",
+      "name": "Parents Suite",
+      "type": "Bedroom",
+      "x": 30,
+      "y": 14,
+      "width": 14,
+      "length": 11,
+      "area": 154
+    },
+    {
+      "floor": "Ground Floor",
+      "id": "room-d9b2ed29",
+      "name": "Parents Ensuite",
+      "type": "Bathroom",
+      "x": 30,
+      "y": 25,
+      "width": 14,
+      "length": 5,
+      "area": 70
+    },
+    {
+      "floor": "Ground Floor",
+      "id": "room-44879995",
+      "name": "Pantry",
+      "type": "Storage",
+      "x": 6,
+      "y": 62,
+      "width": 8,
+      "length": 8,
+      "area": 64
+    },
+    {
+      "floor": "Ground Floor",
+      "id": "room-134bf784",
+      "name": "Laundry",
+      "type": "Storage",
+      "x": 14,
+      "y": 62,
+      "width": 6,
+      "length": 8,
+      "area": 48
+    },
+    {
+      "floor": "First Floor",
+      "id": "room-d38bb258",
+      "name": "Primary Bedroom",
+      "type": "Bedroom",
+      "x": 6,
+      "y": 14,
+      "width": 14,
+      "length": 14,
+      "area": 196
+    },
+    {
+      "floor": "First Floor",
+      "id": "room-57e6ef1d",
+      "name": "Primary Ensuite",
+      "type": "Bathroom",
+      "x": 6,
+      "y": 28,
+      "width": 7,
+      "length": 6,
+      "area": 42
+    },
+    {
+      "floor": "First Floor",
+      "id": "room-ee749b8b",
+      "name": "Dressing Room",
+      "type": "Storage",
+      "x": 13,
+      "y": 28,
+      "width": 7,
+      "length": 6,
+      "area": 42
+    },
+    {
+      "floor": "First Floor",
+      "id": "room-e2372e44",
+      "name": "Morning Lounge",
+      "type": "Living Room",
+      "x": 20,
+      "y": 18,
+      "width": 10,
+      "length": 16,
+      "area": 160
+    },
+    {
+      "floor": "First Floor",
+      "id": "room-feebe14b",
+      "name": "Bedroom East",
+      "type": "Bedroom",
+      "x": 30,
+      "y": 14,
+      "width": 14,
+      "length": 16,
+      "area": 224
+    },
+    {
+      "floor": "First Floor",
+      "id": "room-9c7447f4",
+      "name": "Upper Stair Hall",
+      "type": "Custom",
+      "x": 30,
+      "y": 30,
+      "width": 14,
+      "length": 16,
+      "area": 224
+    },
+    {
+      "floor": "First Floor",
+      "id": "room-ac15ed5d",
+      "name": "Bedroom West",
+      "type": "Bedroom",
+      "x": 6,
+      "y": 34,
+      "width": 14,
+      "length": 16,
+      "area": 224
+    },
+    {
+      "floor": "First Floor",
+      "id": "room-7d3ce65d",
+      "name": "Upper Gallery",
+      "type": "Custom",
+      "x": 20,
+      "y": 46,
+      "width": 24,
+      "length": 4,
+      "area": 96
+    },
+    {
+      "floor": "First Floor",
+      "id": "room-e0f0e18b",
+      "name": "Family Library",
+      "type": "Office",
+      "x": 20,
+      "y": 50,
+      "width": 12,
+      "length": 12,
+      "area": 144
+    },
+    {
+      "floor": "First Floor",
+      "id": "room-034beda5",
+      "name": "Linen Store",
+      "type": "Storage",
+      "x": 32,
+      "y": 50,
+      "width": 6,
+      "length": 8,
+      "area": 48
+    },
+    {
+      "floor": "First Floor",
+      "id": "room-3894f38e",
+      "name": "Family Bathroom",
+      "type": "Bathroom",
+      "x": 38,
+      "y": 50,
+      "width": 6,
+      "length": 8,
+      "area": 48
+    },
+    {
+      "floor": "First Floor",
+      "id": "room-41de4ae5",
+      "name": "Evening Family Lounge",
+      "type": "Living Room",
+      "x": 20,
+      "y": 58,
+      "width": 24,
+      "length": 12,
+      "area": 240
+    }
+  ]
+}

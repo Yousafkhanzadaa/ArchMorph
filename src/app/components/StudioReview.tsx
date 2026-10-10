@@ -12,6 +12,8 @@ const titles: Partial<Record<ValidationIssue["code"], string>> = {
   WALL_OUTSIDE_PLOT: "Wall is outside the land", ROOM_BELOW_HABITABLE_MINIMUM: "Review room size", ROOM_DAYLIGHT_SHORTFALL: "Review daylight",
   ROOM_NO_VENTILATION: "Review natural ventilation", BEDROOM_NO_EGRESS: "Review bedroom escape route", BEDROOM_EGRESS_UNVERIFIED: "Confirm clear escape opening",
   INVALID_BALCONY: "Review balcony or terrace", INVALID_SITE_BOUNDARY: "Review boundary wall and gate", INVALID_FACADE_FEATURE: "Review façade feature",
+  INVALID_WALL: "Repair wall geometry", DUPLICATE_WALL: "Review duplicate walls", UPPER_FLOOR_BASE_UNVERIFIED: "Review geometry below this floor", DOOR_SWEEP_CLASH: "Review door swing clearance",
+  WALL_ENCLOSURE_WITHOUT_ROOM: "Wall enclosure needs a room", PARTITION_WITHOUT_SPACES: "Review the room partition",
 };
 export function issueTitle(issue: ValidationIssue) {
   return titles[issue.code] ?? issue.code.toLowerCase().replaceAll("_", " ");

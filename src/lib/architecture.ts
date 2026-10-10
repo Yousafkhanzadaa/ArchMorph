@@ -1,3 +1,6 @@
+import { doorSweepPolygon } from "./door-geometry.ts";
+import { coveredPolygonArea, lowerFloorReference, polygonArea, roomPolygon, roomSplitCandidate, sameWallSpan, wallEnclosure, wallFootprintPolygon, wallsTouch } from "./wall-planning.ts";
+
 export type Actor = "human" | "agent" | "system";
 export type ViewMode = "2d" | "3d";
 export type NavigationMode = "orbit" | "walk";
@@ -202,6 +205,7 @@ export type Opening = {
   hingeSide?: DoorHingeSide;
   handing?: DoorHanding;
   swingDirection?: DoorSwingDirection;
+      opensIntoRoomId?: string | null;
   state?: DoorState;
   windowType?: WindowType;
   operable?: boolean;
@@ -322,6 +326,11 @@ export type ValidationIssue = {
     | "OPENING_WITHOUT_ADJACENCY"
     | "OPENING_OVERLAP"
     | "WALL_OUTSIDE_PLOT"
+    | "INVALID_WALL"
+    | "DUPLICATE_WALL"
+    | "UPPER_FLOOR_BASE_UNVERIFIED"
+    | "WALL_ENCLOSURE_WITHOUT_ROOM"
+    | "PARTITION_WITHOUT_SPACES"
     | "ROOM_BELOW_HABITABLE_MINIMUM"
     | "ROOM_DAYLIGHT_SHORTFALL"
     | "ROOM_NO_VENTILATION"
@@ -329,7 +338,8 @@ export type ValidationIssue = {
     | "BEDROOM_EGRESS_UNVERIFIED"
     | "INVALID_BALCONY"
     | "INVALID_SITE_BOUNDARY"
-    | "INVALID_FACADE_FEATURE";
+    | "INVALID_FACADE_FEATURE"
+    | "DOOR_SWEEP_CLASH";
   severity: "error" | "warning";
   message: string;
   elementIds: string[];
@@ -342,7 +352,7 @@ export type ValidationIssue = {
 
 export type CirculationNode = {
   id: string;
-  type: "room" | "exterior";
+  type: "room" | "exterior" | "outdoor";
   label: string;
   floorId?: string;
 };
@@ -363,6 +373,7 @@ export type CirculationGraph = {
   primaryEntryRoomId?: string;
   hasExteriorAccess: boolean;
   reachableRoomIds: string[];
+  reachableOutdoorIds: string[];
   disconnectedRoomIds: string[];
   invalidDoorIds: string[];
   invalidStairIds: string[];
@@ -390,6 +401,7 @@ export type PointRef =
   | { elementId: string; anchor?: "center" | "start" | "end" };
 
 export type ArchitectureOperation =
+  | { type: "apply_batch"; operations: ArchitectureOperation[]; expectedVersion: number; createdElementIds?: string[][] }
   | { type: "rename_project"; name: string }
   | { type: "set_plot"; width?: number; length?: number; orientation?: Plot["orientation"]; setbacks?: Partial<Plot["setbacks"]> }
   | { type: "set_plot_orientation"; orientation: Plot["orientation"] }
@@ -417,6 +429,9 @@ export type ArchitectureOperation =
   | { type: "update_room_vertices"; roomId: string; vertices: PlanPoint[] }
   | { type: "update_room"; roomId: string; name?: string; roomType?: RoomType }
   | { type: "delete_room"; roomId: string }
+  | { type: "create_room_from_walls"; wallId: string; name: string; roomType: RoomType }
+  | { type: "split_room_with_wall"; wallId: string; roomId: string; name?: string; roomType?: RoomType; firstName?: string; firstRoomType?: RoomType }
+  | { type: "update_wall"; wallId: string; x1?: number; y1?: number; x2?: number; y2?: number; thickness?: number; length?: number }
   | {
       type: "add_wall";
       floorId: string;
@@ -447,6 +462,7 @@ export type ArchitectureOperation =
       hingeSide?: DoorHingeSide;
       handing?: DoorHanding;
       swingDirection?: DoorSwingDirection;
+      opensIntoRoomId?: string | null;
       state?: DoorState;
       windowType?: WindowType;
       operable?: boolean;
@@ -468,6 +484,7 @@ export type ArchitectureOperation =
       hingeSide?: DoorHingeSide;
       handing?: DoorHanding;
       swingDirection?: DoorSwingDirection;
+      opensIntoRoomId?: string | null;
       state?: DoorState;
       windowType?: WindowType;
       operable?: boolean;
@@ -596,7 +613,7 @@ export type ArchitectureOperation =
   | { type: "delete_element"; elementId: string }
   | { type: "switch_view"; mode: ViewMode }
   | { type: "set_navigation_mode"; mode: NavigationMode; roomId?: string }
-  | { type: "set_camera"; preset: CameraPreset }
+  | { type: "set_camera"; preset: CameraPreset; scope?: "project" | "floor" | "selection" }
   | { type: "focus_element"; elementId?: string };
 
 export type OperationOutcome = {
@@ -1231,11 +1248,18 @@ function overlappingOpening(project: Project, candidate: Opening, ignoredId?: st
 }
 
 function assertOpeningPlacement(project: Project, opening: Opening, ignoredId?: string) {
+  if (![opening.offset, opening.width, opening.height, opening.sillHeight ?? 0].every(Number.isFinite)) throw new Error("Opening dimensions must be finite numbers.");
+  if (opening.kind === "door" && (opening.width < 2 || opening.width > 8 || opening.height < 6 || opening.height > 9)) {
+    throw new Error("Doors must be 2–8 ft wide and 6–9 ft high. These are concept-model limits, not a code approval.");
+  }
+  if (opening.kind === "window" && (opening.width < 1 || opening.width > 16 || opening.height < 1 || opening.height > 8)) throw new Error("Windows must be 1–16 ft wide and 1–8 ft high.");
   const wall = project.walls.find((item) => item.id === opening.wallId);
   if (!wall) throw new Error(`Wall ${opening.wallId} does not exist.`);
+  if (opening.floorId !== wall.floorId) throw new Error("The opening must be on its host wall's floor.");
   if (wall.roomIds.length > 2) {
     throw new Error(`The ${opening.kind} cannot be hosted by a wall shared by more than two rooms.`);
   }
+  if (opening.opensIntoRoomId && !wall.roomIds.includes(opening.opensIntoRoomId)) throw new Error("The door must open into a room adjoining its host wall.");
   const length = wallLength(wall);
   if (opening.width <= 0 || opening.offset < opening.width / 2 || opening.offset > length - opening.width / 2) {
     throw new Error(`The ${opening.kind} does not fit on this ${round(length, 1)} ft wall.`);
@@ -1412,18 +1436,11 @@ export function projectMetrics(project: Project, floorId = project.view.activeFl
     0,
     project.plot.length - project.plot.setbacks.front - project.plot.setbacks.rear,
   );
-  const balconyArea = round(project.balconies
-    .filter((balcony) => balcony.floorId === floorId && balcony.kind === "balcony")
-    .reduce((sum, balcony) => sum + balcony.width * balcony.length, 0));
-  const terraceArea = round(project.balconies
-    .filter((balcony) => balcony.floorId === floorId && balcony.kind === "terrace")
-    .reduce((sum, balcony) => sum + balcony.width * balcony.length, 0));
-  const projectBalconyArea = round(project.balconies
-    .filter((balcony) => balcony.kind === "balcony")
-    .reduce((sum, balcony) => sum + balcony.width * balcony.length, 0));
-  const projectTerraceArea = round(project.balconies
-    .filter((balcony) => balcony.kind === "terrace")
-    .reduce((sum, balcony) => sum + balcony.width * balcony.length, 0));
+  const outdoorArea = (kind: Balcony["kind"], id?: string) => round(project.floors.filter(f => !id || f.id === id).reduce((sum, floor) => sum + rectangleUnionArea(project.balconies.filter(b => b.floorId === floor.id && b.kind === kind).map(b => ({ left: b.x, right: b.x + b.width, top: b.y, bottom: b.y + b.length }))), 0));
+  const balconyArea = outdoorArea("balcony", floorId);
+  const terraceArea = outdoorArea("terrace", floorId);
+  const projectBalconyArea = outdoorArea("balcony");
+  const projectTerraceArea = outdoorArea("terrace");
   const carpetArea = round(project.rooms
     .filter((room) => room.floorId === floorId && room.type !== "Courtyard")
     .reduce((sum, room) => sum + roomCarpetArea(project, room), 0));
@@ -1526,7 +1543,7 @@ function pointOnWall(wall: Wall, point: { x: number; y: number }) {
   return { offset, distance };
 }
 
-function openingCenter(wall: Wall, opening: Opening) {
+export function openingCenter(wall: Wall, opening: Opening) {
   const length = wallLength(wall);
   const ratio = length ? opening.offset / length : 0;
   return {
@@ -1536,17 +1553,11 @@ function openingCenter(wall: Wall, opening: Opening) {
 }
 
 function connectWalls(walls: Wall[]) {
-  const samePoint = (a: number, b: number) => Math.abs(a - b) < 0.01;
   return walls.map((wall) => ({
     ...wall,
     connectedWallIds: walls
       .filter((other) => other.id !== wall.id && other.floorId === wall.floorId)
-      .filter((other) => [
-        [wall.x1, wall.y1, other.x1, other.y1],
-        [wall.x1, wall.y1, other.x2, other.y2],
-        [wall.x2, wall.y2, other.x1, other.y1],
-        [wall.x2, wall.y2, other.x2, other.y2],
-      ].some(([ax, ay, bx, by]) => samePoint(ax, bx) && samePoint(ay, by)))
+      .filter((other) => wallsTouch(wall, other))
       .map((other) => other.id),
   }));
 }
@@ -1571,7 +1582,12 @@ export function rebuildCanonicalTopology(
   });
   const topologyWalls: Wall[] = [];
   groups.forEach((group) => {
-    const cuts = Array.from(new Set(group.flatMap((edge) => [edge.start, edge.end]))).sort((a, b) => a - b);
+    const preservedCuts = oldWalls.filter(wall => wall.roomIds.length && !wall.id.startsWith(`wall-${wall.floorId}-`)
+      && wall.floorId === group[0].floorId && group.some(edge => edge.orientation === "horizontal"
+        ? Math.abs(wall.y1 - edge.coordinate) < 0.01 && Math.abs(wall.y2 - edge.coordinate) < 0.01
+        : Math.abs(wall.x1 - edge.coordinate) < 0.01 && Math.abs(wall.x2 - edge.coordinate) < 0.01))
+      .flatMap(wall => group[0].orientation === "horizontal" ? [wall.x1, wall.x2] : [wall.y1, wall.y2]);
+    const cuts = Array.from(new Set([...group.flatMap((edge) => [edge.start, edge.end]), ...preservedCuts])).sort((a, b) => a - b);
     for (let index = 0; index < cuts.length - 1; index += 1) {
       const start = cuts[index];
       const end = cuts[index + 1];
@@ -1582,7 +1598,17 @@ export function rebuildCanonicalTopology(
       const floor = project.floors.find((item) => item.id === reference.floorId);
       const roomSides = covering.map((edge) => ({ roomId: edge.roomId, side: edge.side }));
       const roomIds = Array.from(new Set(roomSides.map((item) => item.roomId)));
-      const id = canonicalWallId({ ...reference, start, end });
+      const canonicalId = canonicalWallId({ ...reference, start, end });
+      const span = { floorId: reference.floorId, x1: reference.orientation === "horizontal" ? start : reference.coordinate,
+        y1: reference.orientation === "horizontal" ? reference.coordinate : start,
+        x2: reference.orientation === "horizontal" ? end : reference.coordinate,
+        y2: reference.orientation === "horizontal" ? reference.coordinate : end } as Wall;
+      const previous = oldWallById.get(canonicalId) ?? oldWalls.find(wall => wall.roomIds.length && sameWallSpan(wall, span));
+      const coveringOldWall = previous ?? oldWalls.find(wall => wall.roomIds.length && wall.floorId === span.floorId
+        && (pointOnWall(wall, { x: span.x1, y: span.y1 })?.distance ?? Infinity) < 0.01
+        && (pointOnWall(wall, { x: span.x2, y: span.y2 })?.distance ?? Infinity) < 0.01
+        && [{ x: span.x1, y: span.y1 }, { x: span.x2, y: span.y2 }].every(point => { const offset = pointOnWall(wall, point)?.offset ?? -1; return offset >= -0.01 && offset <= wallLength(wall) + 0.01; }));
+      const id = previous?.id ?? canonicalId;
       topologyWalls.push({
         id,
         floorId: reference.floorId,
@@ -1590,13 +1616,13 @@ export function rebuildCanonicalTopology(
         y1: reference.orientation === "horizontal" ? reference.coordinate : start,
         x2: reference.orientation === "horizontal" ? end : reference.coordinate,
         y2: reference.orientation === "horizontal" ? reference.coordinate : end,
-        thickness: 0.5,
+        thickness: coveringOldWall?.thickness ?? 0.5,
         height: floor?.height ?? 9,
         roomIds,
         roomSides,
         exterior: roomIds.length === 1,
         connectedWallIds: [],
-        finish: oldWallById.get(id)?.finish,
+        finish: coveringOldWall?.finish,
         roomId: roomIds.length === 1 ? roomIds[0] : undefined,
         side: roomIds.length === 1 ? roomSides[0]?.side : undefined,
       });
@@ -1627,7 +1653,7 @@ export function rebuildCanonicalTopology(
       if (strict) throw new Error(`The ${opening.kind} ${opening.id} no longer fits a valid host wall.`);
       continue;
     }
-    migratedOpenings.push({ ...opening, wallId: candidate.wall.id, offset: round(candidate.placement.offset) });
+    migratedOpenings.push({ ...opening, opensIntoRoomId: opening.opensIntoRoomId && candidate.wall.roomIds.includes(opening.opensIntoRoomId) ? opening.opensIntoRoomId : undefined, wallId: candidate.wall.id, offset: round(candidate.placement.offset) });
   }
   project.openings = migratedOpenings;
   const migratedFeatures: FacadeFeature[] = [];
@@ -1981,6 +2007,9 @@ function alignTranslation(project: Project, floorId: string, vertices: PlanPoint
 
 /** Rooms may touch but never overlap. Prevented at the operation, not merely reported afterwards. */
 function assertNoRoomOverlap(project: Project, candidate: Room, ignoreRoomId?: string) {
+  if (candidate.type !== "Courtyard") for (const b of project.balconies.filter(b => b.floorId === candidate.floorId)) {
+    if (coveredPolygonArea(roomPolygon(candidate), [balconyPolygon(b)]) > 0.01) throw new Error(`${candidate.name} would overlap ${b.name}. Keep rooms and outdoor slabs in separate floor area.`);
+  }
   for (const other of project.rooms) {
     if (other.id === ignoreRoomId || other.id === candidate.id || other.floorId !== candidate.floorId) continue;
     const overlap = rectanglesOverlap(candidate, other);
@@ -2034,6 +2063,7 @@ function assertFinish(finish: ExteriorFinishId) {
 }
 
 function assertBalcony(project: Project, balcony: Balcony) {
+  if (![balcony.x, balcony.y, balcony.width, balcony.length, balcony.slabThickness, balcony.railing.height].every(Number.isFinite)) throw new Error("Outdoor slab dimensions must be finite numbers.");
   if (!project.floors.some((floor) => floor.id === balcony.floorId)) throw new Error(`Floor ${balcony.floorId} does not exist.`);
   if (balcony.width < 3 || balcony.length < 3) throw new Error("Balconies and terraces must be at least 3 × 3 ft.");
   if (balcony.slabThickness < 0.25 || balcony.slabThickness > 2) throw new Error("Balcony slab thickness must be between 0.25 and 2 ft.");
@@ -2043,6 +2073,15 @@ function assertBalcony(project: Project, balcony: Balcony) {
   if (balcony.railing.height < 2 || balcony.railing.height > 6) throw new Error("Railing height must be between 2 and 6 ft.");
   if (!balcony.railing.sides.length) throw new Error("Select at least one railing side.");
   assertFinish(balcony.finish);
+  const polygon = balconyPolygon(balcony);
+  const conflict = [...project.balconies.filter(b => b.id !== balcony.id && b.floorId === balcony.floorId).map(b => ({ id: b.id, name: b.name, polygon: balconyPolygon(b) })),
+    ...project.rooms.filter(r => r.floorId === balcony.floorId && r.type !== "Courtyard").map(r => ({ id: r.id, name: r.name, polygon: roomPolygon(r) }))]
+    .find(other => coveredPolygonArea(polygon, [other.polygon]) > 0.01);
+  if (conflict) throw new Error(`${balcony.name} overlaps ${conflict.name}. Outdoor slabs must occupy separate floor area; shared edges are allowed.`);
+}
+
+export function balconyPolygon(b: Pick<Balcony, "x" | "y" | "width" | "length">): PlanPoint[] {
+  return [{ x: b.x, y: b.y }, { x: b.x + b.width, y: b.y }, { x: b.x + b.width, y: b.y + b.length }, { x: b.x, y: b.y + b.length }];
 }
 
 function assertSiteBoundary(project: Project, boundary: SiteBoundarySettings) {
@@ -2140,11 +2179,68 @@ export function elementIsOnFloor(project: Project, id: string, floorId: string) 
   return elementFloorIds(project, id).includes(floorId);
 }
 
+function assertWallGeometry(project: Project, wall: Wall, ignoreId?: string) {
+  if (![wall.x1, wall.y1, wall.x2, wall.y2, wall.thickness, wall.height].every(Number.isFinite)) throw new Error("Wall coordinates, thickness and height must be finite numbers.");
+  if (wallLength(wall) < 1) throw new Error("A wall must be at least 1 ft long.");
+  if (wall.thickness < 0.2 || wall.thickness > 2) throw new Error("Wall thickness must be between 0.2 and 2 ft.");
+  if ([wall.x1, wall.x2].some(x => x < 0 || x > project.plot.width) || [wall.y1, wall.y2].some(y => y < 0 || y > project.plot.length)) throw new Error("Keep wall endpoints inside the plot boundary.");
+  if (project.walls.some(other => other.id !== ignoreId && sameWallSpan(wall, other))) throw new Error("A wall already occupies these endpoints. Select the existing wall instead.");
+}
+
+/** Absence of modeled geometry is guidance, never a claim that a footprint establishes structural support. */
+export function upperFloorBaseFindings(project: Project, floorId: string) {
+  const floor = project.floors.find(f => f.id === floorId), lower = lowerFloorReference(project, floorId);
+  if (!floor || !lower) return [];
+  const lowerTouches = Math.abs(lower.elevation + lower.height - floor.elevation) < 0.02;
+  const footprints = lowerTouches ? [
+    ...project.rooms.filter(room => room.floorId === lower.id && room.type !== "Courtyard").map(roomPolygon),
+    ...project.walls.filter(wall => wall.floorId === lower.id && wall.height >= lower.height - 0.02).map(wallFootprintPolygon),
+  ] : [];
+  // A roof deck above a lower-floor stair contains this same opening.
+  const holes = project.stairs.filter(stair => { const connection = stairConnection(project, stair); return connection?.lowerFloor.id === lower.id && connection.upperFloor.id === floor.id; }).map(stairPlanOutline);
+  const targets = [
+    ...project.rooms.filter(room => room.floorId === floorId && room.type !== "Courtyard").map(room => ({ id: room.id, name: room.name, polygon: roomPolygon(room) })),
+    ...project.walls.filter(wall => wall.floorId === floorId && !wall.roomIds.length).map(wall => ({ id: wall.id, name: "Independent wall", polygon: wallFootprintPolygon(wall) })),
+    ...project.balconies.filter(b => b.floorId === floorId).map(b => ({ id: b.id, name: b.name, polygon: [{ x: b.x, y: b.y }, { x: b.x + b.width, y: b.y }, { x: b.x + b.width, y: b.y + b.length }, { x: b.x, y: b.y + b.length }] })),
+  ];
+  return targets.flatMap(target => {
+    // An intentional stair opening is absent from both the lower roof and the upper slab.
+    // Compare the occupied surface, rather than reporting the opening itself as an overhang.
+    const isIndependentWall = project.walls.some(w => w.id === target.id);
+    const area = polygonArea(target.polygon) - (isIndependentWall ? 0 : coveredPolygonArea(target.polygon, holes));
+    const uncoveredArea = round(Math.max(0, area - coveredPolygonArea(target.polygon, footprints, holes)), 2);
+    return uncoveredArea > 0.05 ? [{ elementId: target.id, name: target.name, lowerFloorId: lower.id, lowerFloorName: lower.name, elevation: floor.elevation, uncoveredArea, coveragePercent: round((area - uncoveredArea) / Math.max(area, 0.001) * 100, 1) }] : [];
+  });
+}
+
 export function applyOperation(
   current: Project,
   operation: ArchitectureOperation,
   actor: Actor,
 ): OperationOutcome {
+  if (operation.type === "apply_batch") {
+    if (current.version !== operation.expectedVersion) throw new Error("The design changed since this batch was prepared. Inspect and preview it again.");
+    if (!operation.operations.length || operation.operations.length > 50 || operation.operations.some(op => op.type === "apply_batch" || ["switch_view", "set_navigation_mode", "set_camera", "focus_element", "set_active_floor"].includes(op.type))) throw new Error("A batch must contain 1–50 design edits, without nested batches or presentation operations.");
+    let draft = current;
+    const results: Record<string, unknown>[] = [];
+    const ids = (p: Project) => [p.floors,p.rooms,p.walls,p.openings,p.stairs,p.balconies,p.facadeFeatures].flatMap(items => items.map(item => item.id));
+    const remapping = new Map<string,string>();
+    const remap = (value: unknown): unknown => typeof value === "string" ? remapping.get(value) ?? value : Array.isArray(value) ? value.map(remap) : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([key,item]) => [key,remap(item)])) : value;
+    for (const [index, edit] of operation.operations.entries()) {
+      try {
+        const beforeIds = new Set(ids(draft));
+        const outcome = applyOperation(draft, remap(edit) as ArchitectureOperation, actor);
+        draft = outcome.project; results.push(outcome.result);
+        const created = ids(draft).filter(id => !beforeIds.has(id)), planned = operation.createdElementIds?.[index];
+        if (planned) { if (created.length !== planned.length) throw new Error("The batch identity plan changed; preview again."); planned.forEach((id,i) => remapping.set(id,created[i])); }
+      }
+      catch (error) { throw new Error(`Batch step ${index + 1} failed: ${error instanceof Error ? error.message : String(error)}`); }
+    }
+    const description = `${actorLabel(actor)} applied ${operation.operations.length} changes in one batch`;
+    const project = withActivity({ ...draft, version: current.version, activity: current.activity }, actor, "apply_batch", description);
+    const committedResults = results.map(result => committedOperationResult(project, result));
+    return { project, result: { projectVersion: project.version, appliedChanges: operation.operations.length, results: committedResults, metrics: projectMetrics(project) }, description };
+  }
   const who = actorLabel(actor);
   let project: Project = {
     ...current,
@@ -2379,6 +2475,7 @@ export function applyOperation(
         type: operation.roomType ?? previous.type,
         color: operation.roomType ? roomPalette[operation.roomType] : previous.color,
       };
+      assertNoRoomOverlap(project, room, room.id);
       project.rooms[index] = room;
       description = `${who} updated ${room.name}`;
       result = { room };
@@ -2395,6 +2492,45 @@ export function applyOperation(
       if (project.view.focusElementId === room.id) project.view.focusElementId = undefined;
       description = `${who} deleted ${room.name}`;
       result = { deletedRoomId: room.id, name: room.name };
+      break;
+    }
+    case "create_room_from_walls": {
+      const enclosure = wallEnclosure(project, operation.wallId);
+      if (!enclosure) throw new Error("Choose a simple closed enclosure of 4–12 independent orthogonal walls, without branches.");
+      const vertices = normalizedRoomVertices(enclosure.vertices);
+      assertRoomVertices(project, vertices);
+      const room = roomFromVertices({ id: createId("room"), floorId: enclosure.floorId, name: operation.name.trim() || operation.roomType,
+        type: operation.roomType, ...roomBounds({ vertices, x: 0, y: 0, width: 0, length: 0 }), color: roomPalette[operation.roomType], wallIds: [], shape: "custom" }, vertices);
+      assertNoRoomOverlap(project, room);
+      project.rooms.push(room);
+      project.walls = project.walls.map(wall => enclosure.wallIds.includes(wall.id) ? { ...wall, roomIds: [room.id], roomId: room.id } : wall);
+      rebuildCanonicalTopology(project);
+      assertAllOpeningsValid(project);
+      project.view.focusElementId = room.id;
+      description = `${who} created ${room.name} from the wall enclosure`;
+      result = { room: project.rooms.find(r => r.id === room.id), retainedWallIds: enclosure.wallIds, area: roomArea(room) };
+      break;
+    }
+    case "split_room_with_wall": {
+      const room = roomSplitCandidate(project, operation.wallId);
+      if (!room || room.id !== operation.roomId) throw new Error("The partition must cross the entire rectangular room, leaving at least 3 ft on each side.");
+      const wall = project.walls.find(w => w.id === operation.wallId)!;
+      const horizontal = Math.abs(wall.y2 - wall.y1) < 0.01;
+      const first = { ...room, name: operation.firstName?.trim() || room.name, type: operation.firstRoomType ?? room.type, color: roomPalette[operation.firstRoomType ?? room.type], vertices: undefined, shape: "rectangle" as const,
+        width: horizontal ? room.width : wall.x1 - room.x, length: horizontal ? wall.y1 - room.y : room.length };
+      const second = { ...room, id: createId("room"), name: operation.name?.trim() || `${room.name} 2`, type: operation.roomType ?? room.type, color: roomPalette[operation.roomType ?? room.type], vertices: undefined, shape: "rectangle" as const,
+        x: horizontal ? room.x : wall.x1, y: horizontal ? wall.y1 : room.y,
+        width: horizontal ? room.width : room.x + room.width - wall.x1, length: horizontal ? room.y + room.length - wall.y1 : room.length, wallIds: [] };
+      assertRoomInsidePlot(project, first); assertRoomInsidePlot(project, second);
+      project.rooms = project.rooms.filter(r => r.id !== room.id);
+      assertNoRoomOverlap(project, first); assertNoRoomOverlap(project, second);
+      project.rooms.push(first, second);
+      project.walls = project.walls.map(w => w.id === wall.id ? { ...w, roomIds: [first.id, second.id], roomId: undefined } : w);
+      rebuildCanonicalTopology(project);
+      assertAllOpeningsValid(project);
+      project.view.focusElementId = second.id;
+      description = `${who} split ${room.name} into two rooms using its partition`;
+      result = { rooms: project.rooms.filter(r => r.id === first.id || r.id === second.id), sharedWallId: wall.id };
       break;
     }
     case "add_wall": {
@@ -2415,13 +2551,15 @@ export function applyOperation(
         exterior: false,
         connectedWallIds: [],
       };
-      if (wallLength(wall) < 1) throw new Error("A wall must be at least 1 ft long.");
+      assertWallGeometry(project, wall);
       project.walls.push(wall);
+      project.walls = connectWalls(project.walls);
       project.view.focusElementId = wall.id;
       description = `${who} added a ${round(wallLength(wall), 1)} ft wall`;
-      result = { wall, length: round(wallLength(wall), 2) };
+      result = { wall: project.walls.find(item => item.id === wall.id), length: round(wallLength(wall), 2) };
       break;
     }
+    case "update_wall":
     case "move_wall": {
       const index = project.walls.findIndex((wall) => wall.id === operation.wallId);
       if (index < 0) throw new Error(`Wall ${operation.wallId} does not exist.`);
@@ -2429,20 +2567,30 @@ export function applyOperation(
       if (previous.roomIds.length) {
         throw new Error("This wall is controlled by its room. Move or resize the room instead.");
       }
-      const dx = operation.dx ?? 0;
-      const dy = operation.dy ?? 0;
+      const dx = operation.type === "move_wall" ? operation.dx ?? 0 : 0;
+      const dy = operation.type === "move_wall" ? operation.dy ?? 0 : 0;
       const wall = {
         ...previous,
         x1: round(operation.x1 ?? previous.x1 + dx),
         y1: round(operation.y1 ?? previous.y1 + dy),
         x2: round(operation.x2 ?? previous.x2 + dx),
         y2: round(operation.y2 ?? previous.y2 + dy),
+        thickness: operation.type === "update_wall" ? operation.thickness ?? previous.thickness : previous.thickness,
       };
+      if (operation.type === "update_wall" && operation.length !== undefined) {
+        if (!Number.isFinite(operation.length) || operation.length < 1) throw new Error("Wall length must be a finite number of at least 1 ft.");
+        const length = wallLength(wall);
+        if (!length) throw new Error("Keep the wall endpoints distinct before changing its length.");
+        wall.x2 = round(wall.x1 + (wall.x2 - wall.x1) / length * operation.length);
+        wall.y2 = round(wall.y1 + (wall.y2 - wall.y1) / length * operation.length);
+      }
+      assertWallGeometry(project, wall, previous.id);
       project.walls[index] = wall;
       assertAllOpeningsValid(project);
+      project.walls = connectWalls(project.walls);
       project.view.focusElementId = wall.id;
-      description = `${who} moved a wall`;
-      result = { wall, length: round(wallLength(wall), 2) };
+      description = `${who} ${operation.type === "update_wall" ? "updated" : "moved"} a wall`;
+      result = { wall: project.walls.find(item => item.id === wall.id), length: round(wallLength(wall), 2) };
       break;
     }
     case "add_opening": {
@@ -2466,6 +2614,7 @@ export function applyOperation(
           hingeSide: operation.hingeSide ?? "start",
           handing: operation.handing ?? "left",
           swingDirection: operation.swingDirection ?? "inward",
+          opensIntoRoomId: operation.opensIntoRoomId ?? undefined,
           state: operation.state ?? "open",
         } : {
           ...windowOperation(operation.windowType, operation.operable),
@@ -2504,6 +2653,7 @@ export function applyOperation(
         hingeSide: operation.hingeSide ?? previous.hingeSide,
         handing: operation.handing ?? previous.handing,
         swingDirection: operation.swingDirection ?? previous.swingDirection,
+        opensIntoRoomId: operation.opensIntoRoomId === null ? undefined : operation.opensIntoRoomId ?? previous.opensIntoRoomId,
         state: operation.state ?? previous.state,
         ...(previous.kind === "window" ? windowOperation(operation.windowType, operation.operable, previous) : {}),
         clearWidth: operation.clearWidth === null ? undefined : operation.clearWidth ?? previous.clearWidth,
@@ -2591,7 +2741,7 @@ export function applyOperation(
     case "set_wall_finish": {
       const index = project.walls.findIndex((wall) => wall.id === operation.wallId);
       if (index < 0) throw new Error(`Wall ${operation.wallId} does not exist.`);
-      if (!project.walls[index].exterior) throw new Error("Finish overrides apply only to exterior walls.");
+      if (!project.walls[index].exterior && project.walls[index].roomIds.length) throw new Error("Finish overrides apply to exterior or independent walls.");
       if (operation.finish) assertFinish(operation.finish);
       project.walls[index] = { ...project.walls[index], finish: operation.finish };
       project.view.focusElementId = operation.wallId;
@@ -2758,6 +2908,7 @@ export function applyOperation(
       break;
     }
     case "create_floor": {
+      if (!Number.isFinite(operation.height ?? 9) || (operation.height ?? 9) < 7 || (operation.height ?? 9) > 16) throw new Error("Storey height must be between 7 and 16 ft.");
       const previous = [...project.floors].sort((a, b) => b.level - a.level)[0];
       const level = (previous?.level ?? -1) + 1;
       const floor: Floor = {
@@ -2818,6 +2969,7 @@ export function applyOperation(
       if (wall?.roomIds.length) throw new Error("Canonical room-boundary walls are controlled by their rooms.");
       if (!wall && !opening && !stair && !balcony && !facadeFeature) throw new Error("This element cannot be deleted.");
       project.walls = project.walls.filter((item) => item.id !== operation.elementId);
+      project.walls = connectWalls(project.walls);
       project.openings = project.openings.filter(
         (item) => item.id !== operation.elementId && item.wallId !== operation.elementId,
       );
@@ -2836,8 +2988,8 @@ export function applyOperation(
     }
     case "set_navigation_mode": {
       if (operation.roomId) {
-        const room = project.rooms.find((item) => item.id === operation.roomId);
-        if (!room) throw new Error(`Room ${operation.roomId} does not exist.`);
+        const room = project.rooms.find((item) => item.id === operation.roomId) ?? project.balconies.find(item => item.id === operation.roomId);
+        if (!room) throw new Error(`Walk destination ${operation.roomId} does not exist.`);
         project.view.activeFloorId = room.floorId;
         project.view.focusElementId = room.id;
         project.view.walkStartRoomId = room.id;
@@ -2854,6 +3006,7 @@ export function applyOperation(
       project.view.mode = "3d";
       project.view.navigationMode = "orbit";
       project.view.cameraPreset = operation.preset;
+      if (operation.scope !== "selection") project.view.focusElementId = operation.scope === "floor" ? project.view.activeFloorId : undefined;
       description = `${who} set the camera to ${operation.preset}`;
       result = { view: project.view };
       break;
@@ -2871,10 +3024,25 @@ export function applyOperation(
       result = { focusElementId: operation.elementId ?? null, view: project.view };
       break;
     }
+    default: throw new Error("Unknown architecture operation.");
   }
 
+  for (const opening of project.openings) if (opening.opensIntoRoomId && !project.walls.find(w => w.id === opening.wallId)?.roomIds.includes(opening.opensIntoRoomId)) opening.opensIntoRoomId = undefined;
   project = withActivity(project, actor, operation.type, description);
-  return { project, result: { ...result, projectVersion: project.version }, description };
+  return { project, result: committedOperationResult(project, result), description };
+}
+
+// Topology edits may replace wall IDs. Resolve returned entities against the final commit,
+// including batch steps whose entities were subsequently resized or renamed.
+function committedOperationResult(project: Project, result: Record<string, unknown>) {
+  const entities = new Map([...project.floors, ...project.rooms, ...project.walls, ...project.openings, ...project.stairs, ...project.balconies, ...project.facadeFeatures].map(item => [item.id, item]));
+  const committed: Record<string, unknown> = { ...result, projectVersion: project.version };
+  for (const key of ["floor", "room", "wall", "opening", "stair", "balcony", "facadeFeature"] as const) {
+    const entity = result[key] as { id?: string } | undefined;
+    if (entity?.id) committed[key] = entities.get(entity.id) ?? entity;
+  }
+  if (Array.isArray(result.rooms)) committed.rooms = result.rooms.map((room: Room) => entities.get(room.id) ?? room);
+  return committed;
 }
 
 function rectanglesOverlap(a: Room, b: Room) {
@@ -2900,6 +3068,7 @@ export function buildCirculationGraph(project: Project): CirculationGraph {
   const nodes: CirculationNode[] = [
     { id: exteriorId, type: "exterior", label: "Exterior / site access" },
     ...project.rooms.map((room) => ({ id: room.id, type: "room" as const, label: room.name, floorId: room.floorId })),
+    ...project.balconies.map(b => ({ id: b.id, type: "outdoor" as const, label: b.name, floorId: b.floorId })),
   ];
   const edges: CirculationEdge[] = [];
   const invalidDoorIds: string[] = [];
@@ -2908,10 +3077,12 @@ export function buildCirculationGraph(project: Project): CirculationGraph {
 
   project.openings.filter((opening) => opening.kind === "door").forEach((opening) => {
     const wall = project.walls.find((item) => item.id === opening.wallId);
-    if (!wall || wall.roomIds.length > 2) {
+    try { assertOpeningPlacement(project, opening, opening.id); } catch {
       invalidDoorIds.push(opening.id);
       return;
     }
+    if (!wall) return;
+    if (wall.roomIds.some(id => !project.rooms.some(room => room.id === id))) { invalidDoorIds.push(opening.id); return; }
     // A door in an independent wall (a garden gate, a screen wall) is a valid opening that simply
     // joins no two spaces, so it carries no circulation edge and is not a broken host.
     if (!wall.roomIds.length) return;
@@ -2921,8 +3092,12 @@ export function buildCirculationGraph(project: Project): CirculationGraph {
     }
     const point = openingCenter(wall, opening);
     const floorLevel = project.floors.find((floor) => floor.id === opening.floorId)?.level ?? 0;
-    exteriorDoors.push({ opening, roomId: wall.roomIds[0], point, floorLevel });
-    edges.push({ id: `circulation-${opening.id}`, type: "door", from: exteriorId, to: wall.roomIds[0], openingId: opening.id });
+    const outdoor = project.balconies.find(b => b.floorId === opening.floorId && point.x >= b.x - 0.05 && point.x <= b.x + b.width + 0.05 && point.y >= b.y - 0.05 && point.y <= b.y + b.length + 0.05);
+    if (outdoor) edges.push({ id: `circulation-${opening.id}`, type: "door", from: outdoor.id, to: wall.roomIds[0], openingId: opening.id });
+    if (floorLevel === 0) {
+      exteriorDoors.push({ opening, roomId: wall.roomIds[0], point, floorLevel });
+      edges.push({ id: `circulation-${opening.id}-site`, type: "door", from: exteriorId, to: wall.roomIds[0], openingId: opening.id });
+    }
   });
 
   const floors = [...project.floors].sort((a, b) => a.level - b.level);
@@ -2991,7 +3166,8 @@ export function buildCirculationGraph(project: Project): CirculationGraph {
     mainEntranceOpeningId: mainEntrance?.opening.id,
     primaryEntryRoomId,
     hasExteriorAccess: exteriorDoors.length > 0,
-    reachableRoomIds: Array.from(reachable),
+    reachableRoomIds: project.rooms.filter(r => reachable.has(r.id)).map(r => r.id),
+    reachableOutdoorIds: project.balconies.filter(b => reachable.has(b.id)).map(b => b.id),
     disconnectedRoomIds: primaryEntryRoomId ? relevantRooms.filter((room) => !reachable.has(room.id)).map((room) => room.id) : relevantRooms.map((room) => room.id),
     invalidDoorIds,
     invalidStairIds,
@@ -3011,6 +3187,28 @@ export function validateLayout(project: Project, floorId?: string): ValidationRe
     front: plot.setbacks.front,
     rear: plot.length - plot.setbacks.rear,
   };
+
+  for (const id of targetFloors) for (const finding of upperFloorBaseFindings(project, id)) {
+    issues.push({ id: createId("issue"), code: "UPPER_FLOOR_BASE_UNVERIFIED", severity: "warning",
+      message: `${finding.name} at ${finding.elevation} ft has ${finding.uncoveredArea} sq ft beyond the modeled footprint below.`,
+      elementIds: [finding.elementId], evidence: { lowerFloor: finding.lowerFloorName, elevation: finding.elevation, uncoveredArea: finding.uncoveredArea, coveragePercent: finding.coveragePercent },
+      suggestion: "Show the floor below and align the geometry, or develop the intended overhang/support design. Footprint overlap does not verify structural support." });
+  }
+  const reviewedEnclosures = new Set<string>();
+  for (const wall of walls.filter(w => !w.roomIds.length)) {
+    const enclosure = wallEnclosure(project, wall.id);
+    if (enclosure && !reviewedEnclosures.has(wall.id)) {
+      enclosure.wallIds.forEach(id => reviewedEnclosures.add(id));
+      issues.push({ id: createId("issue"), code: "WALL_ENCLOSURE_WITHOUT_ROOM", severity: "warning",
+        message: "This closed wall enclosure has no room, floor slab or occupied area.", elementIds: enclosure.wallIds,
+        evidence: { enclosedArea: enclosure.area, wallCount: enclosure.wallIds.length },
+        suggestion: "Select a wall and review Create room from enclosure, or keep it as independent walls for an outdoor enclosure." });
+    }
+    const split = roomSplitCandidate(project, wall.id);
+    if (split) issues.push({ id: createId("issue"), code: "PARTITION_WITHOUT_SPACES", severity: "warning",
+      message: `This partition crosses ${split.name}, which is still one room.`, elementIds: [wall.id, split.id],
+      evidence: { roomName: split.name, wallId: wall.id }, suggestion: "Review Split room in the wall properties to create two spaces and a shared wall, or keep the wall as an independent screen." });
+  }
 
   for (const room of rooms) {
     const outside =
@@ -3091,6 +3289,10 @@ export function validateLayout(project: Project, floorId?: string): ValidationRe
   circulation.invalidDoorIds.forEach((openingId) => {
     const opening = project.openings.find((item) => item.id === openingId);
     if (!opening || !targetFloors.includes(opening.floorId)) return;
+    const wall = project.walls.find(item => item.id === opening.wallId);
+    // Geometry failures are reported as INVALID_OPENING below. Adjacency guidance applies
+    // only to a missing or structurally invalid host, never to an out-of-bounds gate.
+    if (wall && wall.roomIds.length <= 2 && wall.roomIds.every(id => project.rooms.some(room => room.id === id))) return;
     issues.push({
       id: createId("issue"),
       code: "OPENING_WITHOUT_ADJACENCY",
@@ -3251,6 +3453,14 @@ export function validateLayout(project: Project, floorId?: string): ValidationRe
   }
 
   for (const wall of walls) {
+    if (![wall.x1, wall.y1, wall.x2, wall.y2, wall.thickness, wall.height].every(Number.isFinite) || wallLength(wall) < (wall.roomIds.length ? 0.01 : 1) || wall.thickness < 0.2 || wall.thickness > 2) {
+      issues.push({ id: createId("issue"), code: "INVALID_WALL", severity: "error", message: "A wall has invalid endpoints or thickness.", elementIds: [wall.id],
+        evidence: { length: wallLength(wall), thickness: wall.thickness }, suggestion: "Use finite endpoints and 0.2–2 ft thickness. Independent walls need at least 1 ft length; room-boundary fragments may be shorter." });
+    }
+    const duplicate = walls.find(other => other.id !== wall.id && sameWallSpan(wall, other));
+    if (duplicate && wall.id < duplicate.id) issues.push({ id: createId("issue"), code: "DUPLICATE_WALL", severity: "warning",
+      message: "Two walls occupy the same endpoints.", elementIds: [wall.id, duplicate.id], evidence: { wallCount: 2 },
+      suggestion: "Review their openings and ownership before deleting the redundant independent wall." });
     const outside = [wall.x1, wall.x2].some((x) => x < 0 || x > plot.width) ||
       [wall.y1, wall.y2].some((y) => y < 0 || y > plot.length);
     if (outside) {
@@ -3270,16 +3480,18 @@ export function validateLayout(project: Project, floorId?: string): ValidationRe
     const wall = project.walls.find((item) => item.id === opening.wallId);
     const length = wall ? wallLength(wall) : 0;
     const verticalInvalid = Boolean(wall && ((opening.sillHeight ?? 0) < 0 || opening.height <= 0 || (opening.sillHeight ?? 0) + opening.height > wall.height));
-    const invalid = !wall || wall.roomIds.length > 2 || opening.offset < opening.width / 2 || opening.offset > length - opening.width / 2 || verticalInvalid;
+    const dimensionsInvalid = ![opening.width, opening.height, opening.offset, opening.sillHeight ?? 0].every(Number.isFinite)
+      || (opening.kind === "door" ? opening.width < 2 || opening.width > 8 || opening.height < 6 || opening.height > 9 : opening.width < 1 || opening.width > 16 || opening.height < 1 || opening.height > 8);
+    const invalid = dimensionsInvalid || !wall || wall.roomIds.length > 2 || wall.floorId !== opening.floorId || (opening.opensIntoRoomId && !wall.roomIds.includes(opening.opensIntoRoomId)) || opening.offset < opening.width / 2 || opening.offset > length - opening.width / 2 || verticalInvalid;
     if (invalid) {
       issues.push({
         id: createId("issue"),
         code: "INVALID_OPENING",
         severity: "error",
-        message: `A ${opening.kind} is not positioned on a valid wall segment.`,
+        message: `A ${opening.kind} has invalid dimensions or is not positioned on a valid wall segment.`,
         elementIds: [opening.id, opening.wallId],
         evidence: { offset: opening.offset, width: opening.width, wallLength: round(length), height: opening.height, sillHeight: opening.sillHeight ?? 0, wallHeight: wall?.height ?? 0 },
-        suggestion: `Reposition the ${opening.kind} within the wall or select another wall.`,
+        suggestion: opening.kind === "door" ? "Use a 2–8 ft wide, 6–9 ft high door that fits its host wall." : "Use a 1–16 ft wide, 1–8 ft high window that fits its host wall.",
       });
     }
     // Independent walls host openings legitimately, but a door in one is a gate rather than a
@@ -3409,17 +3621,24 @@ export function validateLayout(project: Project, floorId?: string): ValidationRe
     }
   }
 
+  const reviewedDoorPairs = new Set<string>();
+  for (const door of project.openings.filter(o => o.kind === "door" && o.opensIntoRoomId && targetFloors.includes(o.floorId))) {
+    const sweep = doorSweepPolygon(project, door);
+    const collisions = project.walls.filter(w => w.floorId === door.floorId && w.id !== door.wallId && coveredPolygonArea(sweep, [wallFootprintPolygon(w)]) > 0.15);
+    for (const other of project.openings.filter(o => o.kind === "door" && o.floorId === door.floorId && o.id !== door.id && o.opensIntoRoomId === door.opensIntoRoomId)) {
+      const pair = [door.id,other.id].sort().join(":");
+      if (!reviewedDoorPairs.has(pair) && coveredPolygonArea(sweep,[doorSweepPolygon(project,other)]) > 0.15) {
+        reviewedDoorPairs.add(pair);
+        issues.push({ id: createId("issue"), code: "DOOR_SWEEP_CLASH", severity: "warning", message: "Two door swing clearances overlap.", elementIds: [door.id,other.id], evidence: { opensIntoRoomId: door.opensIntoRoomId! }, suggestion: "Review hinge sides and opening positions, or choose a different room to swing into." });
+      }
+    }
+    if (collisions.length) issues.push({ id: createId("issue"), code: "DOOR_SWEEP_CLASH", severity: "warning", message: "This door swing clearance intersects another wall.", elementIds: [door.id,...collisions.map(w => w.id)], evidence: { wallCount: collisions.length, opensIntoRoomId: door.opensIntoRoomId! }, suggestion: "Review the opening offset, hinge side, width, and room the leaf opens into." });
+  }
+
   for (const balcony of project.balconies.filter((item) => targetFloors.includes(item.floorId))) {
-    const outside = balcony.width < 3 || balcony.length < 3 || balcony.x < 0 || balcony.y < 0
-      || balcony.x + balcony.width > plot.width || balcony.y + balcony.length > plot.length;
-    if (!outside) continue;
-    issues.push({
-      id: createId("issue"), code: "INVALID_BALCONY", severity: "error",
-      message: `${balcony.name} does not fit within the editable site boundary.`,
-      elementIds: [balcony.id],
-      evidence: { x: balcony.x, y: balcony.y, width: balcony.width, length: balcony.length },
-      suggestion: "Move or resize the balcony/terrace so its complete slab remains inside the plot.",
-    });
+    try { assertBalcony(project, balcony); } catch (error) {
+      issues.push({ id: createId("issue"), code: "INVALID_BALCONY", severity: "error", message: error instanceof Error ? error.message : "Invalid outdoor slab.", elementIds: [balcony.id], evidence: { width: balcony.width, length: balcony.length }, suggestion: "Keep valid outdoor slabs separate from other occupied slabs; shared edges are allowed." });
+    }
   }
 
   for (const feature of project.facadeFeatures) {
@@ -3508,6 +3727,7 @@ export function inspectWall(project: Project, wallId: string) {
       source: wall.finish ? "wall-override" : "project-default",
       ...exteriorFinishPresets[wall.finish ?? project.exteriorFinish],
     } : null,
+    independentFinish: !wall.roomIds.length ? wall.finish ?? project.exteriorFinish : null,
     facadeFeatures: project.facadeFeatures.filter((feature) => feature.wallId === wall.id),
   };
 }
@@ -3566,7 +3786,7 @@ export function inspectFloor(project: Project, floorId: string, detail: "summary
       rooms: rooms.map((room) => ({ ...room, area: roomArea(room), carpetArea: roomCarpetArea(project, room), perimeter: roomPerimeter(room) })),
       walls,
       openings,
-      stairs: project.stairs.filter((stair) => stair.floorId === floorId),
+      stairs: project.stairs.filter(stair => stairDetails.some(detail => detail.stair.id === stair.id)),
       stairDetails,
       balconies,
       facadeFeatures,

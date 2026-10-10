@@ -1,0 +1,21 @@
+{
+  "verifiedAt": "2026-10-10T19:36:21.485Z",
+  "canvas": {
+    "data-camera-pitch": "0.022",
+    "data-camera-yaw": "3.021",
+    "data-navigation-mode": "walk",
+    "data-project-id": "project-e1983050",
+    "data-project-version": "157"
+  },
+  "dragLooking": "false",
+  "pointerLockUnavailable": null,
+  "errors": [],
+  "checked": [
+    "repeated canvas clicks",
+    "drag look",
+    "release outside canvas",
+    "movement button hold and release",
+    "reload and drag"
+  ],
+  "limitation": "Embedded browser refuses pointer lock; the locked-document path and capture exceptions were tested by npm run test:pointer."
+}

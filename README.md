@@ -1,18 +1,22 @@
 # ArchMorph
 
-**A human + agent architecture studio for the open web.**
+**Explore the home you want to build, with an AI working beside you.**
 
-ArchMorph is a browser-based architectural concept-design environment where a person and a WebMCP agent work on the same live building model. People draw and inspect spatial ideas visually; agents use named, typed tools to inspect, edit, measure, validate, navigate, and present that exact design.
+ArchMorph helps people explore a future family home before taking the concept to a professional architect. Arrange rooms, see the house from outside, walk through it, and keep improving the idea without needing architectural training to begin.
+
+A person and a WebMCP agent work on the same live building model. People draw and inspect spatial ideas visually; agents use named, typed tools to inspect, edit, measure, validate, navigate, and present that exact design. ArchMorph supports early exploration and communication with architects and engineers.
 
 - **Live application:** [archmorph-studio.musfk.chatgpt.site](https://archmorph-studio.musfk.chatgpt.site)
 - **WebMCP Challenge:** [webmcp.devpost.com](https://webmcp.devpost.com/)
+- **Inspiration and product direction:** [docs/INSPIRATION.md](docs/INSPIRATION.md)
+- **Complete showcase home and studio audit:** [Sukoon House](docs/SUKOON_HOUSE_STUDIO_AUDIT_2026-10-10.md)
 - **Detailed product and engineering reference:** [docs/ARCHMORPH_RESEARCH_AND_ROADMAP.md](docs/ARCHMORPH_RESEARCH_AND_ROADMAP.md)
 
 ![ArchMorph floor-plan editor](docs/assets/archmorph-plan.png)
 
 ## Why WebMCP
 
-Coordinate clicking is fragile in an architectural editor. A small visual error can select the wrong wall, place an opening outside its host, or edit the wrong floor. ArchMorph instead exposes 57 architectural operations through `document.modelContext.registerTool()`.
+Coordinate clicking is fragile in an architectural editor. A small visual error can select the wrong wall, place an opening outside its host, or edit the wrong floor. ArchMorph instead exposes 63 architectural operations through `document.modelContext.registerTool()`.
 
 The landing page is WebMCP-enabled too: an agent can inspect the product surface, control the live model's complete/section presentation and drawing layers, then open the studio through four focused route-scoped tools. Clicking the layer toggles or the section button runs the same four definitions, so the title block above the model attributes each change to the person or the agent. Entering the studio releases that landing catalog and replaces it with the full architectural tool surface.
 
@@ -59,8 +63,8 @@ ArchMorph intentionally focuses on architecture rather than furniture, decoratio
 
 | Category | Count | Examples |
 | --- | ---: | --- |
-| Inspect | 8 | `inspect_project`, `inspect_floor`, `inspect_exterior`, `inspect_circulation` |
-| Edit | 37 | `configure_plot`, `set_floor_height`, `update_room`, `add_balcony`, `set_roof`, `delete_stairs` |
+| Inspect | 9 | `inspect_project`, `inspect_floor`, `inspect_exterior`, `inspect_circulation`, `preview_changes` |
+| Edit | 42 | `configure_plot`, `set_floor_height`, `update_room`, `add_balcony`, `set_roof`, `apply_changes` |
 | Calculate and validate | 5 | `calculate_room_area`, `measure_distance`, `validate_layout` |
 | Present | 7 | `switch_view`, `set_active_floor`, `set_camera`, `focus_element`, `take_snapshot` |
 
@@ -88,6 +92,8 @@ Open the local URL printed by the development server, normally [http://localhost
 
 To load the included sample residence, open the project menu, select **Import**, and choose [`fixtures/recovered-modern-house.archmorph.json`](fixtures/recovered-modern-house.archmorph.json).
 
+For a larger two-storey courtyard home, import [`fixtures/sukoon-family-retreat.archmorph.json`](fixtures/sukoon-family-retreat.archmorph.json). [Its design and audit](docs/SUKOON_HOUSE_STUDIO_AUDIT_2026-10-10.md) include plans, cutaways, walkthrough evidence, and reproducible studio findings.
+
 Add `?debug=1` to the local URL only when you need the WebMCP catalog and local tool harness. The normal production interface deliberately keeps engineering controls hidden.
 
 ## Verification
@@ -95,13 +101,17 @@ Add `?debug=1` to the local URL only when you need the WebMCP catalog and local 
 ```bash
 npm run test:architecture
 npm run test:webmcp
+npm run test:model
+npm run test:studio
+npm run test:walls
+npm run test:audit
 npm run lint
 npm run build
 ```
 
-`test:architecture` covers canonical geometry, topology, openings, circulation, straight/L/U stairs, polygonal rooms, exterior systems, per-project sites, persistence, migrations, and spatial collision data. `test:webmcp` checks the 57-tool catalog, schema boundaries, annotations, unique names, human/agent operation parity, inspection payload size, and representative inspection/mutation failures.
+`test:architecture` covers canonical geometry, topology, openings, circulation, straight/L/U stairs, polygonal rooms, exterior systems, per-project sites, persistence, migrations, and spatial collision data. `test:webmcp` checks the 63-tool catalog, schema boundaries, annotations, unique names, human/agent operation parity, inspection payload size, and representative inspection/mutation failures.
 
-The N01–N10 production baseline was verified with ChatGPT desktop 26.825.41651 (build 7345) when the deployed catalog contained 40 tools: N01–N07 and N09–N10 passed, and N08 was N/A because that client exposes no cancellation mechanism. The 51-tool catalog additionally passed native local discovery and representative exterior-system execution on August 30; the current catalog contains 57 tools. See [`docs/WEBMCP_TESTING.md`](docs/WEBMCP_TESTING.md) for the exact records.
+The N01–N10 production baseline was verified with ChatGPT desktop 26.825.41651 (build 7345) when the deployed catalog contained 40 tools: N01–N07 and N09–N10 passed, and N08 was N/A because that client exposes no cancellation mechanism. The 51-tool catalog additionally passed native local discovery and representative exterior-system execution on August 30; the current catalog contains 63 tools. See [`docs/WEBMCP_TESTING.md`](docs/WEBMCP_TESTING.md) for the exact records.
 
 The under-three-minute recording plan and narration are ready in [`docs/DEMO_VIDEO_SCRIPT.md`](docs/DEMO_VIDEO_SCRIPT.md).
 
@@ -121,6 +131,8 @@ The under-three-minute recording plan and narration are ready in [`docs/DEMO_VID
 The project uses Next.js 16, React 19, TypeScript, Three.js, SVG, Tailwind CSS, vinext, Vite, and Cloudflare/OpenAI Sites integration.
 
 ## Scope and limitations
+
+The [Sukoon House studio audit](docs/SUKOON_HOUSE_STUDIO_AUDIT_2026-10-10.md) records a complete family-home build and its limitations. The [fix report](docs/STUDIO_AUDIT_FIXES_2026-10-11.md) maps each finding to the implementation, verification, or remaining work.
 
 ArchMorph is a concept and schematic-design tool. Its calculations and checks do not constitute BIM authoring, construction documentation, building-code approval, structural engineering, energy certification, permit review, or professional architectural services.
 

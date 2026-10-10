@@ -1,0 +1,99 @@
+{
+  "floorCreation": {
+    "elevation": 9,
+    "copiesLowerFootprint": false,
+    "hasExplicitSlabEntity": false
+  },
+  "upperWall": {
+    "base": 9,
+    "top": 18,
+    "issueCodes": [],
+    "roofSurfaces": 0
+  },
+  "closedLoop": {
+    "wallCount": 4,
+    "rooms": 0,
+    "issueCodes": [],
+    "liveConnectionCounts": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "afterMigrationConnectionCounts": [
+      2,
+      2,
+      2,
+      2
+    ],
+    "roofSurfaces": 0
+  },
+  "upperRoom": {
+    "base": 9,
+    "slabTop": 9.18,
+    "slabSurfaces": 6,
+    "roofSurfaces": 80,
+    "issueCodes": [
+      "NO_ROOM_ACCESS",
+      "NO_EXTERIOR_ACCESS"
+    ]
+  },
+  "heightChange": {
+    "upperElevation": 12,
+    "independentWallHeight": 9
+  },
+  "duplicateWall": {
+    "canonicalWalls": 2,
+    "physicalVolumes": 1,
+    "issueCodes": []
+  },
+  "collapsedWall": {
+    "length": 0,
+    "physicalVolumes": 0,
+    "issueCodes": []
+  },
+  "thickness0": {
+    "accepted": true,
+    "stored": 0,
+    "issueCodes": []
+  },
+  "thickness-0.5": {
+    "accepted": true,
+    "stored": -0.5,
+    "issueCodes": []
+  },
+  "thickness3": {
+    "accepted": true,
+    "stored": 3,
+    "issueCodes": []
+  },
+  "outsidePlot": {
+    "accepted": true,
+    "issueCodes": [
+      "WALL_OUTSIDE_PLOT"
+    ]
+  },
+  "coordinateNaN": {
+    "accepted": true,
+    "finiteStoredCoordinates": false
+  },
+  "coordinateInfinity": {
+    "accepted": true,
+    "finiteStoredCoordinates": false
+  },
+  "hostedOpeningMove": {
+    "hostRetained": true,
+    "offsetRetained": true,
+    "openingIdRetained": true
+  },
+  "tJunction": {
+    "liveConnectionCounts": [
+      0,
+      0
+    ],
+    "afterMigrationConnectionCounts": [
+      0,
+      0
+    ]
+  }
+}

@@ -1,4 +1,8 @@
+import { assertToolInput } from "./tool-input.ts";
 import {
+  roomTypes,
+  applyOperation,
+  cloneProject,
   type ArchitectureOperation,
   type CameraPreset,
   type OperationOutcome,
@@ -73,14 +77,14 @@ function requiredString(input: Record<string, unknown>, key: string) {
 
 function requiredNumber(input: Record<string, unknown>, key: string) {
   const value = input[key];
-  if (typeof value !== "number" || Number.isNaN(value)) throw new Error(`${key} must be a number.`);
+  if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`${key} must be a number with a finite value.`);
   return value;
 }
 
 function optionalNumber(input: Record<string, unknown>, key: string) {
   const value = input[key];
   if (value === undefined) return undefined;
-  if (typeof value !== "number" || Number.isNaN(value)) throw new Error(`${key} must be a number.`);
+  if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`${key} must be a number with a finite value.`);
   return value;
 }
 
@@ -121,7 +125,7 @@ function pointReference(input: unknown, label: string): PointRef {
 const readOnly = { readOnlyHint: true };
 
 export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
-  return [
+  const tools: ArchMorphTool[] = [
     {
       name: "inspect_project",
       category: "inspect",
@@ -478,6 +482,27 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
       }).result,
     },
     {
+      name: "update_wall",
+      category: "edit",
+      description: "Edit independent-wall endpoints, length from the start, or thickness. Rejects invalid geometry and retains hosted openings atomically. Room-boundary geometry belongs to its rooms.",
+      inputSchema: { type: "object", properties: { wallId, x1: { type: "number" }, y1: { type: "number" }, x2: { type: "number" }, y2: { type: "number" }, length: { type: "number", minimum: 1 }, thickness: { type: "number", minimum: 0.2, maximum: 2 } }, required: ["wallId"], additionalProperties: false },
+      execute: input => runtime.perform({ type: "update_wall", wallId: requiredString(input, "wallId"), x1: optionalNumber(input, "x1"), y1: optionalNumber(input, "y1"), x2: optionalNumber(input, "x2"), y2: optionalNumber(input, "y2"), length: optionalNumber(input, "length"), thickness: optionalNumber(input, "thickness") }).result,
+    },
+    {
+      name: "create_room_from_walls",
+      category: "edit",
+      description: "Convert a simple closed orthogonal enclosure of 4–12 independent walls into a room and slab, preserving wall IDs, thickness, finishes, and valid openings atomically. Branched networks and overlaps are rejected.",
+      inputSchema: { type: "object", properties: { wallId, name: { type: "string" }, roomType: { type: "string", enum: [...roomTypes] } }, required: ["wallId", "name", "roomType"], additionalProperties: false },
+      execute: input => runtime.perform({ type: "create_room_from_walls", wallId: requiredString(input, "wallId"), name: requiredString(input, "name"), roomType: requiredString(input, "roomType") as RoomType }).result,
+    },
+    {
+      name: "split_room_with_wall",
+      category: "edit",
+      description: "Explicitly split a rectangular room using a full-span horizontal or vertical independent partition. Creates two spaces and one shared wall while retaining valid openings and finishes; both sides need at least 3 ft.",
+      inputSchema: { type: "object", properties: { wallId, roomId, name: { type: "string" }, roomType: { type: "string", enum: roomTypes }, firstName: { type: "string" }, firstRoomType: { type: "string", enum: roomTypes } }, required: ["wallId", "roomId"], additionalProperties: false },
+      execute: input => runtime.perform({ type: "split_room_with_wall", wallId: requiredString(input, "wallId"), roomId: requiredString(input, "roomId"), name: optionalString(input, "name"), roomType: optionalString(input, "roomType") as RoomType | undefined, firstName: optionalString(input, "firstName"), firstRoomType: optionalString(input, "firstRoomType") as RoomType | undefined }).result,
+    },
+    {
       name: "move_wall",
       category: "edit",
       description:
@@ -526,6 +551,7 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
           hingeSide: { type: "string", enum: ["start", "end"], default: "start" },
           handing: { type: "string", enum: ["left", "right"], default: "left" },
           swingDirection: { type: "string", enum: ["inward", "outward"], default: "inward" },
+          opensIntoRoomId: { type: ["string", "null"], description: "Adjacent room the open leaf swings into." },
           state: { type: "string", enum: ["open", "closed"], default: "open" },
         },
         required: ["wallId", "offset"],
@@ -541,6 +567,7 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
         hingeSide: optionalString(input, "hingeSide") as "start" | "end" | undefined,
         handing: optionalString(input, "handing") as "left" | "right" | undefined,
         swingDirection: optionalString(input, "swingDirection") as "inward" | "outward" | undefined,
+          opensIntoRoomId: input.opensIntoRoomId === null ? null : optionalString(input, "opensIntoRoomId"),
         state: optionalString(input, "state") as "open" | "closed" | undefined,
       }).result,
     },
@@ -554,7 +581,7 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
         properties: {
           wallId,
           offset: { type: "number" },
-          width: { type: "number", minimum: 2, maximum: 12, default: 4 },
+          width: { type: "number", minimum: 1, maximum: 16, default: 4 },
           height: { type: "number", minimum: 1, maximum: 8, default: 4 },
           sillHeight: { type: "number", minimum: 0, maximum: 8, default: 3 },
           windowType: { type: "string", enum: ["fixed", "casement", "sliding", "awning"], default: "fixed" },
@@ -597,12 +624,13 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
         properties: {
           openingId,
           offset: { type: "number", description: "Opening center distance from the wall start, in feet." },
-          width: { type: "number", minimum: 0.5, maximum: 16 },
-          height: { type: "number", minimum: 0.5, maximum: 12 },
+          width: { type: "number", minimum: 1, maximum: 16 },
+          height: { type: "number", minimum: 1, maximum: 9 },
           sillHeight: { type: "number", minimum: 0, maximum: 10 },
           hingeSide: { type: "string", enum: ["start", "end"] },
           handing: { type: "string", enum: ["left", "right"] },
           swingDirection: { type: "string", enum: ["inward", "outward"] },
+          opensIntoRoomId: { type: ["string", "null"], description: "Adjacent room the open leaf swings into; overrides legacy handing/swing-direction sign. Null restores legacy behavior." },
           state: { type: "string", enum: ["open", "closed"] },
           windowType: { type: "string", enum: ["fixed", "casement", "sliding", "awning"] },
           operable: { type: "boolean", description: "Setting true alone changes a fixed window to casement; false sets type to fixed." },
@@ -626,6 +654,7 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
         hingeSide: optionalString(input, "hingeSide") as "start" | "end" | undefined,
         handing: optionalString(input, "handing") as "left" | "right" | undefined,
         swingDirection: optionalString(input, "swingDirection") as "inward" | "outward" | undefined,
+          opensIntoRoomId: input.opensIntoRoomId === null ? null : optionalString(input, "opensIntoRoomId"),
         state: optionalString(input, "state") as "open" | "closed" | undefined,
         windowType: optionalString(input, "windowType") as "fixed" | "casement" | "sliding" | "awning" | undefined,
         operable: optionalBoolean(input, "operable"),
@@ -650,6 +679,7 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
           hingeSide: { type: "string", enum: ["start", "end"] },
           handing: { type: "string", enum: ["left", "right"] },
           swingDirection: { type: "string", enum: ["inward", "outward"] },
+          opensIntoRoomId: { type: ["string", "null"], description: "Adjacent room the open leaf swings into; overrides legacy handing/swing-direction sign. Null restores legacy behavior." },
           state: { type: "string", enum: ["open", "closed"] },
         },
         required: ["openingId"],
@@ -667,6 +697,7 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
           hingeSide: optionalString(input, "hingeSide") as "start" | "end" | undefined,
           handing: optionalString(input, "handing") as "left" | "right" | undefined,
           swingDirection: optionalString(input, "swingDirection") as "inward" | "outward" | undefined,
+          opensIntoRoomId: input.opensIntoRoomId === null ? null : optionalString(input, "opensIntoRoomId"),
           state: optionalString(input, "state") as "open" | "closed" | undefined,
         }).result;
       },
@@ -884,7 +915,7 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
     {
       name: "set_wall_finish",
       category: "edit",
-      description: "Set or reset a material override on one exterior canonical wall. Omit finish to return the wall to the project façade default.",
+      description: "Set or reset an exterior or independent wall finish. Independent-wall overrides apply to both sides; omit finish to inherit the project palette.",
       inputSchema: { type: "object", properties: { wallId, finish: { type: "string", enum: ["stucco", "brick", "concrete", "timber", "metal"] } }, required: ["wallId"], additionalProperties: false },
       execute: (input) => runtime.perform({ type: "set_wall_finish", wallId: requiredString(input, "wallId"), finish: optionalString(input, "finish") as ExteriorFinishId | undefined }).result,
     },
@@ -1151,11 +1182,11 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
       description: "Switch to 3D and visibly move the camera to a standard architectural view.",
       inputSchema: {
         type: "object",
-        properties: { preset: { type: "string", enum: ["front", "rear", "left", "right", "top", "front-left", "front-right"] } },
+        properties: { scope: { type: "string", enum: ["project", "floor", "selection"], default: "project" }, preset: { type: "string", enum: ["front", "rear", "left", "right", "top", "front-left", "front-right"] } },
         required: ["preset"],
         additionalProperties: false,
       },
-      execute: (input) => runtime.perform({ type: "set_camera", preset: requiredString(input, "preset") as CameraPreset }).result,
+      execute: (input) => runtime.perform({ type: "set_camera", preset: requiredString(input, "preset") as CameraPreset, scope: optionalString(input, "scope") as "project" | "floor" | "selection" | undefined }).result,
     },
     {
       name: "set_navigation_mode",
@@ -1166,7 +1197,7 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
         type: "object",
         properties: {
           mode: { type: "string", enum: ["orbit", "walk"] },
-          roomId: { type: "string", description: "Optional room to start inside when entering walk mode." },
+          roomId: { type: "string", description: "Optional room, balcony, or terrace ID to start inside when entering Walk." },
         },
         required: ["mode"],
         additionalProperties: false,
@@ -1223,4 +1254,35 @@ export function createArchMorphTools(runtime: ToolRuntime): ArchMorphTool[] {
       ),
     },
   ];
+  const editable = tools.filter(t => t.category === "edit").map(t => t.name);
+  const batchSchema = { type: "object", properties: { expectedVersion: { type: "number" }, changes: { type: "array", minItems: 1, maxItems: 50, items: { type: "object", properties: { tool: { type: "string", enum: editable }, input: { type: "object", additionalProperties: true } }, required: ["tool", "input"], additionalProperties: false } } }, required: ["expectedVersion", "changes"], additionalProperties: false };
+  const prepareBatch = (input: Record<string, unknown>) => {
+    const before = runtime.getProject();
+    if (input.expectedVersion !== before.version) throw new Error("The design changed. Inspect its current version before preparing a batch.");
+    let draft = cloneProject(before);
+    const operations: ArchitectureOperation[] = [], outputs: unknown[] = [], createdElementIds: string[][] = [];
+    const ids = (p: Project) => [p.floors,p.rooms,p.walls,p.openings,p.stairs,p.balconies,p.facadeFeatures].flatMap(items => items.map(item => item.id));
+    const sandbox = createArchMorphTools({ ...runtime, getProject: () => draft, perform: op => { const beforeIds = new Set(ids(draft)); const outcome = applyOperation(draft, op, "agent"); draft = outcome.project; operations.push(op); createdElementIds.push(ids(draft).filter(id => !beforeIds.has(id))); return outcome; }, noteActivity: () => {} });
+    const resolve = (value: unknown): unknown => {
+      if (typeof value === "string" && /^\$\d+\./.test(value)) {
+        const [step, ...keys] = value.slice(1).split(".");
+        let result = outputs[Number(step) - 1];
+        for (const key of keys) result = result && typeof result === "object" ? (result as Record<string, unknown>)[key] : undefined;
+        if (result === undefined) throw new Error(`Unknown prior-step reference ${value}.`);
+        return result;
+      }
+      if (Array.isArray(value)) return value.map(resolve);
+      if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key,item]) => [key,resolve(item)]));
+      return value;
+    };
+    for (const [index, change] of (input.changes as { tool: string; input: Record<string, unknown> }[]).entries()) {
+      if (!editable.includes(change.tool)) throw new Error(`Batch step ${index + 1} must be a design edit.`);
+      try { outputs.push(sandbox.find(t => t.name === change.tool)!.execute(resolve(change.input) as Record<string, unknown>)); }
+      catch (error) { throw new Error(`Batch step ${index + 1} failed: ${error instanceof Error ? error.message : String(error)}`); }
+    }
+    return { before, draft, operations, outputs, createdElementIds };
+  };
+  tools.push({ name: "preview_changes", category: "inspect", annotations: readOnly, description: "Preview 1–50 design tool calls without changing the live project. Supply expectedVersion. Later inputs may refer to earlier outputs, e.g. $1.room.id. Returns metrics and checks before applying.", inputSchema: batchSchema, execute: input => { const batch = prepareBatch(input); return { baseVersion: batch.before.version, changeCount: batch.operations.length, results: batch.outputs, metrics: projectMetrics(batch.draft), validation: validateLayout(batch.draft) }; } });
+  tools.push({ name: "apply_changes", category: "edit", description: "Apply a previously reviewed batch of 1–50 design tool calls atomically as one version and one Undo step. Supply expectedVersion; any failing step rejects every change. Supports prior-step references such as $1.room.id.", inputSchema: batchSchema, execute: input => { const batch = prepareBatch(input); return runtime.perform({ type: "apply_batch", expectedVersion: batch.before.version, operations: batch.operations, createdElementIds: batch.createdElementIds }).result; } });
+  return tools.map(tool => ({ ...tool, execute: (input, options) => { if (tool.name !== "take_snapshot") options?.signal?.throwIfAborted(); assertToolInput(input, tool.inputSchema); return tool.execute(input, options); } }));
 }

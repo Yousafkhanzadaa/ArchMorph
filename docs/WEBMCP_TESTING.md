@@ -11,7 +11,7 @@ npm run test:architecture
 npm run test:webmcp
 ```
 
-The architecture suite covers canonical geometry, topology, hosted openings, circulation, multi-floor straight/L/U stairs, stair approaches and wall clashes, polygon rooms, persistence, migration, and spatial collision data. The WebMCP suite checks catalog count and categories, unique/spec-compatible names, bounded top-level schemas, concise definitions, annotations, successful inspection and mutation, and non-destructive argument failure. It covers both catalogs: the four landing tools registered on `/` and the 57 studio tools registered on `/studio`. The landing catalog quotes the studio's tool count on the page and in `open_studio`, so the suite pins `STUDIO_TOOL_COUNT` to the real studio catalog length and fails if the two drift.
+The architecture suite covers canonical geometry, topology, hosted openings, circulation, multi-floor straight/L/U stairs, stair approaches and wall clashes, polygon rooms, persistence, migration, and spatial collision data. The WebMCP suite checks catalog count and categories, unique/spec-compatible names, bounded top-level schemas, concise definitions, annotations, successful inspection and mutation, and non-destructive argument failure. It covers both catalogs: the four landing tools registered on `/` and the 63 studio tools registered on `/studio`. The landing catalog quotes the studio's tool count on the page and in `open_studio`, so the suite pins `STUDIO_TOOL_COUNT` to the real studio catalog length and fails if the two drift.
 
 ## Route-scoped catalogs
 
@@ -20,7 +20,7 @@ ArchMorph registers tools per route, not once for the origin.
 | Route | Catalog | Tools |
 | --- | --- | --- |
 | `/` | Landing: read the product surface, drive the hero model's presentation, enter the studio | `inspect_landing_page`, `set_landing_model_view`, `set_landing_model_layer`, `open_studio` |
-| `/studio` | Full architectural surface: inspect, edit, calculate, validate, navigate, present | 57 tools |
+| `/studio` | Full architectural surface: inspect, edit, calculate, validate, navigate, present | 63 tools |
 
 Both registrations pass an `AbortSignal`. Leaving a route aborts it, so a client should see the landing catalog replaced by the studio catalog rather than the union of the two. On the landing page, human clicks on the layer toggles and the section button execute the same tool definitions an agent calls, so the title block above the model attributes each change to `Hum` or `Agt`.
 
@@ -30,7 +30,7 @@ Both registrations pass an `AbortSignal`. Leaving a route aborts it, so a client
 2. Open the public ArchMorph URL, not a source-code preview.
 3. Confirm the production UI loads without `?debug=1`.
 4. On `/`, confirm the client discovers the 4 landing tools and that the title block above the model reads `Agent tools live`.
-5. In `/studio`, confirm the client discovers 57 ArchMorph tools. Historical result rows below retain the exact tool counts observed at the time of each run (40 before the exterior-system expansion, 51 before the habitability release).
+5. In `/studio`, confirm the client discovers 63 ArchMorph tools. Historical result rows below retain the exact tool counts observed at the time of each run (40 before the exterior-system expansion, 51 before the habitability release).
 6. Record the client name, exact version/model when visible, date, and result below.
 
 ## Native smoke suite
@@ -62,7 +62,7 @@ Run these on `/` before entering the studio.
 | L03 | “Hide the dimensions on the model.” | `set_landing_model_layer({layer:"dimensions",visible:false})` | Dimension annotations disappear, the `Dims` toggle reads unpressed, and the result reports `changed: true` |
 | L04 | Ask for the same view that is already set. | `set_landing_model_view` with the current view | Result reports `changed: false` and the presentation does not flicker |
 | L05 | Supply an undeclared layer such as `furniture`. | The layer tool fails without changing the model | Specific error naming the four valid layers; visible state unchanged |
-| L06 | “Open the design studio.” | `open_studio` | The browser navigates to `/studio`; the landing catalog is released and the 57 studio tools are discovered in its place |
+| L06 | “Open the design studio.” | `open_studio` | The browser navigates to `/studio`; the landing catalog is released and the 63 studio tools are discovered in its place |
 | L07 | Toggle a layer by hand, then ask the agent what the model is showing. | `inspect_landing_page` reads the human change | The agent reports the human's layer state without a reload, and the title block shows `Hum` for the last change |
 
 ## Evaluation fixtures

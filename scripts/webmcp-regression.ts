@@ -139,11 +139,11 @@ const runtime: ToolRuntime = {
 const tools = createArchMorphTools(runtime);
 const names = tools.map((tool) => tool.name);
 
-assert.equal(tools.length, 58, "ArchMorph should expose 58 canonical tools, retaining the original tools and shared-boundary editing");
+assert.equal(tools.length, 63, "ArchMorph retains its original tools and adds wall editing, enclosure conversion and partition splitting");
 assert.equal(new Set(names).size, tools.length, "WebMCP tool names must be unique");
 assert.deepEqual(
   Object.fromEntries(["inspect", "edit", "calculate", "present"].map((category) => [category, tools.filter((tool) => tool.category === category).length])),
-  { inspect: 8, edit: 38, calculate: 5, present: 7 },
+  { inspect: 9, edit: 42, calculate: 5, present: 7 },
   "the documented category counts must match the live catalog",
 );
 
@@ -155,6 +155,7 @@ for (const tool of tools) {
 }
 
 const expectedReadOnly = new Set([
+  "preview_changes",
   "inspect_project",
   "inspect_plot",
   "inspect_floor",
@@ -333,7 +334,7 @@ assert.equal(raised.floors.find((floor) => floor.id === createdFloor.floor.id)!.
 assert.ok(project.walls.filter((wall) => wall.floorId === "floor-ground").every((wall) => wall.height === 12), "walls on the floor must follow its new height");
 assert.throws(
   () => tools.find((tool) => tool.name === "set_floor_height")!.execute({ floorId: "floor-ground", height: 6 }),
-  /between 7 and 16 ft/,
+  /height must be at least 7|between 7 and 16 ft/,
   "an unbuildable storey height must be refused",
 );
 assert.equal(project.view.activeFloorId, "floor-ground", "set_active_floor should switch the visible storey");

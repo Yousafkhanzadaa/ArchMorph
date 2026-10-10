@@ -724,4 +724,25 @@ code, kbd, pre { font-family: var(--font-geist-mono), monospace; }
 .walk-controls button:hover, .walk-controls button:active { background: #527260; }
 .walk-controls small { grid-column: 1 / 4; text-align: center; color: #eef4ed; font-size: 9px; background: rgb(25 39 31 / 75%); padding: 5px; border-radius: 4px; }
 .model-view__walk-help { bottom: auto; top: 14px; }
+.studio-shell .canvas-stage { grid-template-rows: auto minmax(0, 1fr) 27px; }
+.canvas-toolbar { flex-wrap: wrap; padding-block: 7px; min-height: 48px; }
+.floor-elevation { color: #56655b; font-size: 10px; white-space: nowrap; }
+.plan-context-controls { position: absolute; top: 10px; left: 12px; right: 12px; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; pointer-events: none; }
+.wall-drawing-controls, .lower-floor-toggle { pointer-events: auto; min-height: 34px; border: 1px solid #bac5b7; border-radius: 5px; background: rgb(251 252 249 / 96%); color: #354939; font-size: 11px; }
+.wall-drawing-controls { display: flex; align-items: center; gap: 8px; padding: 4px 8px; }
+.wall-drawing-controls label { display: inline-flex; align-items: center; gap: 5px; }
+.wall-drawing-controls button, .lower-floor-toggle { padding: 7px 9px; cursor: pointer; }
+.wall-drawing-controls button { border: 0; border-radius: 3px; background: #e4ece1; color: #354939; }
+.wall-drawing-controls button:disabled { opacity: 0.45; cursor: default; }
+.lower-floor-toggle[aria-pressed='true'] { border-color: #638093; background: #edf3f5; color: #3d6377; }
+.floor-context-banner { position: absolute; bottom: 55px; left: 12px; right: 12px; display: flex; align-items: center; gap: 10px; max-width: 600px; padding: 9px 12px; border: 1px solid #c3cdbd; border-radius: 5px; background: rgb(245 249 240 / 96%); color: #44553c; font-size: 11px; line-height: 1.5; }
+.floor-context-banner.has-warning { border-color: #c7af7d; background: rgb(255 249 234 / 97%); color: #735225; }
+.floor-context-banner button { flex-shrink: 0; min-height: 32px; border: 1px solid currentColor; border-radius: 4px; background: transparent; color: inherit; padding: 5px 8px; cursor: pointer; }
+.enclosure-preview { display: block; width: 100%; height: 120px; margin-top: 12px; background: #f1f4ed; border-radius: 4px; }
+.wall-space-action form { display: grid; gap: 10px; padding-bottom: 8px; }
+.space-conversion-button { min-height: 36px; border: 0; border-radius: 4px; background: #38573d; color: #fff; padding: 8px 12px; cursor: pointer; }
+@media (max-width: 720px) { .studio-shell .canvas-stage { grid-template-rows: auto minmax(0, 1fr) 31px; } .canvas-controls { flex-wrap: wrap; } .floor-context-banner { font-size: 10px; align-items: start; } .floor-context-banner button { font-size: 10px; } .plan-context-controls { left: 7px; right: 7px; } }
 @media (max-width: 720px) { .model-view__walk-help { display: none; } .walk-controls { right: 10px; bottom: 12px; grid-template-columns: repeat(3, 36px); } .walk-controls button { width: 36px; height: 36px; } }
+
+.walk-door-action { position: absolute; left: 50%; bottom: 7rem; transform: translateX(-50%); z-index: 5; padding: .7rem 1rem; border: 1px solid #b7c5ae; border-radius: 8px; background: #f4f6ed; color: #243627; font-weight: 650; }
+.call-list pre { max-height: 24rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }

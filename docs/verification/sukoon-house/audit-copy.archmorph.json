@@ -1,0 +1,4741 @@
+{
+  "format": "archmorph-project",
+  "schemaVersion": 7,
+  "exportedAt": "2026-10-10T08:02:06.452Z",
+  "project": {
+    "schemaVersion": 7,
+    "id": "project-4f53a5e0",
+    "name": "Sukoon House — Tool Audit Copy",
+    "unit": "ft",
+    "plot": {
+      "width": 70,
+      "length": 100,
+      "orientation": "East",
+      "setbacks": {
+        "front": 12,
+        "rear": 8,
+        "left": 5,
+        "right": 5
+      }
+    },
+    "floors": [
+      {
+        "id": "floor-ground",
+        "name": "Ground Floor",
+        "level": 0,
+        "elevation": 0,
+        "height": 10
+      },
+      {
+        "id": "floor-e0df61af",
+        "name": "First Floor",
+        "level": 1,
+        "elevation": 10,
+        "height": 9.5
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-927a4c38",
+        "floorId": "floor-ground",
+        "name": "Guest Lounge",
+        "type": "Living Room",
+        "x": 6,
+        "y": 14,
+        "width": 14,
+        "length": 16,
+        "color": "#e8b39c",
+        "wallIds": [
+          "wall-floor-ground-h-1400-600-2000",
+          "wall-floor-ground-v-2000-1400-3000",
+          "wall-floor-ground-h-3000-600-2000",
+          "wall-floor-ground-v-600-1400-3000"
+        ],
+        "shape": "rectangle"
+      },
+      {
+        "id": "room-13e2bc6b",
+        "floorId": "floor-ground",
+        "name": "Entrance Hall",
+        "type": "Custom",
+        "x": 20,
+        "y": 14,
+        "width": 10,
+        "length": 16,
+        "color": "#c7b7ae",
+        "wallIds": [
+          "wall-floor-ground-h-1400-2000-3000",
+          "wall-floor-ground-v-2000-1400-3000",
+          "wall-floor-ground-h-3000-2000-3000",
+          "wall-floor-ground-v-3000-1400-2500",
+          "wall-floor-ground-v-3000-2500-3000"
+        ],
+        "shape": "rectangle"
+      },
+      {
+        "id": "room-f6c50415",
+        "floorId": "floor-ground",
+        "name": "Courtyard Gallery",
+        "type": "Custom",
+        "x": 20,
+        "y": 30,
+        "width": 10,
+        "length": 4,
+        "color": "#c7b7ae",
+        "wallIds": [
+          "wall-floor-ground-v-2000-3000-3400",
+          "wall-floor-ground-h-3000-2000-3000",
+          "wall-floor-ground-v-3000-3000-3400",
+          "wall-floor-ground-h-3400-2000-3000"
+        ],
+        "shape": "rectangle"
+      },
+      {
+        "id": "room-0c167008",
+        "floorId": "floor-ground",
+        "name": "Family Dining",
+        "type": "Dining Room",
+        "x": 6,
+        "y": 30,
+        "width": 14,
+        "length": 16,
+        "color": "#d9b8a3",
+        "wallIds": [
+          "wall-floor-ground-v-2000-3000-3400",
+          "wall-floor-ground-v-2000-3400-4600",
+          "wall-floor-ground-h-3000-600-2000",
+          "wall-floor-ground-v-600-3000-4600",
+          "wall-floor-ground-h-4600-600-2000"
+        ],
+        "shape": "rectangle"
+      },
+      {
+        "id": "room-9630dc15",
+        "floorId": "floor-ground",
+        "name": "Stair Hall",
+        "type": "Custom",
+        "x": 30,
+        "y": 30,
+        "width": 14,
+        "length": 16,
+        "color": "#c7b7ae",
+        "wallIds": [
+          "wall-floor-ground-h-3000-3000-4400",
+          "wall-floor-ground-v-3000-3000-3400",
+          "wall-floor-ground-v-3000-3400-4600",
+          "wall-floor-ground-h-4600-3000-4400",
+          "wall-floor-ground-v-4400-3000-4600"
+        ],
+        "shape": "rectangle"
+      },
+      {
+        "id": "room-5bb8b5f8",
+        "floorId": "floor-ground",
+        "name": "Open Sky Courtyard",
+        "type": "Courtyard",
+        "x": 20,
+        "y": 34,
+        "width": 10,
+        "length": 12,
+        "color": "#b9cba7",
+        "wallIds": [
+          "wall-floor-ground-v-2000-3400-4600",
+          "wall-floor-ground-v-3000-3400-4600",
+          "wall-floor-ground-h-3400-2000-3000",
+          "wall-floor-ground-h-4600-2000-3000"
+        ],
+        "shape": "rectangle"
+      },
+      {
+        "id": "room-dc79954b",
+        "floorId": "floor-ground",
+        "name": "Family Kitchen",
+        "type": "Kitchen",
+        "x": 6,
+        "y": 46,
+        "width": 14,
+        "length": 16,
+        "color": "#d8d2a7",
+        "wallIds": [
+          "wall-floor-ground-v-2000-4600-6200",
+          "wall-floor-ground-v-600-4600-6200",
+          "wall-floor-ground-h-4600-600-2000",
+          "wall-floor-ground-h-6200-600-1300",
+          "wall-floor-ground-h-6200-1300-2000"
+        ],
+        "shape": "rectangle"
+      },
+      {
+        "id": "room-e62b39ee",
+        "floorId": "floor-ground",
+        "name": "Family Living",
+        "type": "Living Room",
+        "x": 20,
+        "y": 46,
+        "width": 24,
+        "length": 16,
+        "color": "#e8b39c",
+        "wallIds": [
+          "wall-floor-ground-v-2000-4600-6200",
+          "wall-floor-ground-h-4600-2000-3000",
+          "wall-floor-ground-h-4600-3000-4400",
+          "wall-floor-ground-v-4400-4600-6200",
+          "wall-floor-ground-h-6200-2000-2400",
+          "wall-floor-ground-h-6200-2400-3000",
+          "wall-floor-ground-h-6200-3000-4400"
+        ],
+        "shape": "rectangle"
+      },
+      {
+        "id": "room-65196103",
+        "floorId": "floor-ground",
+        "name": "Rear Hall",
+        "type": "Custom",
+        "x": 20,
+        "y": 62,
+        "width": 4,
+        "length": 8,
+        "color": "#c7b7ae",
+        "wallIds": [
+          "wall-floor-ground-v-2000-6200-7000",
+          "wall-floor-ground-h-6200-2000-2400",
+          "wall-floor-ground-v-2400-6200-7000",
+          "wall-floor-ground-h-7000-2000-2400"
+        ],
+        "shape": "rectangle"
+      },
+      {
+        "id": "room-1fe79cec",
+        "floorId": "floor-ground",
+        "name": "Guest Bathroom",
+        "type": "Bathroom",
+        "x": 24,
+        "y": 62,
+        "width": 6,
+        "length": 8,
+        "color": "#a9bfd2",
+        "wallIds": [
+          "wall-floor-ground-v-3000-6200-7000",
+          "wall-floor-ground-h-6200-2400-3000",
+          "wall-floor-ground-v-2400-6200-7000",
+          "wall-floor-ground-h-7000-2400-3000"
+        ],
+        "shape": "rectangle"
+      },
+      {
+        "id": "room-5789856b",
+        "floorId": "floor-ground",
+        "name": "Garden Study",
+        "type": "Office",
+        "x": 30,
+        "y": 62,
+        "width": 14,
+        "length": 8,
+        "color": "#b8b0cf",
+        "wallIds": [
+          "wall-floor-ground-v-3000-6200-7000",
+          "wall-floor-ground-v-4400-6200-7000",
+          "wall-floor-ground-h-6200-3000-4400",
+          "wall-floor-ground-h-7000-3000-4400"
+        ],
+        "shape": "rectangle"
+      },
+      {
+        "id": "room-8fdb0ebf",
+        "floorId": "floor-ground",
+        "name": "Parents Suite",
+        "type": "Bedroom",
+        "x": 30,
+        "y": 14,
+        "width": 14,
+        "length": 11,
+        "color": "#a9c7c2",
+        "wallIds": [
+          "wall-floor-ground-h-1400-3000-4400",
+          "wall-floor-ground-v-3000-1400-2500",
+          "wall-floor-ground-v-4400-1400-2500",
+          "wall-e9a9601a"
+        ],
+        "shape": "rectangle"
+      },
+      {
+        "id": "room-d9b2ed29",
+        "floorId": "floor-ground",
+        "name": "Parents Ensuite",
+        "type": "Bathroom",
+        "x": 30,
+        "y": 25,
+        "width": 14,
+        "length": 5,
+        "color": "#a9bfd2",
+        "wallIds": [
+          "wall-floor-ground-h-3000-3000-4400",
+          "wall-floor-ground-v-3000-2500-3000",
+          "wall-floor-ground-v-4400-2500-3000",
+          "wall-e9a9601a"
+        ],
+        "shape": "rectangle"
+      },
+      {
+        "id": "room-44879995",
+        "floorId": "floor-ground",
+        "name": "Pantry",
+        "type": "Storage",
+        "x": 6,
+        "y": 62,
+        "width": 7,
+        "length": 8,
+        "color": "#c9b99e",
+        "wallIds": [
+          "wall-floor-ground-v-600-6200-7000",
+          "wall-floor-ground-h-6200-600-1300",
+          "wall-floor-ground-h-7000-600-1300",
+          "wall-floor-ground-v-1300-6200-7000"
+        ],
+        "shape": "rectangle"
+      },
+      {
+        "id": "room-134bf784",
+        "floorId": "floor-ground",
+        "name": "Laundry",
+        "type": "Storage",
+        "x": 13,
+        "y": 62,
+        "width": 7,
+        "length": 8,
+        "color": "#c9b99e",
+        "wallIds": [
+          "wall-floor-ground-v-2000-6200-7000",
+          "wall-floor-ground-h-6200-1300-2000",
+          "wall-floor-ground-h-7000-1300-2000",
+          "wall-floor-ground-v-1300-6200-7000"
+        ],
+        "shape": "rectangle"
+      },
+      {
+        "id": "room-d38bb258",
+        "floorId": "floor-e0df61af",
+        "name": "Primary Bedroom",
+        "type": "Bedroom",
+        "x": 6,
+        "y": 14,
+        "width": 14,
+        "length": 14,
+        "color": "#a9c7c2",
+        "wallIds": [
+          "wall-floor-e0df61af-h-1400-600-2000",
+          "wall-floor-e0df61af-v-2000-1400-1800",
+          "wall-floor-e0df61af-v-2000-1800-2800",
+          "wall-floor-e0df61af-h-2800-600-1300",
+          "wall-floor-e0df61af-h-2800-1300-2000",
+          "wall-floor-e0df61af-v-600-1400-2800"
+        ],
+        "shape": "rectangle"
+      },
+      {
+        "id": "room-57e6ef1d",
+        "floorId": "floor-e0df61af",
+        "name": "Primary Ensuite",
+        "type": "Bathroom",
+        "x": 6,
+        "y": 28,
+        "width": 7,
+        "length": 6,
+        "color": "#a9bfd2",
+        "wallIds": [
+          "wall-floor-e0df61af-h-2800-600-1300",
+          "wall-floor-e0df61af-v-600-2800-3400",
+          "wall-floor-e0df61af-v-1300-2800-3400",
+          "wall-floor-e0df61af-h-3400-600-1300"
+        ],
+        "shape": "rectangle"
+      },
+      {
+        "id": "room-ee749b8b",
+        "floorId": "floor-e0df61af",
+        "name": "Dressing Room",
+        "type": "Storage",
+        "x": 13,
+        "y": 28,
+        "width": 7,
+        "length": 6,
+        "color": "#c9b99e",
+        "wallIds": [
+          "wall-floor-e0df61af-v-2000-2800-3400",
+          "wall-floor-e0df61af-h-2800-1300-2000",
+          "wall-floor-e0df61af-v-1300-2800-3400",
+          "wall-floor-e0df61af-h-3400-1300-2000"
+        ],
+        "shape": "rectangle"
+      },
+      {
+        "id": "room-e2372e44",
+        "floorId": "floor-e0df61af",
+        "name": "Morning Lounge",
+        "type": "Living Room",
+        "x": 20,
+        "y": 18,
+        "width": 10,
+        "length": 16,
+        "color": "#e8b39c",
+        "wallIds": [
+          "wall-floor-e0df61af-v-2000-1800-2800",
+          "wall-floor-e0df61af-v-2000-2800-3400",
+          "wall-floor-e0df61af-h-3400-2000-3000",
+          "wall-floor-e0df61af-h-1800-2000-3000",
+          "wall-floor-e0df61af-v-3000-1800-3000",
+          "wall-floor-e0df61af-v-3000-3000-3400"
+        ],
+        "shape": "rectangle"
+      },
+      {
+        "id": "room-feebe14b",
+        "floorId": "floor-e0df61af",
+        "name": "Bedroom East",
+        "type": "Bedroom",
+        "x": 30,
+        "y": 14,
+        "width": 14,
+        "length": 16,
+        "color": "#a9c7c2",
+        "wallIds": [
+          "wall-floor-e0df61af-h-1400-3000-4400",
+          "wall-floor-e0df61af-v-3000-1400-1800",
+          "wall-floor-e0df61af-v-3000-1800-3000",
+          "wall-floor-e0df61af-v-4400-1400-3000",
+          "wall-floor-e0df61af-h-3000-3000-4400"
+        ],
+        "shape": "rectangle"
+      },
+      {
+        "id": "room-9c7447f4",
+        "floorId": "floor-e0df61af",
+        "name": "Upper Stair Hall",
+        "type": "Custom",
+        "x": 30,
+        "y": 30,
+        "width": 14,
+        "length": 16,
+        "color": "#c7b7ae",
+        "wallIds": [
+          "wall-floor-e0df61af-v-3000-3000-3400",
+          "wall-floor-e0df61af-v-3000-3400-4600",
+          "wall-floor-e0df61af-v-4400-3000-4600",
+          "wall-floor-e0df61af-h-3000-3000-4400",
+          "wall-floor-e0df61af-h-4600-3000-4400"
+        ],
+        "shape": "rectangle"
+      },
+      {
+        "id": "room-ac15ed5d",
+        "floorId": "floor-e0df61af",
+        "name": "Bedroom West",
+        "type": "Bedroom",
+        "x": 6,
+        "y": 34,
+        "width": 14,
+        "length": 16,
+        "color": "#a9c7c2",
+        "wallIds": [
+          "wall-floor-e0df61af-v-2000-3400-4600",
+          "wall-floor-e0df61af-v-2000-4600-5000",
+          "wall-floor-e0df61af-v-600-3400-5000",
+          "wall-floor-e0df61af-h-3400-600-1300",
+          "wall-floor-e0df61af-h-3400-1300-2000",
+          "wall-floor-e0df61af-h-5000-600-2000"
+        ],
+        "shape": "rectangle"
+      },
+      {
+        "id": "room-7d3ce65d",
+        "floorId": "floor-e0df61af",
+        "name": "Upper Gallery",
+        "type": "Custom",
+        "x": 20,
+        "y": 46,
+        "width": 24,
+        "length": 4,
+        "color": "#c7b7ae",
+        "wallIds": [
+          "wall-floor-e0df61af-v-2000-4600-5000",
+          "wall-floor-e0df61af-v-4400-4600-5000",
+          "wall-floor-e0df61af-h-4600-2000-3000",
+          "wall-floor-e0df61af-h-4600-3000-4400",
+          "wall-floor-e0df61af-h-5000-2000-3200",
+          "wall-floor-e0df61af-h-5000-3200-3800",
+          "wall-floor-e0df61af-h-5000-3800-4400"
+        ],
+        "shape": "rectangle"
+      },
+      {
+        "id": "room-e0f0e18b",
+        "floorId": "floor-e0df61af",
+        "name": "Family Library",
+        "type": "Office",
+        "x": 20,
+        "y": 50,
+        "width": 12,
+        "length": 12,
+        "color": "#b8b0cf",
+        "wallIds": [
+          "wall-floor-e0df61af-v-2000-5000-6200",
+          "wall-floor-e0df61af-h-5000-2000-3200",
+          "wall-floor-e0df61af-v-3200-5000-5800",
+          "wall-floor-e0df61af-v-3200-5800-6200",
+          "wall-floor-e0df61af-h-6200-2000-3200"
+        ],
+        "shape": "rectangle"
+      },
+      {
+        "id": "room-034beda5",
+        "floorId": "floor-e0df61af",
+        "name": "Linen Store",
+        "type": "Storage",
+        "x": 32,
+        "y": 50,
+        "width": 6,
+        "length": 8,
+        "color": "#c9b99e",
+        "wallIds": [
+          "wall-floor-e0df61af-h-5000-3200-3800",
+          "wall-floor-e0df61af-v-3200-5000-5800",
+          "wall-floor-e0df61af-v-3800-5000-5800",
+          "wall-floor-e0df61af-h-5800-3200-3800"
+        ],
+        "shape": "rectangle"
+      },
+      {
+        "id": "room-3894f38e",
+        "floorId": "floor-e0df61af",
+        "name": "Family Bathroom",
+        "type": "Bathroom",
+        "x": 38,
+        "y": 50,
+        "width": 6,
+        "length": 8,
+        "color": "#a9bfd2",
+        "wallIds": [
+          "wall-floor-e0df61af-v-4400-5000-5800",
+          "wall-floor-e0df61af-h-5000-3800-4400",
+          "wall-floor-e0df61af-v-3800-5000-5800",
+          "wall-floor-e0df61af-h-5800-3800-4400"
+        ],
+        "shape": "rectangle"
+      },
+      {
+        "id": "room-41de4ae5",
+        "floorId": "floor-e0df61af",
+        "name": "Evening Family Lounge",
+        "type": "Living Room",
+        "x": 20,
+        "y": 58,
+        "width": 24,
+        "length": 12,
+        "color": "#e8b39c",
+        "wallIds": [
+          "wall-floor-e0df61af-v-2000-6200-7000",
+          "wall-floor-e0df61af-v-4400-5800-7000",
+          "wall-floor-e0df61af-v-3200-5800-6200",
+          "wall-floor-e0df61af-h-6200-2000-3200",
+          "wall-floor-e0df61af-h-5800-3200-3800",
+          "wall-floor-e0df61af-h-5800-3800-4400",
+          "wall-floor-e0df61af-h-7000-2000-4400"
+        ],
+        "shape": "custom",
+        "vertices": [
+          {
+            "x": 32,
+            "y": 58
+          },
+          {
+            "x": 44,
+            "y": 58
+          },
+          {
+            "x": 44,
+            "y": 70
+          },
+          {
+            "x": 20,
+            "y": 70
+          },
+          {
+            "x": 20,
+            "y": 62
+          },
+          {
+            "x": 32,
+            "y": 62
+          }
+        ]
+      }
+    ],
+    "walls": [
+      {
+        "id": "wall-floor-ground-h-1400-600-2000",
+        "floorId": "floor-ground",
+        "x1": 6,
+        "y1": 14,
+        "x2": 20,
+        "y2": 14,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-927a4c38"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-927a4c38",
+            "side": "north"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-ground-h-1400-2000-3000",
+          "wall-floor-ground-v-2000-1400-3000",
+          "wall-floor-ground-v-600-1400-3000"
+        ],
+        "roomId": "room-927a4c38",
+        "side": "north"
+      },
+      {
+        "id": "wall-floor-ground-h-1400-2000-3000",
+        "floorId": "floor-ground",
+        "x1": 20,
+        "y1": 14,
+        "x2": 30,
+        "y2": 14,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-13e2bc6b"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-13e2bc6b",
+            "side": "north"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-ground-h-1400-600-2000",
+          "wall-floor-ground-h-1400-3000-4400",
+          "wall-floor-ground-v-2000-1400-3000",
+          "wall-floor-ground-v-3000-1400-2500"
+        ],
+        "roomId": "room-13e2bc6b",
+        "side": "north"
+      },
+      {
+        "id": "wall-floor-ground-h-1400-3000-4400",
+        "floorId": "floor-ground",
+        "x1": 30,
+        "y1": 14,
+        "x2": 44,
+        "y2": 14,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-8fdb0ebf"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-8fdb0ebf",
+            "side": "north"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-ground-h-1400-2000-3000",
+          "wall-floor-ground-v-3000-1400-2500",
+          "wall-floor-ground-v-4400-1400-2500"
+        ],
+        "roomId": "room-8fdb0ebf",
+        "side": "north"
+      },
+      {
+        "id": "wall-floor-ground-v-2000-1400-3000",
+        "floorId": "floor-ground",
+        "x1": 20,
+        "y1": 14,
+        "x2": 20,
+        "y2": 30,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-927a4c38",
+          "room-13e2bc6b"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-927a4c38",
+            "side": "east"
+          },
+          {
+            "roomId": "room-13e2bc6b",
+            "side": "west"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-ground-h-1400-600-2000",
+          "wall-floor-ground-h-1400-2000-3000",
+          "wall-floor-ground-v-2000-3000-3400",
+          "wall-floor-ground-h-3000-600-2000",
+          "wall-floor-ground-h-3000-2000-3000"
+        ]
+      },
+      {
+        "id": "wall-floor-ground-v-2000-3000-3400",
+        "floorId": "floor-ground",
+        "x1": 20,
+        "y1": 30,
+        "x2": 20,
+        "y2": 34,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-f6c50415",
+          "room-0c167008"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-f6c50415",
+            "side": "west"
+          },
+          {
+            "roomId": "room-0c167008",
+            "side": "east"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-ground-v-2000-1400-3000",
+          "wall-floor-ground-v-2000-3400-4600",
+          "wall-floor-ground-h-3000-600-2000",
+          "wall-floor-ground-h-3000-2000-3000",
+          "wall-floor-ground-h-3400-2000-3000"
+        ]
+      },
+      {
+        "id": "wall-floor-ground-v-2000-3400-4600",
+        "floorId": "floor-ground",
+        "x1": 20,
+        "y1": 34,
+        "x2": 20,
+        "y2": 46,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-0c167008",
+          "room-5bb8b5f8"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-0c167008",
+            "side": "east"
+          },
+          {
+            "roomId": "room-5bb8b5f8",
+            "side": "west"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-ground-v-2000-3000-3400",
+          "wall-floor-ground-v-2000-4600-6200",
+          "wall-floor-ground-h-3400-2000-3000",
+          "wall-floor-ground-h-4600-600-2000",
+          "wall-floor-ground-h-4600-2000-3000"
+        ]
+      },
+      {
+        "id": "wall-floor-ground-v-2000-4600-6200",
+        "floorId": "floor-ground",
+        "x1": 20,
+        "y1": 46,
+        "x2": 20,
+        "y2": 62,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-dc79954b",
+          "room-e62b39ee"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-dc79954b",
+            "side": "east"
+          },
+          {
+            "roomId": "room-e62b39ee",
+            "side": "west"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-ground-v-2000-3400-4600",
+          "wall-floor-ground-v-2000-6200-7000",
+          "wall-floor-ground-h-4600-600-2000",
+          "wall-floor-ground-h-4600-2000-3000",
+          "wall-floor-ground-h-6200-1300-2000",
+          "wall-floor-ground-h-6200-2000-2400"
+        ]
+      },
+      {
+        "id": "wall-floor-ground-v-2000-6200-7000",
+        "floorId": "floor-ground",
+        "x1": 20,
+        "y1": 62,
+        "x2": 20,
+        "y2": 70,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-65196103",
+          "room-134bf784"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-65196103",
+            "side": "west"
+          },
+          {
+            "roomId": "room-134bf784",
+            "side": "east"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-ground-v-2000-4600-6200",
+          "wall-floor-ground-h-6200-1300-2000",
+          "wall-floor-ground-h-6200-2000-2400",
+          "wall-floor-ground-h-7000-1300-2000",
+          "wall-floor-ground-h-7000-2000-2400"
+        ]
+      },
+      {
+        "id": "wall-floor-ground-h-3000-600-2000",
+        "floorId": "floor-ground",
+        "x1": 6,
+        "y1": 30,
+        "x2": 20,
+        "y2": 30,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-927a4c38",
+          "room-0c167008"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-927a4c38",
+            "side": "south"
+          },
+          {
+            "roomId": "room-0c167008",
+            "side": "north"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-ground-v-2000-1400-3000",
+          "wall-floor-ground-v-2000-3000-3400",
+          "wall-floor-ground-h-3000-2000-3000",
+          "wall-floor-ground-v-600-1400-3000",
+          "wall-floor-ground-v-600-3000-4600"
+        ]
+      },
+      {
+        "id": "wall-floor-ground-h-3000-2000-3000",
+        "floorId": "floor-ground",
+        "x1": 20,
+        "y1": 30,
+        "x2": 30,
+        "y2": 30,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-13e2bc6b",
+          "room-f6c50415"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-13e2bc6b",
+            "side": "south"
+          },
+          {
+            "roomId": "room-f6c50415",
+            "side": "north"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-ground-v-2000-1400-3000",
+          "wall-floor-ground-v-2000-3000-3400",
+          "wall-floor-ground-h-3000-600-2000",
+          "wall-floor-ground-h-3000-3000-4400",
+          "wall-floor-ground-v-3000-2500-3000",
+          "wall-floor-ground-v-3000-3000-3400"
+        ]
+      },
+      {
+        "id": "wall-floor-ground-h-3000-3000-4400",
+        "floorId": "floor-ground",
+        "x1": 30,
+        "y1": 30,
+        "x2": 44,
+        "y2": 30,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-9630dc15",
+          "room-d9b2ed29"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-9630dc15",
+            "side": "north"
+          },
+          {
+            "roomId": "room-d9b2ed29",
+            "side": "south"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-ground-h-3000-2000-3000",
+          "wall-floor-ground-v-3000-2500-3000",
+          "wall-floor-ground-v-3000-3000-3400",
+          "wall-floor-ground-v-4400-2500-3000",
+          "wall-floor-ground-v-4400-3000-4600"
+        ]
+      },
+      {
+        "id": "wall-floor-ground-v-600-1400-3000",
+        "floorId": "floor-ground",
+        "x1": 6,
+        "y1": 14,
+        "x2": 6,
+        "y2": 30,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-927a4c38"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-927a4c38",
+            "side": "west"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-ground-h-1400-600-2000",
+          "wall-floor-ground-h-3000-600-2000",
+          "wall-floor-ground-v-600-3000-4600"
+        ],
+        "roomId": "room-927a4c38",
+        "side": "west"
+      },
+      {
+        "id": "wall-floor-ground-v-600-3000-4600",
+        "floorId": "floor-ground",
+        "x1": 6,
+        "y1": 30,
+        "x2": 6,
+        "y2": 46,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-0c167008"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-0c167008",
+            "side": "west"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-ground-h-3000-600-2000",
+          "wall-floor-ground-v-600-1400-3000",
+          "wall-floor-ground-v-600-4600-6200",
+          "wall-floor-ground-h-4600-600-2000"
+        ],
+        "roomId": "room-0c167008",
+        "side": "west"
+      },
+      {
+        "id": "wall-floor-ground-v-600-4600-6200",
+        "floorId": "floor-ground",
+        "x1": 6,
+        "y1": 46,
+        "x2": 6,
+        "y2": 62,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-dc79954b"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-dc79954b",
+            "side": "west"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-ground-v-600-3000-4600",
+          "wall-floor-ground-v-600-6200-7000",
+          "wall-floor-ground-h-4600-600-2000",
+          "wall-floor-ground-h-6200-600-1300"
+        ],
+        "roomId": "room-dc79954b",
+        "side": "west"
+      },
+      {
+        "id": "wall-floor-ground-v-600-6200-7000",
+        "floorId": "floor-ground",
+        "x1": 6,
+        "y1": 62,
+        "x2": 6,
+        "y2": 70,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-44879995"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-44879995",
+            "side": "west"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-ground-v-600-4600-6200",
+          "wall-floor-ground-h-6200-600-1300",
+          "wall-floor-ground-h-7000-600-1300"
+        ],
+        "roomId": "room-44879995",
+        "side": "west"
+      },
+      {
+        "id": "wall-floor-ground-v-3000-1400-2500",
+        "floorId": "floor-ground",
+        "x1": 30,
+        "y1": 14,
+        "x2": 30,
+        "y2": 25,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-13e2bc6b",
+          "room-8fdb0ebf"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-13e2bc6b",
+            "side": "east"
+          },
+          {
+            "roomId": "room-8fdb0ebf",
+            "side": "west"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-ground-h-1400-2000-3000",
+          "wall-floor-ground-h-1400-3000-4400",
+          "wall-floor-ground-v-3000-2500-3000",
+          "wall-e9a9601a"
+        ]
+      },
+      {
+        "id": "wall-floor-ground-v-3000-2500-3000",
+        "floorId": "floor-ground",
+        "x1": 30,
+        "y1": 25,
+        "x2": 30,
+        "y2": 30,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-13e2bc6b",
+          "room-d9b2ed29"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-13e2bc6b",
+            "side": "east"
+          },
+          {
+            "roomId": "room-d9b2ed29",
+            "side": "west"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-ground-h-3000-2000-3000",
+          "wall-floor-ground-h-3000-3000-4400",
+          "wall-floor-ground-v-3000-1400-2500",
+          "wall-floor-ground-v-3000-3000-3400",
+          "wall-e9a9601a"
+        ]
+      },
+      {
+        "id": "wall-floor-ground-v-3000-3000-3400",
+        "floorId": "floor-ground",
+        "x1": 30,
+        "y1": 30,
+        "x2": 30,
+        "y2": 34,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-f6c50415",
+          "room-9630dc15"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-f6c50415",
+            "side": "east"
+          },
+          {
+            "roomId": "room-9630dc15",
+            "side": "west"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-ground-h-3000-2000-3000",
+          "wall-floor-ground-h-3000-3000-4400",
+          "wall-floor-ground-v-3000-2500-3000",
+          "wall-floor-ground-v-3000-3400-4600",
+          "wall-floor-ground-h-3400-2000-3000"
+        ]
+      },
+      {
+        "id": "wall-floor-ground-v-3000-3400-4600",
+        "floorId": "floor-ground",
+        "x1": 30,
+        "y1": 34,
+        "x2": 30,
+        "y2": 46,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-9630dc15",
+          "room-5bb8b5f8"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-9630dc15",
+            "side": "west"
+          },
+          {
+            "roomId": "room-5bb8b5f8",
+            "side": "east"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-ground-v-3000-3000-3400",
+          "wall-floor-ground-h-3400-2000-3000",
+          "wall-floor-ground-h-4600-2000-3000",
+          "wall-floor-ground-h-4600-3000-4400"
+        ]
+      },
+      {
+        "id": "wall-floor-ground-v-3000-6200-7000",
+        "floorId": "floor-ground",
+        "x1": 30,
+        "y1": 62,
+        "x2": 30,
+        "y2": 70,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-1fe79cec",
+          "room-5789856b"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-1fe79cec",
+            "side": "east"
+          },
+          {
+            "roomId": "room-5789856b",
+            "side": "west"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-ground-h-6200-2400-3000",
+          "wall-floor-ground-h-6200-3000-4400",
+          "wall-floor-ground-h-7000-2400-3000",
+          "wall-floor-ground-h-7000-3000-4400"
+        ]
+      },
+      {
+        "id": "wall-floor-ground-h-3400-2000-3000",
+        "floorId": "floor-ground",
+        "x1": 20,
+        "y1": 34,
+        "x2": 30,
+        "y2": 34,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-f6c50415",
+          "room-5bb8b5f8"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-f6c50415",
+            "side": "south"
+          },
+          {
+            "roomId": "room-5bb8b5f8",
+            "side": "north"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-ground-v-2000-3000-3400",
+          "wall-floor-ground-v-2000-3400-4600",
+          "wall-floor-ground-v-3000-3000-3400",
+          "wall-floor-ground-v-3000-3400-4600"
+        ]
+      },
+      {
+        "id": "wall-floor-ground-h-4600-600-2000",
+        "floorId": "floor-ground",
+        "x1": 6,
+        "y1": 46,
+        "x2": 20,
+        "y2": 46,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-0c167008",
+          "room-dc79954b"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-0c167008",
+            "side": "south"
+          },
+          {
+            "roomId": "room-dc79954b",
+            "side": "north"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-ground-v-2000-3400-4600",
+          "wall-floor-ground-v-2000-4600-6200",
+          "wall-floor-ground-v-600-3000-4600",
+          "wall-floor-ground-v-600-4600-6200",
+          "wall-floor-ground-h-4600-2000-3000"
+        ]
+      },
+      {
+        "id": "wall-floor-ground-h-4600-2000-3000",
+        "floorId": "floor-ground",
+        "x1": 20,
+        "y1": 46,
+        "x2": 30,
+        "y2": 46,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-5bb8b5f8",
+          "room-e62b39ee"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-5bb8b5f8",
+            "side": "south"
+          },
+          {
+            "roomId": "room-e62b39ee",
+            "side": "north"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-ground-v-2000-3400-4600",
+          "wall-floor-ground-v-2000-4600-6200",
+          "wall-floor-ground-v-3000-3400-4600",
+          "wall-floor-ground-h-4600-600-2000",
+          "wall-floor-ground-h-4600-3000-4400"
+        ]
+      },
+      {
+        "id": "wall-floor-ground-h-4600-3000-4400",
+        "floorId": "floor-ground",
+        "x1": 30,
+        "y1": 46,
+        "x2": 44,
+        "y2": 46,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-9630dc15",
+          "room-e62b39ee"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-9630dc15",
+            "side": "south"
+          },
+          {
+            "roomId": "room-e62b39ee",
+            "side": "north"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-ground-v-3000-3400-4600",
+          "wall-floor-ground-h-4600-2000-3000",
+          "wall-floor-ground-v-4400-3000-4600",
+          "wall-floor-ground-v-4400-4600-6200"
+        ]
+      },
+      {
+        "id": "wall-floor-ground-v-4400-1400-2500",
+        "floorId": "floor-ground",
+        "x1": 44,
+        "y1": 14,
+        "x2": 44,
+        "y2": 25,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-8fdb0ebf"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-8fdb0ebf",
+            "side": "east"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-ground-h-1400-3000-4400",
+          "wall-floor-ground-v-4400-2500-3000",
+          "wall-e9a9601a"
+        ],
+        "finish": "concrete",
+        "roomId": "room-8fdb0ebf",
+        "side": "east"
+      },
+      {
+        "id": "wall-floor-ground-v-4400-2500-3000",
+        "floorId": "floor-ground",
+        "x1": 44,
+        "y1": 25,
+        "x2": 44,
+        "y2": 30,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-d9b2ed29"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-d9b2ed29",
+            "side": "east"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-ground-h-3000-3000-4400",
+          "wall-floor-ground-v-4400-1400-2500",
+          "wall-floor-ground-v-4400-3000-4600",
+          "wall-e9a9601a"
+        ],
+        "roomId": "room-d9b2ed29",
+        "side": "east"
+      },
+      {
+        "id": "wall-floor-ground-v-4400-3000-4600",
+        "floorId": "floor-ground",
+        "x1": 44,
+        "y1": 30,
+        "x2": 44,
+        "y2": 46,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-9630dc15"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-9630dc15",
+            "side": "east"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-ground-h-3000-3000-4400",
+          "wall-floor-ground-h-4600-3000-4400",
+          "wall-floor-ground-v-4400-2500-3000",
+          "wall-floor-ground-v-4400-4600-6200"
+        ],
+        "roomId": "room-9630dc15",
+        "side": "east"
+      },
+      {
+        "id": "wall-floor-ground-v-4400-4600-6200",
+        "floorId": "floor-ground",
+        "x1": 44,
+        "y1": 46,
+        "x2": 44,
+        "y2": 62,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-e62b39ee"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-e62b39ee",
+            "side": "east"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-ground-h-4600-3000-4400",
+          "wall-floor-ground-v-4400-3000-4600",
+          "wall-floor-ground-v-4400-6200-7000",
+          "wall-floor-ground-h-6200-3000-4400"
+        ],
+        "roomId": "room-e62b39ee",
+        "side": "east"
+      },
+      {
+        "id": "wall-floor-ground-v-4400-6200-7000",
+        "floorId": "floor-ground",
+        "x1": 44,
+        "y1": 62,
+        "x2": 44,
+        "y2": 70,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-5789856b"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-5789856b",
+            "side": "east"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-ground-v-4400-4600-6200",
+          "wall-floor-ground-h-6200-3000-4400",
+          "wall-floor-ground-h-7000-3000-4400"
+        ],
+        "roomId": "room-5789856b",
+        "side": "east"
+      },
+      {
+        "id": "wall-floor-ground-h-6200-600-1300",
+        "floorId": "floor-ground",
+        "x1": 6,
+        "y1": 62,
+        "x2": 13,
+        "y2": 62,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-dc79954b",
+          "room-44879995"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-dc79954b",
+            "side": "south"
+          },
+          {
+            "roomId": "room-44879995",
+            "side": "north"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-ground-v-600-4600-6200",
+          "wall-floor-ground-v-600-6200-7000",
+          "wall-floor-ground-h-6200-1300-2000",
+          "wall-floor-ground-v-1300-6200-7000"
+        ]
+      },
+      {
+        "id": "wall-floor-ground-h-6200-1300-2000",
+        "floorId": "floor-ground",
+        "x1": 13,
+        "y1": 62,
+        "x2": 20,
+        "y2": 62,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-dc79954b",
+          "room-134bf784"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-dc79954b",
+            "side": "south"
+          },
+          {
+            "roomId": "room-134bf784",
+            "side": "north"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-ground-v-2000-4600-6200",
+          "wall-floor-ground-v-2000-6200-7000",
+          "wall-floor-ground-h-6200-600-1300",
+          "wall-floor-ground-h-6200-2000-2400",
+          "wall-floor-ground-v-1300-6200-7000"
+        ]
+      },
+      {
+        "id": "wall-floor-ground-h-6200-2000-2400",
+        "floorId": "floor-ground",
+        "x1": 20,
+        "y1": 62,
+        "x2": 24,
+        "y2": 62,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-e62b39ee",
+          "room-65196103"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-e62b39ee",
+            "side": "south"
+          },
+          {
+            "roomId": "room-65196103",
+            "side": "north"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-ground-v-2000-4600-6200",
+          "wall-floor-ground-v-2000-6200-7000",
+          "wall-floor-ground-h-6200-1300-2000",
+          "wall-floor-ground-h-6200-2400-3000",
+          "wall-floor-ground-v-2400-6200-7000"
+        ]
+      },
+      {
+        "id": "wall-floor-ground-h-6200-2400-3000",
+        "floorId": "floor-ground",
+        "x1": 24,
+        "y1": 62,
+        "x2": 30,
+        "y2": 62,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-e62b39ee",
+          "room-1fe79cec"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-e62b39ee",
+            "side": "south"
+          },
+          {
+            "roomId": "room-1fe79cec",
+            "side": "north"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-ground-v-3000-6200-7000",
+          "wall-floor-ground-h-6200-2000-2400",
+          "wall-floor-ground-h-6200-3000-4400",
+          "wall-floor-ground-v-2400-6200-7000"
+        ]
+      },
+      {
+        "id": "wall-floor-ground-h-6200-3000-4400",
+        "floorId": "floor-ground",
+        "x1": 30,
+        "y1": 62,
+        "x2": 44,
+        "y2": 62,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-e62b39ee",
+          "room-5789856b"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-e62b39ee",
+            "side": "south"
+          },
+          {
+            "roomId": "room-5789856b",
+            "side": "north"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-ground-v-3000-6200-7000",
+          "wall-floor-ground-v-4400-4600-6200",
+          "wall-floor-ground-v-4400-6200-7000",
+          "wall-floor-ground-h-6200-2400-3000"
+        ]
+      },
+      {
+        "id": "wall-floor-ground-v-2400-6200-7000",
+        "floorId": "floor-ground",
+        "x1": 24,
+        "y1": 62,
+        "x2": 24,
+        "y2": 70,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-65196103",
+          "room-1fe79cec"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-65196103",
+            "side": "east"
+          },
+          {
+            "roomId": "room-1fe79cec",
+            "side": "west"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-ground-h-6200-2000-2400",
+          "wall-floor-ground-h-6200-2400-3000",
+          "wall-floor-ground-h-7000-2000-2400",
+          "wall-floor-ground-h-7000-2400-3000"
+        ]
+      },
+      {
+        "id": "wall-floor-ground-h-7000-600-1300",
+        "floorId": "floor-ground",
+        "x1": 6,
+        "y1": 70,
+        "x2": 13,
+        "y2": 70,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-44879995"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-44879995",
+            "side": "south"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-ground-v-600-6200-7000",
+          "wall-floor-ground-h-7000-1300-2000",
+          "wall-floor-ground-v-1300-6200-7000"
+        ],
+        "roomId": "room-44879995",
+        "side": "south"
+      },
+      {
+        "id": "wall-floor-ground-h-7000-1300-2000",
+        "floorId": "floor-ground",
+        "x1": 13,
+        "y1": 70,
+        "x2": 20,
+        "y2": 70,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-134bf784"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-134bf784",
+            "side": "south"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-ground-v-2000-6200-7000",
+          "wall-floor-ground-h-7000-600-1300",
+          "wall-floor-ground-h-7000-2000-2400",
+          "wall-floor-ground-v-1300-6200-7000"
+        ],
+        "roomId": "room-134bf784",
+        "side": "south"
+      },
+      {
+        "id": "wall-floor-ground-h-7000-2000-2400",
+        "floorId": "floor-ground",
+        "x1": 20,
+        "y1": 70,
+        "x2": 24,
+        "y2": 70,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-65196103"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-65196103",
+            "side": "south"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-ground-v-2000-6200-7000",
+          "wall-floor-ground-v-2400-6200-7000",
+          "wall-floor-ground-h-7000-1300-2000",
+          "wall-floor-ground-h-7000-2400-3000"
+        ],
+        "roomId": "room-65196103",
+        "side": "south"
+      },
+      {
+        "id": "wall-floor-ground-h-7000-2400-3000",
+        "floorId": "floor-ground",
+        "x1": 24,
+        "y1": 70,
+        "x2": 30,
+        "y2": 70,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-1fe79cec"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-1fe79cec",
+            "side": "south"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-ground-v-3000-6200-7000",
+          "wall-floor-ground-v-2400-6200-7000",
+          "wall-floor-ground-h-7000-2000-2400",
+          "wall-floor-ground-h-7000-3000-4400"
+        ],
+        "roomId": "room-1fe79cec",
+        "side": "south"
+      },
+      {
+        "id": "wall-floor-ground-h-7000-3000-4400",
+        "floorId": "floor-ground",
+        "x1": 30,
+        "y1": 70,
+        "x2": 44,
+        "y2": 70,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-5789856b"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-5789856b",
+            "side": "south"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-ground-v-3000-6200-7000",
+          "wall-floor-ground-v-4400-6200-7000",
+          "wall-floor-ground-h-7000-2400-3000"
+        ],
+        "roomId": "room-5789856b",
+        "side": "south"
+      },
+      {
+        "id": "wall-e9a9601a",
+        "floorId": "floor-ground",
+        "x1": 30,
+        "y1": 25,
+        "x2": 44,
+        "y2": 25,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-8fdb0ebf",
+          "room-d9b2ed29"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-8fdb0ebf",
+            "side": "south"
+          },
+          {
+            "roomId": "room-d9b2ed29",
+            "side": "north"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-ground-v-3000-1400-2500",
+          "wall-floor-ground-v-3000-2500-3000",
+          "wall-floor-ground-v-4400-1400-2500",
+          "wall-floor-ground-v-4400-2500-3000"
+        ]
+      },
+      {
+        "id": "wall-floor-ground-v-1300-6200-7000",
+        "floorId": "floor-ground",
+        "x1": 13,
+        "y1": 62,
+        "x2": 13,
+        "y2": 70,
+        "thickness": 0.5,
+        "height": 10,
+        "roomIds": [
+          "room-44879995",
+          "room-134bf784"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-44879995",
+            "side": "east"
+          },
+          {
+            "roomId": "room-134bf784",
+            "side": "west"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-ground-h-6200-600-1300",
+          "wall-floor-ground-h-6200-1300-2000",
+          "wall-floor-ground-h-7000-600-1300",
+          "wall-floor-ground-h-7000-1300-2000"
+        ]
+      },
+      {
+        "id": "wall-floor-e0df61af-h-1400-600-2000",
+        "floorId": "floor-e0df61af",
+        "x1": 6,
+        "y1": 14,
+        "x2": 20,
+        "y2": 14,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-d38bb258"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-d38bb258",
+            "side": "north"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-2000-1400-1800",
+          "wall-floor-e0df61af-v-600-1400-2800"
+        ],
+        "finish": "timber",
+        "roomId": "room-d38bb258",
+        "side": "north"
+      },
+      {
+        "id": "wall-floor-e0df61af-h-1400-3000-4400",
+        "floorId": "floor-e0df61af",
+        "x1": 30,
+        "y1": 14,
+        "x2": 44,
+        "y2": 14,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-feebe14b"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-feebe14b",
+            "side": "north"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-3000-1400-1800",
+          "wall-floor-e0df61af-v-4400-1400-3000"
+        ],
+        "finish": "concrete",
+        "roomId": "room-feebe14b",
+        "side": "north"
+      },
+      {
+        "id": "wall-floor-e0df61af-v-2000-1400-1800",
+        "floorId": "floor-e0df61af",
+        "x1": 20,
+        "y1": 14,
+        "x2": 20,
+        "y2": 18,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-d38bb258"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-d38bb258",
+            "side": "east"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-h-1400-600-2000",
+          "wall-floor-e0df61af-v-2000-1800-2800",
+          "wall-floor-e0df61af-h-1800-2000-3000"
+        ],
+        "roomId": "room-d38bb258",
+        "side": "east"
+      },
+      {
+        "id": "wall-floor-e0df61af-v-2000-1800-2800",
+        "floorId": "floor-e0df61af",
+        "x1": 20,
+        "y1": 18,
+        "x2": 20,
+        "y2": 28,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-d38bb258",
+          "room-e2372e44"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-d38bb258",
+            "side": "east"
+          },
+          {
+            "roomId": "room-e2372e44",
+            "side": "west"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-2000-1400-1800",
+          "wall-floor-e0df61af-v-2000-2800-3400",
+          "wall-floor-e0df61af-h-2800-1300-2000",
+          "wall-floor-e0df61af-h-1800-2000-3000"
+        ]
+      },
+      {
+        "id": "wall-floor-e0df61af-v-2000-2800-3400",
+        "floorId": "floor-e0df61af",
+        "x1": 20,
+        "y1": 28,
+        "x2": 20,
+        "y2": 34,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-ee749b8b",
+          "room-e2372e44"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-ee749b8b",
+            "side": "east"
+          },
+          {
+            "roomId": "room-e2372e44",
+            "side": "west"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-2000-1800-2800",
+          "wall-floor-e0df61af-v-2000-3400-4600",
+          "wall-floor-e0df61af-h-2800-1300-2000",
+          "wall-floor-e0df61af-h-3400-1300-2000",
+          "wall-floor-e0df61af-h-3400-2000-3000"
+        ]
+      },
+      {
+        "id": "wall-floor-e0df61af-v-2000-3400-4600",
+        "floorId": "floor-e0df61af",
+        "x1": 20,
+        "y1": 34,
+        "x2": 20,
+        "y2": 46,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-ac15ed5d"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-ac15ed5d",
+            "side": "east"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-2000-2800-3400",
+          "wall-floor-e0df61af-v-2000-4600-5000",
+          "wall-floor-e0df61af-h-3400-1300-2000",
+          "wall-floor-e0df61af-h-3400-2000-3000",
+          "wall-floor-e0df61af-h-4600-2000-3000"
+        ],
+        "roomId": "room-ac15ed5d",
+        "side": "east"
+      },
+      {
+        "id": "wall-floor-e0df61af-v-2000-4600-5000",
+        "floorId": "floor-e0df61af",
+        "x1": 20,
+        "y1": 46,
+        "x2": 20,
+        "y2": 50,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-ac15ed5d",
+          "room-7d3ce65d"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-ac15ed5d",
+            "side": "east"
+          },
+          {
+            "roomId": "room-7d3ce65d",
+            "side": "west"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-2000-3400-4600",
+          "wall-floor-e0df61af-v-2000-5000-6200",
+          "wall-floor-e0df61af-h-4600-2000-3000",
+          "wall-floor-e0df61af-h-5000-600-2000",
+          "wall-floor-e0df61af-h-5000-2000-3200"
+        ]
+      },
+      {
+        "id": "wall-floor-e0df61af-v-2000-5000-6200",
+        "floorId": "floor-e0df61af",
+        "x1": 20,
+        "y1": 50,
+        "x2": 20,
+        "y2": 62,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-e0f0e18b"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-e0f0e18b",
+            "side": "west"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-2000-4600-5000",
+          "wall-floor-e0df61af-v-2000-6200-7000",
+          "wall-floor-e0df61af-h-5000-600-2000",
+          "wall-floor-e0df61af-h-5000-2000-3200",
+          "wall-floor-e0df61af-h-6200-2000-3200"
+        ],
+        "roomId": "room-e0f0e18b",
+        "side": "west"
+      },
+      {
+        "id": "wall-floor-e0df61af-v-2000-6200-7000",
+        "floorId": "floor-e0df61af",
+        "x1": 20,
+        "y1": 62,
+        "x2": 20,
+        "y2": 70,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-41de4ae5"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-41de4ae5",
+            "side": "west"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-2000-5000-6200",
+          "wall-floor-e0df61af-h-6200-2000-3200",
+          "wall-floor-e0df61af-h-7000-2000-4400"
+        ],
+        "roomId": "room-41de4ae5",
+        "side": "west"
+      },
+      {
+        "id": "wall-floor-e0df61af-h-2800-600-1300",
+        "floorId": "floor-e0df61af",
+        "x1": 6,
+        "y1": 28,
+        "x2": 13,
+        "y2": 28,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-d38bb258",
+          "room-57e6ef1d"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-d38bb258",
+            "side": "south"
+          },
+          {
+            "roomId": "room-57e6ef1d",
+            "side": "north"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-h-2800-1300-2000",
+          "wall-floor-e0df61af-v-600-1400-2800",
+          "wall-floor-e0df61af-v-600-2800-3400",
+          "wall-floor-e0df61af-v-1300-2800-3400"
+        ]
+      },
+      {
+        "id": "wall-floor-e0df61af-h-2800-1300-2000",
+        "floorId": "floor-e0df61af",
+        "x1": 13,
+        "y1": 28,
+        "x2": 20,
+        "y2": 28,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-d38bb258",
+          "room-ee749b8b"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-d38bb258",
+            "side": "south"
+          },
+          {
+            "roomId": "room-ee749b8b",
+            "side": "north"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-2000-1800-2800",
+          "wall-floor-e0df61af-v-2000-2800-3400",
+          "wall-floor-e0df61af-h-2800-600-1300",
+          "wall-floor-e0df61af-v-1300-2800-3400"
+        ]
+      },
+      {
+        "id": "wall-floor-e0df61af-v-600-1400-2800",
+        "floorId": "floor-e0df61af",
+        "x1": 6,
+        "y1": 14,
+        "x2": 6,
+        "y2": 28,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-d38bb258"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-d38bb258",
+            "side": "west"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-h-1400-600-2000",
+          "wall-floor-e0df61af-h-2800-600-1300",
+          "wall-floor-e0df61af-v-600-2800-3400"
+        ],
+        "roomId": "room-d38bb258",
+        "side": "west"
+      },
+      {
+        "id": "wall-floor-e0df61af-v-600-2800-3400",
+        "floorId": "floor-e0df61af",
+        "x1": 6,
+        "y1": 28,
+        "x2": 6,
+        "y2": 34,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-57e6ef1d"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-57e6ef1d",
+            "side": "west"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-h-2800-600-1300",
+          "wall-floor-e0df61af-v-600-1400-2800",
+          "wall-floor-e0df61af-v-600-3400-5000",
+          "wall-floor-e0df61af-h-3400-600-1300"
+        ],
+        "roomId": "room-57e6ef1d",
+        "side": "west"
+      },
+      {
+        "id": "wall-floor-e0df61af-v-600-3400-5000",
+        "floorId": "floor-e0df61af",
+        "x1": 6,
+        "y1": 34,
+        "x2": 6,
+        "y2": 50,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-ac15ed5d"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-ac15ed5d",
+            "side": "west"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-600-2800-3400",
+          "wall-floor-e0df61af-h-3400-600-1300",
+          "wall-floor-e0df61af-h-5000-600-2000"
+        ],
+        "roomId": "room-ac15ed5d",
+        "side": "west"
+      },
+      {
+        "id": "wall-floor-e0df61af-v-1300-2800-3400",
+        "floorId": "floor-e0df61af",
+        "x1": 13,
+        "y1": 28,
+        "x2": 13,
+        "y2": 34,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-57e6ef1d",
+          "room-ee749b8b"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-57e6ef1d",
+            "side": "east"
+          },
+          {
+            "roomId": "room-ee749b8b",
+            "side": "west"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-h-2800-600-1300",
+          "wall-floor-e0df61af-h-2800-1300-2000",
+          "wall-floor-e0df61af-h-3400-600-1300",
+          "wall-floor-e0df61af-h-3400-1300-2000"
+        ]
+      },
+      {
+        "id": "wall-floor-e0df61af-h-3400-600-1300",
+        "floorId": "floor-e0df61af",
+        "x1": 6,
+        "y1": 34,
+        "x2": 13,
+        "y2": 34,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-57e6ef1d",
+          "room-ac15ed5d"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-57e6ef1d",
+            "side": "south"
+          },
+          {
+            "roomId": "room-ac15ed5d",
+            "side": "north"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-600-2800-3400",
+          "wall-floor-e0df61af-v-600-3400-5000",
+          "wall-floor-e0df61af-v-1300-2800-3400",
+          "wall-floor-e0df61af-h-3400-1300-2000"
+        ]
+      },
+      {
+        "id": "wall-floor-e0df61af-h-3400-1300-2000",
+        "floorId": "floor-e0df61af",
+        "x1": 13,
+        "y1": 34,
+        "x2": 20,
+        "y2": 34,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-ee749b8b",
+          "room-ac15ed5d"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-ee749b8b",
+            "side": "south"
+          },
+          {
+            "roomId": "room-ac15ed5d",
+            "side": "north"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-2000-2800-3400",
+          "wall-floor-e0df61af-v-2000-3400-4600",
+          "wall-floor-e0df61af-v-1300-2800-3400",
+          "wall-floor-e0df61af-h-3400-600-1300",
+          "wall-floor-e0df61af-h-3400-2000-3000"
+        ]
+      },
+      {
+        "id": "wall-floor-e0df61af-h-3400-2000-3000",
+        "floorId": "floor-e0df61af",
+        "x1": 20,
+        "y1": 34,
+        "x2": 30,
+        "y2": 34,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-e2372e44"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-e2372e44",
+            "side": "south"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-2000-2800-3400",
+          "wall-floor-e0df61af-v-2000-3400-4600",
+          "wall-floor-e0df61af-h-3400-1300-2000",
+          "wall-floor-e0df61af-v-3000-3000-3400",
+          "wall-floor-e0df61af-v-3000-3400-4600"
+        ],
+        "roomId": "room-e2372e44",
+        "side": "south"
+      },
+      {
+        "id": "wall-floor-e0df61af-h-1800-2000-3000",
+        "floorId": "floor-e0df61af",
+        "x1": 20,
+        "y1": 18,
+        "x2": 30,
+        "y2": 18,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-e2372e44"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-e2372e44",
+            "side": "north"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-2000-1400-1800",
+          "wall-floor-e0df61af-v-2000-1800-2800",
+          "wall-floor-e0df61af-v-3000-1400-1800",
+          "wall-floor-e0df61af-v-3000-1800-3000"
+        ],
+        "roomId": "room-e2372e44",
+        "side": "north"
+      },
+      {
+        "id": "wall-floor-e0df61af-v-3000-1400-1800",
+        "floorId": "floor-e0df61af",
+        "x1": 30,
+        "y1": 14,
+        "x2": 30,
+        "y2": 18,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-feebe14b"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-feebe14b",
+            "side": "west"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-h-1400-3000-4400",
+          "wall-floor-e0df61af-h-1800-2000-3000",
+          "wall-floor-e0df61af-v-3000-1800-3000"
+        ],
+        "roomId": "room-feebe14b",
+        "side": "west"
+      },
+      {
+        "id": "wall-floor-e0df61af-v-3000-1800-3000",
+        "floorId": "floor-e0df61af",
+        "x1": 30,
+        "y1": 18,
+        "x2": 30,
+        "y2": 30,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-e2372e44",
+          "room-feebe14b"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-e2372e44",
+            "side": "east"
+          },
+          {
+            "roomId": "room-feebe14b",
+            "side": "west"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-h-1800-2000-3000",
+          "wall-floor-e0df61af-v-3000-1400-1800",
+          "wall-floor-e0df61af-v-3000-3000-3400",
+          "wall-floor-e0df61af-h-3000-3000-4400"
+        ]
+      },
+      {
+        "id": "wall-floor-e0df61af-v-3000-3000-3400",
+        "floorId": "floor-e0df61af",
+        "x1": 30,
+        "y1": 30,
+        "x2": 30,
+        "y2": 34,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-e2372e44",
+          "room-9c7447f4"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-e2372e44",
+            "side": "east"
+          },
+          {
+            "roomId": "room-9c7447f4",
+            "side": "west"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-h-3400-2000-3000",
+          "wall-floor-e0df61af-v-3000-1800-3000",
+          "wall-floor-e0df61af-v-3000-3400-4600",
+          "wall-floor-e0df61af-h-3000-3000-4400"
+        ]
+      },
+      {
+        "id": "wall-floor-e0df61af-v-3000-3400-4600",
+        "floorId": "floor-e0df61af",
+        "x1": 30,
+        "y1": 34,
+        "x2": 30,
+        "y2": 46,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-9c7447f4"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-9c7447f4",
+            "side": "west"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-h-3400-2000-3000",
+          "wall-floor-e0df61af-v-3000-3000-3400",
+          "wall-floor-e0df61af-h-4600-2000-3000",
+          "wall-floor-e0df61af-h-4600-3000-4400"
+        ],
+        "roomId": "room-9c7447f4",
+        "side": "west"
+      },
+      {
+        "id": "wall-floor-e0df61af-v-4400-1400-3000",
+        "floorId": "floor-e0df61af",
+        "x1": 44,
+        "y1": 14,
+        "x2": 44,
+        "y2": 30,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-feebe14b"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-feebe14b",
+            "side": "east"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-h-1400-3000-4400",
+          "wall-floor-e0df61af-v-4400-3000-4600",
+          "wall-floor-e0df61af-h-3000-3000-4400"
+        ],
+        "roomId": "room-feebe14b",
+        "side": "east"
+      },
+      {
+        "id": "wall-floor-e0df61af-v-4400-3000-4600",
+        "floorId": "floor-e0df61af",
+        "x1": 44,
+        "y1": 30,
+        "x2": 44,
+        "y2": 46,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-9c7447f4"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-9c7447f4",
+            "side": "east"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-4400-1400-3000",
+          "wall-floor-e0df61af-v-4400-4600-5000",
+          "wall-floor-e0df61af-h-3000-3000-4400",
+          "wall-floor-e0df61af-h-4600-3000-4400"
+        ],
+        "roomId": "room-9c7447f4",
+        "side": "east"
+      },
+      {
+        "id": "wall-floor-e0df61af-v-4400-4600-5000",
+        "floorId": "floor-e0df61af",
+        "x1": 44,
+        "y1": 46,
+        "x2": 44,
+        "y2": 50,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-7d3ce65d"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-7d3ce65d",
+            "side": "east"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-4400-3000-4600",
+          "wall-floor-e0df61af-v-4400-5000-5800",
+          "wall-floor-e0df61af-h-4600-3000-4400",
+          "wall-floor-e0df61af-h-5000-3800-4400"
+        ],
+        "roomId": "room-7d3ce65d",
+        "side": "east"
+      },
+      {
+        "id": "wall-floor-e0df61af-v-4400-5000-5800",
+        "floorId": "floor-e0df61af",
+        "x1": 44,
+        "y1": 50,
+        "x2": 44,
+        "y2": 58,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-3894f38e"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-3894f38e",
+            "side": "east"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-4400-4600-5000",
+          "wall-floor-e0df61af-v-4400-5800-7000",
+          "wall-floor-e0df61af-h-5000-3800-4400",
+          "wall-floor-e0df61af-h-5800-3800-4400"
+        ],
+        "roomId": "room-3894f38e",
+        "side": "east"
+      },
+      {
+        "id": "wall-floor-e0df61af-v-4400-5800-7000",
+        "floorId": "floor-e0df61af",
+        "x1": 44,
+        "y1": 58,
+        "x2": 44,
+        "y2": 70,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-41de4ae5"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-41de4ae5",
+            "side": "east"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-4400-5000-5800",
+          "wall-floor-e0df61af-h-5800-3800-4400",
+          "wall-floor-e0df61af-h-7000-2000-4400"
+        ],
+        "roomId": "room-41de4ae5",
+        "side": "east"
+      },
+      {
+        "id": "wall-floor-e0df61af-h-3000-3000-4400",
+        "floorId": "floor-e0df61af",
+        "x1": 30,
+        "y1": 30,
+        "x2": 44,
+        "y2": 30,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-feebe14b",
+          "room-9c7447f4"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-feebe14b",
+            "side": "south"
+          },
+          {
+            "roomId": "room-9c7447f4",
+            "side": "north"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-3000-1800-3000",
+          "wall-floor-e0df61af-v-3000-3000-3400",
+          "wall-floor-e0df61af-v-4400-1400-3000",
+          "wall-floor-e0df61af-v-4400-3000-4600"
+        ]
+      },
+      {
+        "id": "wall-floor-e0df61af-h-4600-2000-3000",
+        "floorId": "floor-e0df61af",
+        "x1": 20,
+        "y1": 46,
+        "x2": 30,
+        "y2": 46,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-7d3ce65d"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-7d3ce65d",
+            "side": "north"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-2000-3400-4600",
+          "wall-floor-e0df61af-v-2000-4600-5000",
+          "wall-floor-e0df61af-v-3000-3400-4600",
+          "wall-floor-e0df61af-h-4600-3000-4400"
+        ],
+        "roomId": "room-7d3ce65d",
+        "side": "north"
+      },
+      {
+        "id": "wall-floor-e0df61af-h-4600-3000-4400",
+        "floorId": "floor-e0df61af",
+        "x1": 30,
+        "y1": 46,
+        "x2": 44,
+        "y2": 46,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-9c7447f4",
+          "room-7d3ce65d"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-9c7447f4",
+            "side": "south"
+          },
+          {
+            "roomId": "room-7d3ce65d",
+            "side": "north"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-3000-3400-4600",
+          "wall-floor-e0df61af-v-4400-3000-4600",
+          "wall-floor-e0df61af-v-4400-4600-5000",
+          "wall-floor-e0df61af-h-4600-2000-3000"
+        ]
+      },
+      {
+        "id": "wall-floor-e0df61af-h-5000-600-2000",
+        "floorId": "floor-e0df61af",
+        "x1": 6,
+        "y1": 50,
+        "x2": 20,
+        "y2": 50,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-ac15ed5d"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-ac15ed5d",
+            "side": "south"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-2000-4600-5000",
+          "wall-floor-e0df61af-v-2000-5000-6200",
+          "wall-floor-e0df61af-v-600-3400-5000",
+          "wall-floor-e0df61af-h-5000-2000-3200"
+        ],
+        "roomId": "room-ac15ed5d",
+        "side": "south"
+      },
+      {
+        "id": "wall-floor-e0df61af-h-5000-2000-3200",
+        "floorId": "floor-e0df61af",
+        "x1": 20,
+        "y1": 50,
+        "x2": 32,
+        "y2": 50,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-7d3ce65d",
+          "room-e0f0e18b"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-7d3ce65d",
+            "side": "south"
+          },
+          {
+            "roomId": "room-e0f0e18b",
+            "side": "north"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-2000-4600-5000",
+          "wall-floor-e0df61af-v-2000-5000-6200",
+          "wall-floor-e0df61af-h-5000-600-2000",
+          "wall-floor-e0df61af-h-5000-3200-3800",
+          "wall-floor-e0df61af-v-3200-5000-5800"
+        ]
+      },
+      {
+        "id": "wall-floor-e0df61af-h-5000-3200-3800",
+        "floorId": "floor-e0df61af",
+        "x1": 32,
+        "y1": 50,
+        "x2": 38,
+        "y2": 50,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-7d3ce65d",
+          "room-034beda5"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-7d3ce65d",
+            "side": "south"
+          },
+          {
+            "roomId": "room-034beda5",
+            "side": "north"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-h-5000-2000-3200",
+          "wall-floor-e0df61af-h-5000-3800-4400",
+          "wall-floor-e0df61af-v-3200-5000-5800",
+          "wall-floor-e0df61af-v-3800-5000-5800"
+        ]
+      },
+      {
+        "id": "wall-floor-e0df61af-h-5000-3800-4400",
+        "floorId": "floor-e0df61af",
+        "x1": 38,
+        "y1": 50,
+        "x2": 44,
+        "y2": 50,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-7d3ce65d",
+          "room-3894f38e"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-7d3ce65d",
+            "side": "south"
+          },
+          {
+            "roomId": "room-3894f38e",
+            "side": "north"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-4400-4600-5000",
+          "wall-floor-e0df61af-v-4400-5000-5800",
+          "wall-floor-e0df61af-h-5000-3200-3800",
+          "wall-floor-e0df61af-v-3800-5000-5800"
+        ]
+      },
+      {
+        "id": "wall-floor-e0df61af-v-3200-5000-5800",
+        "floorId": "floor-e0df61af",
+        "x1": 32,
+        "y1": 50,
+        "x2": 32,
+        "y2": 58,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-e0f0e18b",
+          "room-034beda5"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-e0f0e18b",
+            "side": "east"
+          },
+          {
+            "roomId": "room-034beda5",
+            "side": "west"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-h-5000-2000-3200",
+          "wall-floor-e0df61af-h-5000-3200-3800",
+          "wall-floor-e0df61af-v-3200-5800-6200",
+          "wall-floor-e0df61af-h-5800-3200-3800"
+        ]
+      },
+      {
+        "id": "wall-floor-e0df61af-v-3200-5800-6200",
+        "floorId": "floor-e0df61af",
+        "x1": 32,
+        "y1": 58,
+        "x2": 32,
+        "y2": 62,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-e0f0e18b",
+          "room-41de4ae5"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-e0f0e18b",
+            "side": "east"
+          },
+          {
+            "roomId": "room-41de4ae5",
+            "side": "west"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-3200-5000-5800",
+          "wall-floor-e0df61af-h-6200-2000-3200",
+          "wall-floor-e0df61af-h-5800-3200-3800"
+        ]
+      },
+      {
+        "id": "wall-floor-e0df61af-h-6200-2000-3200",
+        "floorId": "floor-e0df61af",
+        "x1": 20,
+        "y1": 62,
+        "x2": 32,
+        "y2": 62,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-e0f0e18b",
+          "room-41de4ae5"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-e0f0e18b",
+            "side": "south"
+          },
+          {
+            "roomId": "room-41de4ae5",
+            "side": "north"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-2000-5000-6200",
+          "wall-floor-e0df61af-v-2000-6200-7000",
+          "wall-floor-e0df61af-v-3200-5800-6200"
+        ]
+      },
+      {
+        "id": "wall-floor-e0df61af-v-3800-5000-5800",
+        "floorId": "floor-e0df61af",
+        "x1": 38,
+        "y1": 50,
+        "x2": 38,
+        "y2": 58,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-034beda5",
+          "room-3894f38e"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-034beda5",
+            "side": "east"
+          },
+          {
+            "roomId": "room-3894f38e",
+            "side": "west"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-h-5000-3200-3800",
+          "wall-floor-e0df61af-h-5000-3800-4400",
+          "wall-floor-e0df61af-h-5800-3200-3800",
+          "wall-floor-e0df61af-h-5800-3800-4400"
+        ]
+      },
+      {
+        "id": "wall-floor-e0df61af-h-5800-3200-3800",
+        "floorId": "floor-e0df61af",
+        "x1": 32,
+        "y1": 58,
+        "x2": 38,
+        "y2": 58,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-034beda5",
+          "room-41de4ae5"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-034beda5",
+            "side": "south"
+          },
+          {
+            "roomId": "room-41de4ae5",
+            "side": "north"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-3200-5000-5800",
+          "wall-floor-e0df61af-v-3200-5800-6200",
+          "wall-floor-e0df61af-v-3800-5000-5800",
+          "wall-floor-e0df61af-h-5800-3800-4400"
+        ]
+      },
+      {
+        "id": "wall-floor-e0df61af-h-5800-3800-4400",
+        "floorId": "floor-e0df61af",
+        "x1": 38,
+        "y1": 58,
+        "x2": 44,
+        "y2": 58,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-3894f38e",
+          "room-41de4ae5"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-3894f38e",
+            "side": "south"
+          },
+          {
+            "roomId": "room-41de4ae5",
+            "side": "north"
+          }
+        ],
+        "exterior": false,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-4400-5000-5800",
+          "wall-floor-e0df61af-v-4400-5800-7000",
+          "wall-floor-e0df61af-v-3800-5000-5800",
+          "wall-floor-e0df61af-h-5800-3200-3800"
+        ]
+      },
+      {
+        "id": "wall-floor-e0df61af-h-7000-2000-4400",
+        "floorId": "floor-e0df61af",
+        "x1": 20,
+        "y1": 70,
+        "x2": 44,
+        "y2": 70,
+        "thickness": 0.5,
+        "height": 9.5,
+        "roomIds": [
+          "room-41de4ae5"
+        ],
+        "roomSides": [
+          {
+            "roomId": "room-41de4ae5",
+            "side": "south"
+          }
+        ],
+        "exterior": true,
+        "connectedWallIds": [
+          "wall-floor-e0df61af-v-2000-6200-7000",
+          "wall-floor-e0df61af-v-4400-5800-7000"
+        ],
+        "finish": "timber",
+        "roomId": "room-41de4ae5",
+        "side": "south"
+      }
+    ],
+    "openings": [
+      {
+        "id": "door-f8925b6f",
+        "floorId": "floor-ground",
+        "kind": "door",
+        "wallId": "wall-floor-ground-h-1400-2000-3000",
+        "offset": 5,
+        "width": 4,
+        "height": 8,
+        "sillHeight": 0,
+        "hingeSide": "end",
+        "handing": "right",
+        "swingDirection": "inward",
+        "state": "closed"
+      },
+      {
+        "id": "door-a114df50",
+        "floorId": "floor-ground",
+        "kind": "door",
+        "wallId": "wall-floor-ground-v-2000-1400-3000",
+        "offset": 7,
+        "width": 3.5,
+        "height": 7,
+        "sillHeight": 0,
+        "hingeSide": "end",
+        "handing": "right",
+        "swingDirection": "inward",
+        "state": "open"
+      },
+      {
+        "id": "door-db79590c",
+        "floorId": "floor-ground",
+        "kind": "door",
+        "wallId": "wall-floor-ground-v-3000-1400-2500",
+        "offset": 6,
+        "width": 3.5,
+        "height": 7,
+        "sillHeight": 0,
+        "hingeSide": "start",
+        "handing": "left",
+        "swingDirection": "inward",
+        "state": "open"
+      },
+      {
+        "id": "door-63b1aea4",
+        "floorId": "floor-ground",
+        "kind": "door",
+        "wallId": "wall-e9a9601a",
+        "offset": 10,
+        "width": 3,
+        "height": 7,
+        "sillHeight": 0,
+        "hingeSide": "end",
+        "handing": "right",
+        "swingDirection": "inward",
+        "state": "closed"
+      },
+      {
+        "id": "door-85385ae9",
+        "floorId": "floor-ground",
+        "kind": "door",
+        "wallId": "wall-floor-ground-h-3000-2000-3000",
+        "offset": 5,
+        "width": 4,
+        "height": 8,
+        "sillHeight": 0,
+        "hingeSide": "start",
+        "handing": "left",
+        "swingDirection": "inward",
+        "state": "open"
+      },
+      {
+        "id": "door-dafe1c61",
+        "floorId": "floor-ground",
+        "kind": "door",
+        "wallId": "wall-floor-ground-v-2000-3000-3400",
+        "offset": 2,
+        "width": 3,
+        "height": 7,
+        "sillHeight": 0,
+        "hingeSide": "end",
+        "handing": "right",
+        "swingDirection": "inward",
+        "state": "open"
+      },
+      {
+        "id": "door-225ee326",
+        "floorId": "floor-ground",
+        "kind": "door",
+        "wallId": "wall-floor-ground-v-3000-3000-3400",
+        "offset": 2,
+        "width": 3,
+        "height": 7,
+        "sillHeight": 0,
+        "hingeSide": "start",
+        "handing": "left",
+        "swingDirection": "inward",
+        "state": "open"
+      },
+      {
+        "id": "door-c0d6654e",
+        "floorId": "floor-ground",
+        "kind": "door",
+        "wallId": "wall-floor-ground-h-3400-2000-3000",
+        "offset": 5,
+        "width": 4,
+        "height": 8,
+        "sillHeight": 0,
+        "hingeSide": "end",
+        "handing": "right",
+        "swingDirection": "inward",
+        "state": "open"
+      },
+      {
+        "id": "door-f0ea36e2",
+        "floorId": "floor-ground",
+        "kind": "door",
+        "wallId": "wall-floor-ground-h-3000-600-2000",
+        "offset": 7,
+        "width": 4,
+        "height": 7,
+        "sillHeight": 0,
+        "hingeSide": "start",
+        "handing": "left",
+        "swingDirection": "inward",
+        "state": "open"
+      },
+      {
+        "id": "door-fb08aef1",
+        "floorId": "floor-ground",
+        "kind": "door",
+        "wallId": "wall-floor-ground-h-4600-600-2000",
+        "offset": 9,
+        "width": 3.5,
+        "height": 7,
+        "sillHeight": 0,
+        "hingeSide": "start",
+        "handing": "left",
+        "swingDirection": "inward",
+        "state": "open"
+      },
+      {
+        "id": "door-a531853c",
+        "floorId": "floor-ground",
+        "kind": "door",
+        "wallId": "wall-floor-ground-v-2000-3400-4600",
+        "offset": 6,
+        "width": 4,
+        "height": 8,
+        "sillHeight": 0,
+        "hingeSide": "start",
+        "handing": "left",
+        "swingDirection": "inward",
+        "state": "open"
+      },
+      {
+        "id": "door-45dd417f",
+        "floorId": "floor-ground",
+        "kind": "door",
+        "wallId": "wall-floor-ground-h-4600-2000-3000",
+        "offset": 5,
+        "width": 4,
+        "height": 8,
+        "sillHeight": 0,
+        "hingeSide": "start",
+        "handing": "left",
+        "swingDirection": "inward",
+        "state": "open"
+      },
+      {
+        "id": "door-583d3f9a",
+        "floorId": "floor-ground",
+        "kind": "door",
+        "wallId": "wall-floor-ground-h-4600-3000-4400",
+        "offset": 12.25,
+        "width": 3,
+        "height": 7,
+        "sillHeight": 0,
+        "hingeSide": "start",
+        "handing": "left",
+        "swingDirection": "inward",
+        "state": "open"
+      },
+      {
+        "id": "door-90c79871",
+        "floorId": "floor-ground",
+        "kind": "door",
+        "wallId": "wall-floor-ground-v-2000-4600-6200",
+        "offset": 8,
+        "width": 4,
+        "height": 7,
+        "sillHeight": 0,
+        "hingeSide": "start",
+        "handing": "left",
+        "swingDirection": "inward",
+        "state": "open"
+      },
+      {
+        "id": "door-299c7f79",
+        "floorId": "floor-ground",
+        "kind": "door",
+        "wallId": "wall-floor-ground-h-6200-600-1300",
+        "offset": 4,
+        "width": 3,
+        "height": 7,
+        "sillHeight": 0,
+        "hingeSide": "end",
+        "handing": "right",
+        "swingDirection": "inward",
+        "state": "open"
+      },
+      {
+        "id": "door-6a0a9b75",
+        "floorId": "floor-ground",
+        "kind": "door",
+        "wallId": "wall-floor-ground-h-6200-1300-2000",
+        "offset": 4,
+        "width": 3,
+        "height": 7,
+        "sillHeight": 0,
+        "hingeSide": "end",
+        "handing": "right",
+        "swingDirection": "inward",
+        "state": "open"
+      },
+      {
+        "id": "door-d2f367b9",
+        "floorId": "floor-ground",
+        "kind": "door",
+        "wallId": "wall-floor-ground-h-6200-2000-2400",
+        "offset": 2,
+        "width": 3,
+        "height": 7,
+        "sillHeight": 0,
+        "hingeSide": "start",
+        "handing": "left",
+        "swingDirection": "inward",
+        "state": "open"
+      },
+      {
+        "id": "door-093e684f",
+        "floorId": "floor-ground",
+        "kind": "door",
+        "wallId": "wall-floor-ground-h-6200-3000-4400",
+        "offset": 9,
+        "width": 3.5,
+        "height": 7,
+        "sillHeight": 0,
+        "hingeSide": "end",
+        "handing": "right",
+        "swingDirection": "inward",
+        "state": "open"
+      },
+      {
+        "id": "door-53174e37",
+        "floorId": "floor-ground",
+        "kind": "door",
+        "wallId": "wall-floor-ground-v-2400-6200-7000",
+        "offset": 4,
+        "width": 3,
+        "height": 7,
+        "sillHeight": 0,
+        "hingeSide": "start",
+        "handing": "left",
+        "swingDirection": "inward",
+        "state": "closed"
+      },
+      {
+        "id": "door-b4802735",
+        "floorId": "floor-ground",
+        "kind": "door",
+        "wallId": "wall-floor-ground-h-7000-2000-2400",
+        "offset": 2,
+        "width": 3,
+        "height": 7,
+        "sillHeight": 0,
+        "hingeSide": "start",
+        "handing": "left",
+        "swingDirection": "inward",
+        "state": "open"
+      },
+      {
+        "id": "window-ad63a58a",
+        "floorId": "floor-ground",
+        "kind": "window",
+        "wallId": "wall-floor-ground-h-1400-600-2000",
+        "offset": 7,
+        "width": 8,
+        "height": 5,
+        "sillHeight": 2.5,
+        "windowType": "casement",
+        "operable": true,
+        "glazing": "low-e",
+        "solarHeatGainCoefficient": 0.35,
+        "visibleTransmittance": 0.62,
+        "uFactor": 0.3
+      },
+      {
+        "id": "window-1bac57d5",
+        "floorId": "floor-ground",
+        "kind": "window",
+        "wallId": "wall-floor-ground-v-600-1400-3000",
+        "offset": 8,
+        "width": 6,
+        "height": 5,
+        "sillHeight": 2.5,
+        "windowType": "casement",
+        "operable": true,
+        "glazing": "low-e",
+        "solarHeatGainCoefficient": 0.28,
+        "visibleTransmittance": 0.6,
+        "uFactor": 0.3
+      },
+      {
+        "id": "window-32fe5bbc",
+        "floorId": "floor-ground",
+        "kind": "window",
+        "wallId": "wall-floor-ground-h-1400-2000-3000",
+        "offset": 1.5,
+        "width": 2,
+        "height": 6,
+        "sillHeight": 1.5,
+        "windowType": "fixed",
+        "operable": false,
+        "glazing": "low-e",
+        "solarHeatGainCoefficient": 0.35,
+        "visibleTransmittance": 0.62,
+        "uFactor": 0.3
+      },
+      {
+        "id": "window-6fdc05b3",
+        "floorId": "floor-ground",
+        "kind": "window",
+        "wallId": "wall-floor-ground-h-1400-2000-3000",
+        "offset": 8.5,
+        "width": 2,
+        "height": 6,
+        "sillHeight": 1.5,
+        "windowType": "fixed",
+        "operable": false,
+        "glazing": "low-e",
+        "solarHeatGainCoefficient": 0.35,
+        "visibleTransmittance": 0.62,
+        "uFactor": 0.3
+      },
+      {
+        "id": "window-e9611197",
+        "floorId": "floor-ground",
+        "kind": "window",
+        "wallId": "wall-floor-ground-h-1400-3000-4400",
+        "offset": 7,
+        "width": 6,
+        "height": 5,
+        "sillHeight": 2.5,
+        "windowType": "casement",
+        "operable": true,
+        "glazing": "low-e",
+        "solarHeatGainCoefficient": 0.35,
+        "visibleTransmittance": 0.62,
+        "uFactor": 0.3
+      },
+      {
+        "id": "window-7f8f03f7",
+        "floorId": "floor-ground",
+        "kind": "window",
+        "wallId": "wall-floor-ground-v-4400-1400-2500",
+        "offset": 5.5,
+        "width": 4,
+        "height": 4,
+        "sillHeight": 3,
+        "windowType": "casement",
+        "operable": true,
+        "clearWidth": 2.5,
+        "clearHeight": 3.5,
+        "glazing": "low-e",
+        "solarHeatGainCoefficient": 0.35,
+        "visibleTransmittance": 0.62,
+        "uFactor": 0.3
+      },
+      {
+        "id": "window-66615ca7",
+        "floorId": "floor-ground",
+        "kind": "window",
+        "wallId": "wall-floor-ground-v-4400-2500-3000",
+        "offset": 2.5,
+        "width": 3,
+        "height": 2,
+        "sillHeight": 5,
+        "windowType": "awning",
+        "operable": true,
+        "glazing": "privacy",
+        "solarHeatGainCoefficient": 0.4,
+        "visibleTransmittance": 0.35,
+        "uFactor": 0.45
+      },
+      {
+        "id": "window-7bddbeca",
+        "floorId": "floor-ground",
+        "kind": "window",
+        "wallId": "wall-floor-ground-v-600-3000-4600",
+        "offset": 8,
+        "width": 6,
+        "height": 5,
+        "sillHeight": 2.5,
+        "windowType": "casement",
+        "operable": true,
+        "glazing": "low-e",
+        "solarHeatGainCoefficient": 0.35,
+        "visibleTransmittance": 0.62,
+        "uFactor": 0.3
+      },
+      {
+        "id": "window-47920125",
+        "floorId": "floor-ground",
+        "kind": "window",
+        "wallId": "wall-floor-ground-v-2000-3400-4600",
+        "offset": 2,
+        "width": 3,
+        "height": 5,
+        "sillHeight": 2.5,
+        "windowType": "casement",
+        "operable": true,
+        "glazing": "clear",
+        "solarHeatGainCoefficient": 0.55,
+        "visibleTransmittance": 0.7,
+        "uFactor": 0.45
+      },
+      {
+        "id": "window-c556e352",
+        "floorId": "floor-ground",
+        "kind": "window",
+        "wallId": "wall-floor-ground-v-4400-3000-4600",
+        "offset": 8,
+        "width": 8,
+        "height": 5,
+        "sillHeight": 3,
+        "windowType": "casement",
+        "operable": true,
+        "glazing": "low-e",
+        "solarHeatGainCoefficient": 0.35,
+        "visibleTransmittance": 0.62,
+        "uFactor": 0.3
+      },
+      {
+        "id": "window-0863d5fb",
+        "floorId": "floor-ground",
+        "kind": "window",
+        "wallId": "wall-floor-ground-v-3000-3400-4600",
+        "offset": 6,
+        "width": 6,
+        "height": 5,
+        "sillHeight": 2.5,
+        "windowType": "casement",
+        "operable": true,
+        "glazing": "clear",
+        "solarHeatGainCoefficient": 0.55,
+        "visibleTransmittance": 0.7,
+        "uFactor": 0.45
+      },
+      {
+        "id": "window-f87e8dc2",
+        "floorId": "floor-ground",
+        "kind": "window",
+        "wallId": "wall-floor-ground-v-4400-4600-6200",
+        "offset": 4,
+        "width": 6,
+        "height": 5,
+        "sillHeight": 2.5,
+        "windowType": "casement",
+        "operable": true,
+        "glazing": "low-e",
+        "solarHeatGainCoefficient": 0.35,
+        "visibleTransmittance": 0.62,
+        "uFactor": 0.3
+      },
+      {
+        "id": "window-e8444962",
+        "floorId": "floor-ground",
+        "kind": "window",
+        "wallId": "wall-floor-ground-v-4400-4600-6200",
+        "offset": 12,
+        "width": 6,
+        "height": 5,
+        "sillHeight": 2.5,
+        "windowType": "casement",
+        "operable": true,
+        "glazing": "low-e",
+        "solarHeatGainCoefficient": 0.35,
+        "visibleTransmittance": 0.62,
+        "uFactor": 0.3
+      },
+      {
+        "id": "window-d6e72b24",
+        "floorId": "floor-ground",
+        "kind": "window",
+        "wallId": "wall-floor-ground-v-600-4600-6200",
+        "offset": 8,
+        "width": 8,
+        "height": 4,
+        "sillHeight": 3.5,
+        "windowType": "casement",
+        "operable": true,
+        "glazing": "low-e",
+        "solarHeatGainCoefficient": 0.35,
+        "visibleTransmittance": 0.62,
+        "uFactor": 0.3
+      },
+      {
+        "id": "window-0761977e",
+        "floorId": "floor-ground",
+        "kind": "window",
+        "wallId": "wall-floor-ground-h-7000-600-1300",
+        "offset": 3.5,
+        "width": 3,
+        "height": 3,
+        "sillHeight": 4,
+        "windowType": "awning",
+        "operable": true,
+        "glazing": "privacy",
+        "solarHeatGainCoefficient": 0.4,
+        "visibleTransmittance": 0.35,
+        "uFactor": 0.45
+      },
+      {
+        "id": "window-cbb68e61",
+        "floorId": "floor-ground",
+        "kind": "window",
+        "wallId": "wall-floor-ground-h-7000-1300-2000",
+        "offset": 3.5,
+        "width": 3,
+        "height": 3,
+        "sillHeight": 4,
+        "windowType": "awning",
+        "operable": true,
+        "glazing": "privacy",
+        "solarHeatGainCoefficient": 0.4,
+        "visibleTransmittance": 0.35,
+        "uFactor": 0.45
+      },
+      {
+        "id": "window-a65e605c",
+        "floorId": "floor-ground",
+        "kind": "window",
+        "wallId": "wall-floor-ground-h-7000-2400-3000",
+        "offset": 3,
+        "width": 3,
+        "height": 2,
+        "sillHeight": 5,
+        "windowType": "awning",
+        "operable": true,
+        "glazing": "privacy",
+        "solarHeatGainCoefficient": 0.4,
+        "visibleTransmittance": 0.35,
+        "uFactor": 0.45
+      },
+      {
+        "id": "window-53a89920",
+        "floorId": "floor-ground",
+        "kind": "window",
+        "wallId": "wall-floor-ground-h-7000-3000-4400",
+        "offset": 7,
+        "width": 8,
+        "height": 4,
+        "sillHeight": 3,
+        "windowType": "casement",
+        "operable": true,
+        "glazing": "low-e",
+        "solarHeatGainCoefficient": 0.35,
+        "visibleTransmittance": 0.62,
+        "uFactor": 0.3
+      },
+      {
+        "id": "window-da6f0885",
+        "floorId": "floor-ground",
+        "kind": "window",
+        "wallId": "wall-floor-ground-v-4400-6200-7000",
+        "offset": 4,
+        "width": 3,
+        "height": 3,
+        "sillHeight": 3.5,
+        "windowType": "casement",
+        "operable": true,
+        "glazing": "low-e",
+        "solarHeatGainCoefficient": 0.35,
+        "visibleTransmittance": 0.62,
+        "uFactor": 0.3
+      },
+      {
+        "id": "door-a2dca72b",
+        "floorId": "floor-e0df61af",
+        "kind": "door",
+        "wallId": "wall-floor-e0df61af-v-2000-1800-2800",
+        "offset": 2,
+        "width": 3.5,
+        "height": 7,
+        "sillHeight": 0,
+        "hingeSide": "end",
+        "handing": "right",
+        "swingDirection": "inward",
+        "state": "open"
+      },
+      {
+        "id": "door-2a1a28bb",
+        "floorId": "floor-e0df61af",
+        "kind": "door",
+        "wallId": "wall-floor-e0df61af-h-2800-600-1300",
+        "offset": 3.5,
+        "width": 3,
+        "height": 7,
+        "sillHeight": 0,
+        "hingeSide": "end",
+        "handing": "right",
+        "swingDirection": "inward",
+        "state": "closed"
+      },
+      {
+        "id": "door-76fe0aa6",
+        "floorId": "floor-e0df61af",
+        "kind": "door",
+        "wallId": "wall-floor-e0df61af-h-2800-1300-2000",
+        "offset": 3.5,
+        "width": 3,
+        "height": 7,
+        "sillHeight": 0,
+        "hingeSide": "start",
+        "handing": "left",
+        "swingDirection": "inward",
+        "state": "open"
+      },
+      {
+        "id": "door-80ac6cbb",
+        "floorId": "floor-e0df61af",
+        "kind": "door",
+        "wallId": "wall-floor-e0df61af-v-3000-3000-3400",
+        "offset": 2,
+        "width": 3,
+        "height": 7,
+        "sillHeight": 0,
+        "hingeSide": "start",
+        "handing": "left",
+        "swingDirection": "inward",
+        "state": "open"
+      },
+      {
+        "id": "door-bcfc4982",
+        "floorId": "floor-e0df61af",
+        "kind": "door",
+        "wallId": "wall-floor-e0df61af-h-3000-3000-4400",
+        "offset": 11,
+        "width": 3.5,
+        "height": 7,
+        "sillHeight": 0,
+        "hingeSide": "start",
+        "handing": "left",
+        "swingDirection": "inward",
+        "state": "open"
+      },
+      {
+        "id": "door-86527f99",
+        "floorId": "floor-e0df61af",
+        "kind": "door",
+        "wallId": "wall-floor-e0df61af-h-4600-3000-4400",
+        "offset": 12.25,
+        "width": 3,
+        "height": 7,
+        "sillHeight": 0,
+        "hingeSide": "start",
+        "handing": "left",
+        "swingDirection": "inward",
+        "state": "open"
+      },
+      {
+        "id": "door-9ea455da",
+        "floorId": "floor-e0df61af",
+        "kind": "door",
+        "wallId": "wall-floor-e0df61af-v-2000-4600-5000",
+        "offset": 2,
+        "width": 3,
+        "height": 7,
+        "sillHeight": 0,
+        "hingeSide": "end",
+        "handing": "right",
+        "swingDirection": "inward",
+        "state": "open"
+      },
+      {
+        "id": "door-426bd095",
+        "floorId": "floor-e0df61af",
+        "kind": "door",
+        "wallId": "wall-floor-e0df61af-h-5000-2000-3200",
+        "offset": 6,
+        "width": 4,
+        "height": 7,
+        "sillHeight": 0,
+        "hingeSide": "end",
+        "handing": "right",
+        "swingDirection": "inward",
+        "state": "open"
+      },
+      {
+        "id": "door-d56732d7",
+        "floorId": "floor-e0df61af",
+        "kind": "door",
+        "wallId": "wall-floor-e0df61af-h-5000-3200-3800",
+        "offset": 3,
+        "width": 2.5,
+        "height": 7,
+        "sillHeight": 0,
+        "hingeSide": "end",
+        "handing": "right",
+        "swingDirection": "inward",
+        "state": "open"
+      },
+      {
+        "id": "door-215e36ba",
+        "floorId": "floor-e0df61af",
+        "kind": "door",
+        "wallId": "wall-floor-e0df61af-h-5000-3800-4400",
+        "offset": 3,
+        "width": 3,
+        "height": 7,
+        "sillHeight": 0,
+        "hingeSide": "end",
+        "handing": "right",
+        "swingDirection": "inward",
+        "state": "closed"
+      },
+      {
+        "id": "door-75b886b0",
+        "floorId": "floor-e0df61af",
+        "kind": "door",
+        "wallId": "wall-floor-e0df61af-h-6200-2000-3200",
+        "offset": 6,
+        "width": 4,
+        "height": 7,
+        "sillHeight": 0,
+        "hingeSide": "end",
+        "handing": "right",
+        "swingDirection": "inward",
+        "state": "open"
+      },
+      {
+        "id": "door-914538de",
+        "floorId": "floor-e0df61af",
+        "kind": "door",
+        "wallId": "wall-floor-e0df61af-v-2000-5000-6200",
+        "offset": 6,
+        "width": 4,
+        "height": 8,
+        "sillHeight": 0,
+        "hingeSide": "start",
+        "handing": "left",
+        "swingDirection": "inward",
+        "state": "open"
+      },
+      {
+        "id": "door-d42b8a37",
+        "floorId": "floor-e0df61af",
+        "kind": "door",
+        "wallId": "wall-floor-e0df61af-v-2000-6200-7000",
+        "offset": 4,
+        "width": 4,
+        "height": 8,
+        "sillHeight": 0,
+        "hingeSide": "start",
+        "handing": "left",
+        "swingDirection": "inward",
+        "state": "open"
+      },
+      {
+        "id": "window-fc71fb48",
+        "floorId": "floor-e0df61af",
+        "kind": "window",
+        "wallId": "wall-floor-e0df61af-h-1400-600-2000",
+        "offset": 7,
+        "width": 8,
+        "height": 5,
+        "sillHeight": 2.5,
+        "windowType": "casement",
+        "operable": true,
+        "glazing": "low-e",
+        "solarHeatGainCoefficient": 0.35,
+        "visibleTransmittance": 0.62,
+        "uFactor": 0.3
+      },
+      {
+        "id": "window-e665b400",
+        "floorId": "floor-e0df61af",
+        "kind": "window",
+        "wallId": "wall-floor-e0df61af-v-600-1400-2800",
+        "offset": 7,
+        "width": 5,
+        "height": 4,
+        "sillHeight": 3,
+        "windowType": "casement",
+        "operable": true,
+        "clearWidth": 2.5,
+        "clearHeight": 3.5,
+        "glazing": "low-e",
+        "solarHeatGainCoefficient": 0.35,
+        "visibleTransmittance": 0.62,
+        "uFactor": 0.3
+      },
+      {
+        "id": "window-955da9b0",
+        "floorId": "floor-e0df61af",
+        "kind": "window",
+        "wallId": "wall-floor-e0df61af-v-600-2800-3400",
+        "offset": 3,
+        "width": 3,
+        "height": 2,
+        "sillHeight": 5,
+        "windowType": "awning",
+        "operable": true,
+        "glazing": "privacy",
+        "solarHeatGainCoefficient": 0.4,
+        "visibleTransmittance": 0.35,
+        "uFactor": 0.45
+      },
+      {
+        "id": "window-e7744bca",
+        "floorId": "floor-e0df61af",
+        "kind": "window",
+        "wallId": "wall-floor-e0df61af-h-3400-2000-3000",
+        "offset": 5,
+        "width": 6,
+        "height": 5,
+        "sillHeight": 2.5,
+        "windowType": "casement",
+        "operable": true,
+        "glazing": "clear",
+        "solarHeatGainCoefficient": 0.55,
+        "visibleTransmittance": 0.7,
+        "uFactor": 0.45
+      },
+      {
+        "id": "window-5b7282eb",
+        "floorId": "floor-e0df61af",
+        "kind": "window",
+        "wallId": "wall-floor-e0df61af-h-1400-3000-4400",
+        "offset": 7,
+        "width": 8,
+        "height": 5,
+        "sillHeight": 2.5,
+        "windowType": "casement",
+        "operable": true,
+        "glazing": "low-e",
+        "solarHeatGainCoefficient": 0.35,
+        "visibleTransmittance": 0.62,
+        "uFactor": 0.3
+      },
+      {
+        "id": "window-90b72a76",
+        "floorId": "floor-e0df61af",
+        "kind": "window",
+        "wallId": "wall-floor-e0df61af-v-4400-1400-3000",
+        "offset": 8,
+        "width": 5,
+        "height": 4,
+        "sillHeight": 3,
+        "windowType": "casement",
+        "operable": true,
+        "clearWidth": 2.5,
+        "clearHeight": 3.5,
+        "glazing": "low-e",
+        "solarHeatGainCoefficient": 0.35,
+        "visibleTransmittance": 0.62,
+        "uFactor": 0.3
+      },
+      {
+        "id": "window-92ded0c1",
+        "floorId": "floor-e0df61af",
+        "kind": "window",
+        "wallId": "wall-floor-e0df61af-v-4400-3000-4600",
+        "offset": 8,
+        "width": 8,
+        "height": 5,
+        "sillHeight": 3,
+        "windowType": "casement",
+        "operable": true,
+        "glazing": "low-e",
+        "solarHeatGainCoefficient": 0.35,
+        "visibleTransmittance": 0.62,
+        "uFactor": 0.3
+      },
+      {
+        "id": "window-3c63f48a",
+        "floorId": "floor-e0df61af",
+        "kind": "window",
+        "wallId": "wall-floor-e0df61af-v-3000-3400-4600",
+        "offset": 6,
+        "width": 6,
+        "height": 5,
+        "sillHeight": 2.5,
+        "windowType": "casement",
+        "operable": true,
+        "glazing": "clear",
+        "solarHeatGainCoefficient": 0.55,
+        "visibleTransmittance": 0.7,
+        "uFactor": 0.45
+      },
+      {
+        "id": "window-949a12db",
+        "floorId": "floor-e0df61af",
+        "kind": "window",
+        "wallId": "wall-floor-e0df61af-v-600-3400-5000",
+        "offset": 8,
+        "width": 6,
+        "height": 5,
+        "sillHeight": 2.5,
+        "windowType": "casement",
+        "operable": true,
+        "clearWidth": 2.5,
+        "clearHeight": 3.5,
+        "glazing": "low-e",
+        "solarHeatGainCoefficient": 0.35,
+        "visibleTransmittance": 0.62,
+        "uFactor": 0.3
+      },
+      {
+        "id": "window-9253d664",
+        "floorId": "floor-e0df61af",
+        "kind": "window",
+        "wallId": "wall-floor-e0df61af-v-2000-3400-4600",
+        "offset": 6,
+        "width": 5,
+        "height": 4,
+        "sillHeight": 3,
+        "windowType": "casement",
+        "operable": true,
+        "glazing": "clear",
+        "solarHeatGainCoefficient": 0.55,
+        "visibleTransmittance": 0.7,
+        "uFactor": 0.45
+      },
+      {
+        "id": "window-484fa5c5",
+        "floorId": "floor-e0df61af",
+        "kind": "window",
+        "wallId": "wall-floor-e0df61af-h-4600-2000-3000",
+        "offset": 5,
+        "width": 6,
+        "height": 5,
+        "sillHeight": 2.5,
+        "windowType": "casement",
+        "operable": true,
+        "glazing": "clear",
+        "solarHeatGainCoefficient": 0.55,
+        "visibleTransmittance": 0.7,
+        "uFactor": 0.45
+      },
+      {
+        "id": "window-71f2ac15",
+        "floorId": "floor-e0df61af",
+        "kind": "window",
+        "wallId": "wall-floor-e0df61af-v-2000-5000-6200",
+        "offset": 2,
+        "width": 3,
+        "height": 5,
+        "sillHeight": 2.5,
+        "windowType": "casement",
+        "operable": true,
+        "glazing": "low-e",
+        "solarHeatGainCoefficient": 0.35,
+        "visibleTransmittance": 0.62,
+        "uFactor": 0.3
+      },
+      {
+        "id": "window-9fcbaa46",
+        "floorId": "floor-e0df61af",
+        "kind": "window",
+        "wallId": "wall-floor-e0df61af-v-4400-5000-5800",
+        "offset": 4,
+        "width": 3,
+        "height": 2,
+        "sillHeight": 5,
+        "windowType": "awning",
+        "operable": true,
+        "glazing": "privacy",
+        "solarHeatGainCoefficient": 0.4,
+        "visibleTransmittance": 0.35,
+        "uFactor": 0.45
+      },
+      {
+        "id": "window-64dcf002",
+        "floorId": "floor-e0df61af",
+        "kind": "window",
+        "wallId": "wall-floor-e0df61af-h-7000-2000-4400",
+        "offset": 6,
+        "width": 8,
+        "height": 5,
+        "sillHeight": 2.5,
+        "windowType": "casement",
+        "operable": true,
+        "glazing": "low-e",
+        "solarHeatGainCoefficient": 0.35,
+        "visibleTransmittance": 0.62,
+        "uFactor": 0.3
+      },
+      {
+        "id": "window-dca9ea3d",
+        "floorId": "floor-e0df61af",
+        "kind": "window",
+        "wallId": "wall-floor-e0df61af-h-7000-2000-4400",
+        "offset": 18,
+        "width": 8,
+        "height": 5,
+        "sillHeight": 2.5,
+        "windowType": "casement",
+        "operable": true,
+        "glazing": "low-e",
+        "solarHeatGainCoefficient": 0.35,
+        "visibleTransmittance": 0.62,
+        "uFactor": 0.3
+      },
+      {
+        "id": "window-37991507",
+        "floorId": "floor-e0df61af",
+        "kind": "window",
+        "wallId": "wall-floor-e0df61af-v-4400-5800-7000",
+        "offset": 6,
+        "width": 6,
+        "height": 5,
+        "sillHeight": 2.5,
+        "windowType": "casement",
+        "operable": true,
+        "glazing": "low-e",
+        "solarHeatGainCoefficient": 0.35,
+        "visibleTransmittance": 0.62,
+        "uFactor": 0.3
+      },
+      {
+        "id": "door-9970852a",
+        "floorId": "floor-e0df61af",
+        "kind": "door",
+        "wallId": "wall-floor-e0df61af-h-1800-2000-3000",
+        "offset": 5,
+        "width": 3.5,
+        "height": 8,
+        "sillHeight": 0,
+        "hingeSide": "end",
+        "handing": "right",
+        "swingDirection": "inward",
+        "state": "closed"
+      },
+      {
+        "id": "window-564abedf",
+        "floorId": "floor-e0df61af",
+        "kind": "window",
+        "wallId": "wall-floor-e0df61af-h-1800-2000-3000",
+        "offset": 1.5,
+        "width": 2,
+        "height": 6,
+        "sillHeight": 1.5,
+        "windowType": "fixed",
+        "operable": false,
+        "glazing": "low-e",
+        "solarHeatGainCoefficient": 0.35,
+        "visibleTransmittance": 0.62,
+        "uFactor": 0.3
+      },
+      {
+        "id": "window-a6723dc2",
+        "floorId": "floor-e0df61af",
+        "kind": "window",
+        "wallId": "wall-floor-e0df61af-h-1800-2000-3000",
+        "offset": 8.5,
+        "width": 2,
+        "height": 6,
+        "sillHeight": 1.5,
+        "windowType": "fixed",
+        "operable": false,
+        "glazing": "low-e",
+        "solarHeatGainCoefficient": 0.35,
+        "visibleTransmittance": 0.62,
+        "uFactor": 0.3
+      },
+      {
+        "id": "window-6b16a06e",
+        "floorId": "floor-ground",
+        "kind": "window",
+        "wallId": "wall-floor-ground-h-4600-2000-3000",
+        "offset": 1.5,
+        "width": 2,
+        "height": 6,
+        "sillHeight": 1.5,
+        "windowType": "fixed",
+        "operable": false,
+        "glazing": "low-e",
+        "solarHeatGainCoefficient": 0.35,
+        "visibleTransmittance": 0.62,
+        "uFactor": 0.3
+      },
+      {
+        "id": "window-594851ef",
+        "floorId": "floor-ground",
+        "kind": "window",
+        "wallId": "wall-floor-ground-h-4600-2000-3000",
+        "offset": 8.5,
+        "width": 2,
+        "height": 6,
+        "sillHeight": 1.5,
+        "windowType": "fixed",
+        "operable": false,
+        "glazing": "low-e",
+        "solarHeatGainCoefficient": 0.35,
+        "visibleTransmittance": 0.62,
+        "uFactor": 0.3
+      }
+    ],
+    "stairs": [
+      {
+        "id": "stair-8b54c461",
+        "floorId": "floor-ground",
+        "x": 33,
+        "y": 34,
+        "width": 3.5,
+        "length": 8,
+        "upperFlightLength": 8,
+        "direction": "up",
+        "rotation": 180,
+        "stairType": "u-shaped",
+        "landingDepth": 3.5,
+        "wellWidth": 0.5,
+        "turnSide": "right"
+      }
+    ],
+    "balconies": [
+      {
+        "id": "balcony-3d430709",
+        "floorId": "floor-e0df61af",
+        "name": "Garden Roof Terrace",
+        "kind": "terrace",
+        "x": 6,
+        "y": 50,
+        "width": 14,
+        "length": 20,
+        "slabThickness": 0.4,
+        "finish": "concrete",
+        "railing": {
+          "enabled": true,
+          "height": 3.5,
+          "style": "horizontal",
+          "sides": [
+            "north",
+            "south",
+            "west"
+          ]
+        }
+      },
+      {
+        "id": "balcony-5675bea8",
+        "floorId": "floor-e0df61af",
+        "name": "Recessed Arrival Balcony",
+        "kind": "balcony",
+        "x": 20,
+        "y": 14,
+        "width": 10,
+        "length": 4,
+        "slabThickness": 0.4,
+        "finish": "concrete",
+        "railing": {
+          "enabled": true,
+          "height": 3.5,
+          "style": "vertical",
+          "sides": [
+            "north",
+            "east",
+            "west"
+          ]
+        }
+      }
+    ],
+    "facadeFeatures": [
+      {
+        "id": "facade-f4a578ce",
+        "kind": "frame",
+        "wallId": "wall-floor-e0df61af-h-1800-2000-3000",
+        "offset": 5,
+        "width": 8,
+        "elevation": 1,
+        "height": 7.5,
+        "projection": 0.5,
+        "thickness": 0.2,
+        "finish": "timber"
+      },
+      {
+        "id": "facade-d739c4b7",
+        "kind": "sunshade",
+        "wallId": "wall-floor-ground-v-600-1400-3000",
+        "offset": 8,
+        "width": 8,
+        "elevation": 8,
+        "height": 0.2,
+        "projection": 2,
+        "thickness": 0.15,
+        "finish": "metal"
+      },
+      {
+        "id": "facade-bcbff6a2",
+        "kind": "sunshade",
+        "wallId": "wall-floor-ground-v-600-3000-4600",
+        "offset": 8,
+        "width": 8,
+        "elevation": 8,
+        "height": 0.2,
+        "projection": 2,
+        "thickness": 0.15,
+        "finish": "metal"
+      },
+      {
+        "id": "facade-80053eda",
+        "kind": "sunshade",
+        "wallId": "wall-floor-ground-v-600-4600-6200",
+        "offset": 8,
+        "width": 10,
+        "elevation": 8,
+        "height": 0.2,
+        "projection": 2,
+        "thickness": 0.15,
+        "finish": "metal"
+      },
+      {
+        "id": "facade-534283ae",
+        "kind": "sunshade",
+        "wallId": "wall-floor-ground-v-4400-4600-6200",
+        "offset": 4,
+        "width": 7,
+        "elevation": 8,
+        "height": 0.2,
+        "projection": 2,
+        "thickness": 0.15,
+        "finish": "metal"
+      },
+      {
+        "id": "facade-a5de16f2",
+        "kind": "sunshade",
+        "wallId": "wall-floor-ground-v-4400-4600-6200",
+        "offset": 12,
+        "width": 7,
+        "elevation": 8,
+        "height": 0.2,
+        "projection": 2,
+        "thickness": 0.15,
+        "finish": "metal"
+      },
+      {
+        "id": "facade-96251b96",
+        "kind": "sunshade",
+        "wallId": "wall-floor-e0df61af-v-600-3400-5000",
+        "offset": 8,
+        "width": 8,
+        "elevation": 8,
+        "height": 0.2,
+        "projection": 2,
+        "thickness": 0.15,
+        "finish": "metal"
+      },
+      {
+        "id": "facade-9825ddd8",
+        "kind": "sunshade",
+        "wallId": "wall-floor-e0df61af-v-4400-1400-3000",
+        "offset": 8,
+        "width": 7,
+        "elevation": 8,
+        "height": 0.2,
+        "projection": 2,
+        "thickness": 0.15,
+        "finish": "metal"
+      }
+    ],
+    "roof": {
+      "type": "flat",
+      "parapetEnabled": true,
+      "parapetHeight": 2.5,
+      "parapetThickness": 0.4,
+      "finish": "stucco"
+    },
+    "siteBoundary": {
+      "enabled": true,
+      "height": 4.5,
+      "thickness": 0.4,
+      "finish": "concrete",
+      "gate": {
+        "enabled": true,
+        "offset": 25,
+        "width": 12,
+        "height": 4.5,
+        "style": "slatted"
+      }
+    },
+    "exteriorFinish": "stucco",
+    "view": {
+      "mode": "2d",
+      "navigationMode": "orbit",
+      "activeFloorId": "floor-e0df61af",
+      "cameraPreset": "front-right"
+    },
+    "activity": [
+      {
+        "id": "activity-64312c08",
+        "actor": "agent",
+        "description": "Agent deleted Response reference probe",
+        "operation": "delete_room",
+        "timestamp": "2026-10-10T07:59:23.725Z",
+        "version": 42
+      },
+      {
+        "id": "activity-66b24964",
+        "actor": "agent",
+        "description": "Agent resized Response reference probe to 8 × 6 ft",
+        "operation": "resize_room",
+        "timestamp": "2026-10-10T07:59:17.884Z",
+        "version": 41
+      },
+      {
+        "id": "activity-bdc7bdd8",
+        "actor": "agent",
+        "description": "Agent added Response reference probe · 6 × 6 ft",
+        "operation": "create_room",
+        "timestamp": "2026-10-10T07:59:14.683Z",
+        "version": 40
+      },
+      {
+        "id": "activity-e2143826",
+        "actor": "agent",
+        "description": "Agent updated a 4 ft door",
+        "operation": "update_opening",
+        "timestamp": "2026-10-10T07:58:45.258Z",
+        "version": 39
+      },
+      {
+        "id": "activity-c1ae5791",
+        "actor": "agent",
+        "description": "Agent deleted Overlap repro",
+        "operation": "delete_balcony",
+        "timestamp": "2026-10-10T07:58:41.165Z",
+        "version": 38
+      },
+      {
+        "id": "activity-0f1147a8",
+        "actor": "agent",
+        "description": "Agent validated the layout · 1 issue",
+        "operation": "validate_layout",
+        "timestamp": "2026-10-10T07:58:38.614Z",
+        "version": 37
+      },
+      {
+        "id": "activity-f300f25d",
+        "actor": "agent",
+        "description": "Agent added Overlap repro",
+        "operation": "add_balcony",
+        "timestamp": "2026-10-10T07:58:14.143Z",
+        "version": 37
+      },
+      {
+        "id": "activity-abbbc914",
+        "actor": "agent",
+        "description": "Agent validated the layout · 1 issue",
+        "operation": "validate_layout",
+        "timestamp": "2026-10-10T07:58:11.203Z",
+        "version": 36
+      },
+      {
+        "id": "activity-128d060e",
+        "actor": "agent",
+        "description": "Agent updated a 0.5 ft door",
+        "operation": "update_opening",
+        "timestamp": "2026-10-10T07:58:07.589Z",
+        "version": 36
+      },
+      {
+        "id": "activity-9dc107bf",
+        "actor": "human",
+        "description": "Restored earlier design (v33)",
+        "operation": "restore_design",
+        "timestamp": "2026-10-10T07:50:53.018Z",
+        "version": 35
+      },
+      {
+        "id": "activity-54e1d9c9",
+        "actor": "human",
+        "description": "Restored earlier design (v32)",
+        "operation": "restore_design",
+        "timestamp": "2026-10-10T07:50:52.518Z",
+        "version": 34
+      },
+      {
+        "id": "activity-727e96d2",
+        "actor": "human",
+        "description": "Restored earlier design (v31)",
+        "operation": "restore_design",
+        "timestamp": "2026-10-10T07:50:35.788Z",
+        "version": 33
+      },
+      {
+        "id": "activity-4cb27f06",
+        "actor": "agent",
+        "description": "Agent deleted stair-8b54c461",
+        "operation": "delete_element",
+        "timestamp": "2026-10-10T07:50:35.089Z",
+        "version": 32
+      },
+      {
+        "id": "activity-b665dede",
+        "actor": "agent",
+        "description": "Agent deleted a canopy",
+        "operation": "delete_facade_feature",
+        "timestamp": "2026-10-10T07:50:34.208Z",
+        "version": 31
+      },
+      {
+        "id": "activity-d257c809",
+        "actor": "agent",
+        "description": "Agent deleted wall-1df7ded6",
+        "operation": "delete_element",
+        "timestamp": "2026-10-10T07:50:33.823Z",
+        "version": 30
+      },
+      {
+        "id": "activity-45d8af7f",
+        "actor": "agent",
+        "description": "Agent added a 10 ft wall",
+        "operation": "add_wall",
+        "timestamp": "2026-10-10T07:50:32.876Z",
+        "version": 29
+      },
+      {
+        "id": "activity-a7713a26",
+        "actor": "agent",
+        "description": "Agent updated a canopy",
+        "operation": "update_facade_feature",
+        "timestamp": "2026-10-10T07:50:06.000Z",
+        "version": 28
+      },
+      {
+        "id": "activity-7ae5329b",
+        "actor": "agent",
+        "description": "Agent deleted Overlapping slab probe",
+        "operation": "delete_balcony",
+        "timestamp": "2026-10-10T07:50:05.613Z",
+        "version": 27
+      },
+      {
+        "id": "activity-3a8b6b73",
+        "actor": "agent",
+        "description": "Agent validated the layout · 1 issue",
+        "operation": "validate_layout",
+        "timestamp": "2026-10-10T07:50:04.302Z",
+        "version": 26
+      },
+      {
+        "id": "activity-d998e827",
+        "actor": "agent",
+        "description": "Agent added Overlapping slab probe",
+        "operation": "add_balcony",
+        "timestamp": "2026-10-10T07:49:57.042Z",
+        "version": 26
+      },
+      {
+        "id": "activity-7738d924",
+        "actor": "agent",
+        "description": "Agent updated Garden Roof Terrace",
+        "operation": "update_balcony",
+        "timestamp": "2026-10-10T07:49:56.732Z",
+        "version": 25
+      },
+      {
+        "id": "activity-15061923",
+        "actor": "agent",
+        "description": "Agent deleted Audit Pavilion",
+        "operation": "delete_room",
+        "timestamp": "2026-10-10T07:49:55.785Z",
+        "version": 24
+      },
+      {
+        "id": "activity-ab54acf4",
+        "actor": "agent",
+        "description": "Agent updated the polygon boundary of Audit Pavilion",
+        "operation": "update_room_vertices",
+        "timestamp": "2026-10-10T07:49:55.454Z",
+        "version": 23
+      },
+      {
+        "id": "activity-a87c19e1",
+        "actor": "agent",
+        "description": "Agent deleted window",
+        "operation": "delete_element",
+        "timestamp": "2026-10-10T07:49:54.501Z",
+        "version": 22
+      },
+      {
+        "id": "activity-33cab94b",
+        "actor": "agent",
+        "description": "Agent validated the layout · 2 issues",
+        "operation": "validate_layout",
+        "timestamp": "2026-10-10T07:49:54.032Z",
+        "version": 21
+      },
+      {
+        "id": "activity-0060a24c",
+        "actor": "agent",
+        "description": "Agent updated a 0.5 ft door",
+        "operation": "update_opening",
+        "timestamp": "2026-10-10T07:49:38.372Z",
+        "version": 21
+      },
+      {
+        "id": "activity-1b6d9f5f",
+        "actor": "agent",
+        "description": "Agent resized Audit Pavilion to 12 × 10 ft",
+        "operation": "resize_room",
+        "timestamp": "2026-10-10T07:49:36.088Z",
+        "version": 20
+      },
+      {
+        "id": "activity-f4e51d54",
+        "actor": "agent",
+        "description": "Agent moved Audit Pavilion",
+        "operation": "move_room",
+        "timestamp": "2026-10-10T07:49:35.499Z",
+        "version": 19
+      },
+      {
+        "id": "activity-d1146975",
+        "actor": "agent",
+        "description": "Agent created Audit Pavilion from the wall enclosure",
+        "operation": "create_room_from_walls",
+        "timestamp": "2026-10-10T07:49:25.954Z",
+        "version": 18
+      },
+      {
+        "id": "activity-13b6ab19",
+        "actor": "agent",
+        "description": "Agent rehosted a window onto a different wall",
+        "operation": "rehost_opening",
+        "timestamp": "2026-10-10T07:49:25.583Z",
+        "version": 17
+      },
+      {
+        "id": "activity-f2311b61",
+        "actor": "agent",
+        "description": "Agent rehosted a door onto a different wall",
+        "operation": "rehost_opening",
+        "timestamp": "2026-10-10T07:49:24.716Z",
+        "version": 16
+      },
+      {
+        "id": "activity-685a7eca",
+        "actor": "agent",
+        "description": "Agent moved a wall",
+        "operation": "move_wall",
+        "timestamp": "2026-10-10T07:49:24.380Z",
+        "version": 15
+      },
+      {
+        "id": "activity-e7958fd6",
+        "actor": "agent",
+        "description": "Agent moved a wall",
+        "operation": "move_wall",
+        "timestamp": "2026-10-10T07:49:23.537Z",
+        "version": 14
+      },
+      {
+        "id": "activity-b5648951",
+        "actor": "agent",
+        "description": "Agent added a 4 ft window",
+        "operation": "add_opening",
+        "timestamp": "2026-10-10T07:49:10.773Z",
+        "version": 13
+      },
+      {
+        "id": "activity-23d61778",
+        "actor": "agent",
+        "description": "Agent added a 3 ft door",
+        "operation": "add_opening",
+        "timestamp": "2026-10-10T07:49:09.938Z",
+        "version": 12
+      },
+      {
+        "id": "activity-5ecfb391",
+        "actor": "agent",
+        "description": "Agent set a wall finish to Brick masonry",
+        "operation": "set_wall_finish",
+        "timestamp": "2026-10-10T07:49:09.626Z",
+        "version": 11
+      },
+      {
+        "id": "activity-7871d271",
+        "actor": "agent",
+        "description": "Agent updated a wall",
+        "operation": "update_wall",
+        "timestamp": "2026-10-10T07:49:08.799Z",
+        "version": 10
+      },
+      {
+        "id": "activity-0d0ab379",
+        "actor": "agent",
+        "description": "Agent added a 10 ft wall",
+        "operation": "add_wall",
+        "timestamp": "2026-10-10T07:48:57.222Z",
+        "version": 9
+      },
+      {
+        "id": "activity-86bb8d09",
+        "actor": "agent",
+        "description": "Agent added a 10 ft wall",
+        "operation": "add_wall",
+        "timestamp": "2026-10-10T07:48:56.856Z",
+        "version": 8
+      },
+      {
+        "id": "activity-30148d8a",
+        "actor": "agent",
+        "description": "Agent added a 10 ft wall",
+        "operation": "add_wall",
+        "timestamp": "2026-10-10T07:48:56.023Z",
+        "version": 7
+      },
+      {
+        "id": "activity-f31fbf52",
+        "actor": "agent",
+        "description": "Agent added a 10 ft wall",
+        "operation": "add_wall",
+        "timestamp": "2026-10-10T07:48:55.704Z",
+        "version": 6
+      },
+      {
+        "id": "activity-3fb5e355",
+        "actor": "agent",
+        "description": "Agent adjusted the shared boundary between Pantry and Laundry",
+        "operation": "adjust_shared_boundary",
+        "timestamp": "2026-10-10T07:48:36.595Z",
+        "version": 5
+      },
+      {
+        "id": "activity-0bf451aa",
+        "actor": "agent",
+        "description": "Agent set the plot orientation to East",
+        "operation": "set_plot_orientation",
+        "timestamp": "2026-10-10T07:48:36.195Z",
+        "version": 4
+      },
+      {
+        "id": "activity-c8315bb3",
+        "actor": "agent",
+        "description": "Agent updated the plot to 70 × 100 ft",
+        "operation": "set_plot",
+        "timestamp": "2026-10-10T07:48:35.289Z",
+        "version": 3
+      },
+      {
+        "id": "activity-cd51adeb",
+        "actor": "agent",
+        "description": "Agent renamed the project to Sukoon House — Tool Audit Copy",
+        "operation": "rename_project",
+        "timestamp": "2026-10-10T07:48:34.970Z",
+        "version": 2
+      },
+      {
+        "id": "activity-f057f3af",
+        "actor": "system",
+        "description": "Duplicated from Sukoon House — Family Retreat",
+        "operation": "duplicate_project",
+        "timestamp": "2026-10-10T07:47:26.707Z",
+        "version": 1
+      }
+    ],
+    "version": 42,
+    "updatedAt": "2026-10-10T07:59:23.725Z",
+    "revisionId": "revision-f68e8142"
+  }
+}

@@ -1,0 +1,106 @@
+{
+  "floorCreation": {
+    "elevation": 9,
+    "copiesLowerFootprint": false,
+    "hasExplicitSlabEntity": false
+  },
+  "upperWall": {
+    "base": 9,
+    "top": 18,
+    "issueCodes": [
+      "UPPER_FLOOR_BASE_UNVERIFIED"
+    ],
+    "roofSurfaces": 0
+  },
+  "closedLoop": {
+    "wallCount": 4,
+    "rooms": 0,
+    "issueCodes": [
+      "UPPER_FLOOR_BASE_UNVERIFIED",
+      "UPPER_FLOOR_BASE_UNVERIFIED",
+      "UPPER_FLOOR_BASE_UNVERIFIED",
+      "UPPER_FLOOR_BASE_UNVERIFIED",
+      "WALL_ENCLOSURE_WITHOUT_ROOM"
+    ],
+    "liveConnectionCounts": [
+      2,
+      2,
+      2,
+      2
+    ],
+    "afterMigrationConnectionCounts": [
+      2,
+      2,
+      2,
+      2
+    ],
+    "roofSurfaces": 0
+  },
+  "upperRoom": {
+    "base": 9,
+    "slabTop": 9.18,
+    "slabSurfaces": 6,
+    "roofSurfaces": 80,
+    "issueCodes": [
+      "UPPER_FLOOR_BASE_UNVERIFIED",
+      "UPPER_FLOOR_BASE_UNVERIFIED",
+      "UPPER_FLOOR_BASE_UNVERIFIED",
+      "UPPER_FLOOR_BASE_UNVERIFIED",
+      "UPPER_FLOOR_BASE_UNVERIFIED",
+      "WALL_ENCLOSURE_WITHOUT_ROOM",
+      "NO_ROOM_ACCESS",
+      "NO_EXTERIOR_ACCESS"
+    ]
+  },
+  "heightChange": {
+    "upperElevation": 12,
+    "independentWallHeight": 9
+  },
+  "duplicateWall": {
+    "accepted": false,
+    "error": "Error: A wall already occupies these endpoints. Select the existing wall instead."
+  },
+  "collapsedWall": {
+    "accepted": false,
+    "error": "Error: A wall must be at least 1 ft long."
+  },
+  "outsidePlot": {
+    "accepted": false,
+    "error": "Error: Keep wall endpoints inside the plot boundary."
+  },
+  "thickness0": {
+    "accepted": false,
+    "error": "Error: Wall thickness must be between 0.2 and 2 ft."
+  },
+  "thickness-0.5": {
+    "accepted": false,
+    "error": "Error: Wall thickness must be between 0.2 and 2 ft."
+  },
+  "thickness3": {
+    "accepted": false,
+    "error": "Error: Wall thickness must be between 0.2 and 2 ft."
+  },
+  "coordinateNaN": {
+    "accepted": false,
+    "error": "Error: Wall coordinates, thickness and height must be finite numbers."
+  },
+  "coordinateInfinity": {
+    "accepted": false,
+    "error": "Error: Wall coordinates, thickness and height must be finite numbers."
+  },
+  "hostedOpeningMove": {
+    "hostRetained": true,
+    "offsetRetained": true,
+    "openingIdRetained": true
+  },
+  "tJunction": {
+    "liveConnectionCounts": [
+      1,
+      1
+    ],
+    "afterMigrationConnectionCounts": [
+      1,
+      1
+    ]
+  }
+}
